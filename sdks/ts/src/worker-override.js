@@ -11,8 +11,12 @@ const pendingHostRequests = new Map()
 
 // eslint-disable-next-line no-restricted-globals
 self.addEventListener('message', (event) => {
-  const message = event.data
-  if (message.type !== 'host_response')
+  const message = event && event.data
+  if (
+    typeof message !== 'object' ||
+    message === null ||
+    message.type !== 'host_response'
+  )
     return
 
   const pending = pendingHostRequests.get(message.requestId)
