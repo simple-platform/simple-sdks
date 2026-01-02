@@ -6,6 +6,10 @@ packages:
   - sdks/*
   - packages/*
 
+overrides:
+  '@typescript-eslint/eslint-plugin': 8.49.0
+  ts-api-utils: 2.1.0
+
 onlyBuiltDependencies:
   - esbuild
   - simple-git-hooks
