@@ -75,7 +75,11 @@
     "packages/simple-ts-runtime/Cargo.toml"
   ],
   "cSpell.words": [
+    "Asyncify",
     "DEVBOX",
+    "esbuild",
+    "financials",
+    "Javy",
     "rustc",
     "rustup"
   ]
