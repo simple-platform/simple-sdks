@@ -35,7 +35,7 @@ jobs:
           bump_each_commit: false
           search_commit_body: true
           enable_prerelease_mode: false
-          debug: true
+          debug: false
 
       - name: Display Debug Output
         if: steps.ts-version.outputs.debug_output
