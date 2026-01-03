@@ -1,0 +1,224 @@
+name: Build and Release SDKs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  version:
+    name: Calculate Versions
+    runs-on: ubuntu-latest
+    outputs:
+      ts-version: ${{ steps.ts-version.outputs.version }}
+      ts-version-tag: ${{ steps.ts-version.outputs.version_tag }}
+      ts-changed: ${{ steps.ts-version.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TypeScript SDK Version
+        id: ts-version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "/\\(sdk-ts\\):.*(!:|BREAKING CHANGE:)/"
+          minor_pattern: "/feat\\(sdk-ts\\):/"
+          version_format: "${major}.${minor}.${patch}"
+          change_path: "sdks/ts"
+          namespace: ts
+          bump_each_commit: false
+          search_commit_body: true
+          enable_prerelease_mode: true
+
+  build-typescript:
+    name: Build TypeScript SDK
+    needs: version
+    if: needs.version.outputs.ts-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build TypeScript SDK
+        run: |
+          cd sdks/ts
+          pnpm build
+
+      - name: Generate Changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          # Get the previous tag for this SDK
+          PREV_TAG=$(git tag -l "v*-ts" --sort=-version:refname | head -n 1)
+          
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
+          else
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
+          fi
+          
+          # Organize commits by type
+          FEATURES=$(echo "$COMMITS" | grep "feat(sdk-ts):" || true)
+          FIXES=$(echo "$COMMITS" | grep "fix(sdk-ts):" || true)
+          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\(sdk-ts\)!:|BREAKING CHANGE" || true)
+          OTHER=$(echo "$COMMITS" | grep -v -E "feat\(sdk-ts\):|fix\(sdk-ts\):" || true)
+          
+          # Build changelog
+          echo "## TypeScript SDK ${{ needs.version.outputs.ts-version }}" > changelog.md
+          echo "" >> changelog.md
+          
+          if [ -n "$BREAKING" ]; then
+            echo "### ⚠️ Breaking Changes" >> changelog.md
+            echo "$BREAKING" >> changelog.md
+            echo "" >> changelog.md
+          fi
+          
+          if [ -n "$FEATURES" ]; then
+            echo "### ✨ Features" >> changelog.md
+            echo "$FEATURES" >> changelog.md
+            echo "" >> changelog.md
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            echo "### 🐛 Bug Fixes" >> changelog.md
+            echo "$FIXES" >> changelog.md
+            echo "" >> changelog.md
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            echo "### 📝 Other Changes" >> changelog.md
+            echo "$OTHER" >> changelog.md
+            echo "" >> changelog.md
+          fi
+          
+          echo "### 📦 Installation" >> changelog.md
+          echo "\`\`\`bash" >> changelog.md
+          echo "pnpm add @simpleplatform/sdk@${{ needs.version.outputs.ts-version }}" >> changelog.md
+          echo "\`\`\`" >> changelog.md
+
+      - name: Upload changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: changelog.md
+          retention-days: 5
+
+      - name: Upload build
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@v4
+        with:
+          name: ts-sdk
+          path: sdks/ts/dist
+          retention-days: 5
+
+      - name: Create Release Summary
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          echo "## 📋 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.version.outputs.ts-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ needs.version.outputs.ts-version-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog Preview" >> $GITHUB_STEP_SUMMARY
+          cat changelog.md >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ Review the changelog above before approving the deployment**" >> $GITHUB_STEP_SUMMARY
+
+  publish-typescript:
+    name: Publish TypeScript SDK
+    needs: [version, build-typescript]
+    if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+
+      - name: Update package version
+        run: |
+          cd sdks/ts
+          pnpm version ${{ needs.version.outputs.ts-version }} --no-git-tag-version
+
+      - name: Publish to npm
+        run: |
+          cd sdks/ts
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
+          pnpm publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Update CHANGELOG.md
+        run: |
+          cd sdks/ts
+          
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to the TypeScript SDK will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+          
+          cat ../../changelog.md CHANGELOG.md > CHANGELOG.tmp
+          mv CHANGELOG.tmp CHANGELOG.md
+          
+          git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
+          git config --local user.name "Simple DevOps"
+          git add CHANGELOG.md
+          git commit -m "docs(sdk-ts): update changelog for ${{ needs.version.outputs.ts-version }}" || true
+          git push || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.version.outputs.ts-version-tag }}
+          name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
+          body_path: changelog.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

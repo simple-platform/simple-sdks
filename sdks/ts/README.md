@@ -7,7 +7,7 @@
 Install the SDK using [pnpm](https://pnpm.io):
 
 ```bash
-pnpm add @simple/sdk
+pnpm add @simpleplatform/sdk
 ```
 
 ## Quick Start
@@ -15,7 +15,7 @@ pnpm add @simple/sdk
 Create your first Simple Platform action:
 
 ```typescript
-import simple from '@simple/sdk'
+import simple from '@simpleplatform/sdk'
 
 simple.Handle(async (request) => {
   const data = request.parse<{ name: string }>()
@@ -31,15 +31,15 @@ simple.Handle(async (request) => {
 
 The TypeScript SDK is organized into focused modules for different capabilities:
 
-| Module       | Import                 | Purpose                                        |
-| ------------ | ---------------------- | ---------------------------------------------- |
-| **Core**     | `@simple/sdk`          | Request handling and action execution          |
-| **AI**       | `@simple/sdk/ai`       | AI operations (extract, summarize, transcribe) |
-| **GraphQL**  | `@simple/sdk/graphql`  | Database queries and mutations                 |
-| **HTTP**     | `@simple/sdk/http`     | External HTTP requests                         |
-| **Security** | `@simple/sdk/security` | Security policy authoring                      |
-| **Settings** | `@simple/sdk/settings` | Application settings retrieval                 |
-| **Storage**  | `@simple/sdk/storage`  | File upload and management                     |
+| Module       | Import                         | Purpose                                        |
+| ------------ | ------------------------------ | ---------------------------------------------- |
+| **Core**     | `@simpleplatform/sdk`          | Request handling and action execution          |
+| **AI**       | `@simpleplatform/sdk/ai`       | AI operations (extract, summarize, transcribe) |
+| **GraphQL**  | `@simpleplatform/sdk/graphql`  | Database queries and mutations                 |
+| **HTTP**     | `@simpleplatform/sdk/http`     | External HTTP requests                         |
+| **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
+| **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
+| **Storage**  | `@simpleplatform/sdk/storage`  | File upload and management                     |
 
 ---
 
@@ -54,7 +54,7 @@ The AI module provides powerful capabilities for working with unstructured data.
 Extract structured information from documents, text, or images using AI:
 
 ```typescript
-import { extract } from '@simple/sdk/ai'
+import { extract } from '@simpleplatform/sdk/ai'
 
 const result = await extract(
   documentHandle,
@@ -82,7 +82,7 @@ console.log(result.metadata.inputTokens) // Token usage for auditing
 Generate concise summaries of documents or long-form text:
 
 ```typescript
-import { summarize } from '@simple/sdk/ai'
+import { summarize } from '@simpleplatform/sdk/ai'
 
 const result = await summarize(
   longDocument,
@@ -101,7 +101,7 @@ console.log(result.data) // "This document outlines..."
 Transcribe audio or video files with optional participant identification:
 
 ```typescript
-import { transcribe } from '@simple/sdk/ai'
+import { transcribe } from '@simpleplatform/sdk/ai'
 
 const result = await transcribe(
   audioFile,
@@ -124,7 +124,7 @@ console.log(result.data.participants) // ["Customer", "Support Agent"]
 Execute type-safe database operations with GraphQL:
 
 ```typescript
-import * as graphql from '@simple/sdk/graphql'
+import * as graphql from '@simpleplatform/sdk/graphql'
 
 // Query data
 const users = await graphql.query<{ users: Array<{ id: string, name: string }> }>(
@@ -157,7 +157,7 @@ const result = await graphql.mutate(
 Make external HTTP requests with a clean interface:
 
 ```typescript
-import * as http from '@simple/sdk/http'
+import * as http from '@simpleplatform/sdk/http'
 
 // GET request
 const data = await http.get(
@@ -240,7 +240,7 @@ policy('myapp/logic/send-notification', {
 Retrieve application settings securely:
 
 ```typescript
-import * as settings from '@simple/sdk/settings'
+import * as settings from '@simpleplatform/sdk/settings'
 
 const config = await settings.get(
   'dev.simple.myapp',
@@ -257,7 +257,7 @@ console.log(config.max_retries) // 3
 Upload files from external sources to the platform's content-addressable storage:
 
 ```typescript
-import { uploadExternal } from '@simple/sdk/storage'
+import { uploadExternal } from '@simpleplatform/sdk/storage'
 
 const documentHandle = await uploadExternal(
   {
@@ -285,8 +285,8 @@ console.log(documentHandle.size) // File size in bytes
 The TypeScript SDK is **fully typed** with comprehensive TypeScript definitions. Leverage IDE autocompletion and compile-time type checking:
 
 ```typescript
-import type { Context, DocumentHandle, SimpleResponse } from '@simple/sdk'
-import type { AIExtractOptions, JSONSchema } from '@simple/sdk/ai'
+import type { Context, DocumentHandle, SimpleResponse } from '@simpleplatform/sdk'
+import type { AIExtractOptions, JSONSchema } from '@simpleplatform/sdk/ai'
 
 // All types are exported for your use
 const schema: JSONSchema = {

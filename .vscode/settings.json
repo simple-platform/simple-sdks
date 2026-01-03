@@ -80,7 +80,12 @@
     "esbuild",
     "financials",
     "Javy",
+    "jetify",
+    "npmjs",
+    "paulhatch",
     "rustc",
-    "rustup"
+    "rustup",
+    "simpleplatform",
+    "softprops"
   ]
 }

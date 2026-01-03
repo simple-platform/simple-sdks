@@ -42,11 +42,11 @@ The Simple Platform SDKs provide first-class support for:
 ### TypeScript
 
 ```bash
-pnpm add @simple/sdk
+pnpm add @simpleplatform/sdk
 ```
 
 ```typescript
-import simple from '@simple/sdk'
+import simple from '@simpleplatform/sdk'
 
 simple.Handle(async (request) => {
   const data = request.parse<{ name: string }>()

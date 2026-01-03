@@ -1,7 +1,6 @@
 {
-  "name": "@simple/ts-sdk",
+  "name": "@simpleplatform/sdk",
   "version": "0.0.0",
-  "private": true,
   "description": "Simple Platform Typescript SDK",
   "exports": {
     ".": {
