@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   version:
     name: Calculate Versions
@@ -161,6 +164,8 @@ jobs:
     needs: [version, build-typescript]
     if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     environment:
       name: production
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
