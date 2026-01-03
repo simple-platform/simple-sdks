@@ -215,8 +215,8 @@ jobs:
 
           git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
           git config --local user.name "Simple DevOps"
-          git add CHANGELOG.md
-          git commit -m "docs(sdk-ts): update changelog for ${{ needs.version.outputs.ts-version }}" || true
+          git add CHANGELOG.md package.json
+          git commit -m "chore(sdk-ts): release version ${{ needs.version.outputs.ts-version }} [skip ci]" || true
           git push || true
 
       - name: Create GitHub Release
@@ -226,6 +226,6 @@ jobs:
           name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
           body_path: changelog.md
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(needs.version.outputs.ts-version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

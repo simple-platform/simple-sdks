@@ -1,7 +1,25 @@
 {
   "name": "@simpleplatform/sdk",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Simple Platform Typescript SDK",
+  "license": "Apache-2.0",
+  "homepage": "https://docs.simple.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simple-platform/simple-sdks.git",
+    "directory": "sdks/ts"
+  },
+  "bugs": {
+    "url": "https://github.com/simple-platform/simple-sdks/issues"
+  },
+  "keywords": [
+    "simple",
+    "simple-platform",
+    "simple-sdk",
+    "simple-platform-sdk",
+    "simple-ts-sdk",
+    "simple-platform-ts-sdk"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
