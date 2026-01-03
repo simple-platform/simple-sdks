@@ -35,6 +35,7 @@ jobs:
           bump_each_commit: false
           search_commit_body: true
           enable_prerelease_mode: true
+          debug: true
 
   build-typescript:
     name: Build TypeScript SDK
