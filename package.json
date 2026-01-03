@@ -14,6 +14,9 @@
   "engines": {
     "node": ">=25"
   },
+  "scripts": {
+    "lint": "eslint ."
+  },
   "dependencies": {
     "is-ci": "^4.1.0"
   },
