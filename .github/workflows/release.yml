@@ -34,8 +34,13 @@ jobs:
           namespace: ts
           bump_each_commit: false
           search_commit_body: true
-          enable_prerelease_mode: true
+          enable_prerelease_mode: false
           debug: true
+
+      - name: Display Debug Output
+        if: steps.ts-version.outputs.debug_output
+        run: |
+          echo "${{ steps.ts-version.outputs.debug_output }}"
 
   build-typescript:
     name: Build TypeScript SDK
