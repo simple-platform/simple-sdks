@@ -27,7 +27,7 @@ jobs:
         uses: paulhatch/semantic-version@v5.4.0
         with:
           tag_prefix: v
-          major_pattern: '/\(sdk-ts\):.*(!:|BREAKING CHANGE:)/'
+          major_pattern: '/(\(sdk-ts\).*!)|BREAKING CHANGE/'
           minor_pattern: '/feat\(sdk-ts\):/'
           version_format: '${major}.${minor}.${patch}'
           change_path: sdks/ts
