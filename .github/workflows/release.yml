@@ -47,14 +47,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '25'
           cache: 'pnpm'
-
-      - name: Enable Corepack
-        run: corepack enable
 
       - name: Install dependencies
         run: pnpm install
@@ -166,7 +168,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'pnpm'
 
       - name: Enable Corepack
         run: corepack enable
