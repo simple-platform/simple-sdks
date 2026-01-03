@@ -18,13 +18,13 @@ jobs:
       ts-changed: ${{ steps.ts-version.outputs.changed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: TypeScript SDK Version
         id: ts-version
-        uses: paulhatch/semantic-version@v5.4.0
+        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
         with:
           tag_prefix: v
           major_pattern: '/(\(sdk-ts\).*!)|BREAKING CHANGE/'
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -59,7 +59,7 @@ jobs:
           version: 10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '25'
           cache: pnpm
@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload changelog
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: changelog
           path: changelog.md
@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload build
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ts-sdk
           path: sdks/ts/dist
@@ -166,12 +166,12 @@ jobs:
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '25'
 
@@ -182,7 +182,7 @@ jobs:
         run: pnpm install
 
       - name: Download changelog
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: changelog
 
@@ -220,7 +220,7 @@ jobs:
           git push || true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.ts-version-tag }}
           name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
