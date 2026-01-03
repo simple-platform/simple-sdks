@@ -15,7 +15,7 @@
     "node": ">=25"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint sdks/ts .github *.{js,ts,json}"
   },
   "dependencies": {
     "is-ci": "^4.1.0"
@@ -41,6 +41,6 @@
     "pre-commit": "pnpm lint-staged"
   },
   "lint-staged": {
-    "(*.json|*.ts|*.js)": "eslint --fix --no-warn-ignored"
+    "*.{json,ts,js,yml,yaml}": "eslint --fix"
   }
 }

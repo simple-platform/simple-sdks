@@ -26,11 +26,11 @@ jobs:
         id: ts-version
         uses: paulhatch/semantic-version@v5.4.0
         with:
-          tag_prefix: "v"
-          major_pattern: "/\\(sdk-ts\\):.*(!:|BREAKING CHANGE:)/"
-          minor_pattern: "/feat\\(sdk-ts\\):/"
-          version_format: "${major}.${minor}.${patch}"
-          change_path: "sdks/ts"
+          tag_prefix: v
+          major_pattern: '/\(sdk-ts\):.*(!:|BREAKING CHANGE:)/'
+          minor_pattern: '/feat\(sdk-ts\):/'
+          version_format: '${major}.${minor}.${patch}'
+          change_path: sdks/ts
           namespace: ts
           bump_each_commit: false
           search_commit_body: true
@@ -56,7 +56,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'pnpm'
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install
@@ -74,47 +74,47 @@ jobs:
         run: |
           # Get the previous tag for this SDK
           PREV_TAG=$(git tag -l "v*-ts" --sort=-version:refname | head -n 1)
-          
+
           if [ -z "$PREV_TAG" ]; then
             COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
           else
             COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
           fi
-          
+
           # Organize commits by type
           FEATURES=$(echo "$COMMITS" | grep "feat(sdk-ts):" || true)
           FIXES=$(echo "$COMMITS" | grep "fix(sdk-ts):" || true)
           BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\(sdk-ts\)!:|BREAKING CHANGE" || true)
           OTHER=$(echo "$COMMITS" | grep -v -E "feat\(sdk-ts\):|fix\(sdk-ts\):" || true)
-          
+
           # Build changelog
           echo "## TypeScript SDK ${{ needs.version.outputs.ts-version }}" > changelog.md
           echo "" >> changelog.md
-          
+
           if [ -n "$BREAKING" ]; then
             echo "### ⚠️ Breaking Changes" >> changelog.md
             echo "$BREAKING" >> changelog.md
             echo "" >> changelog.md
           fi
-          
+
           if [ -n "$FEATURES" ]; then
             echo "### ✨ Features" >> changelog.md
             echo "$FEATURES" >> changelog.md
             echo "" >> changelog.md
           fi
-          
+
           if [ -n "$FIXES" ]; then
             echo "### 🐛 Bug Fixes" >> changelog.md
             echo "$FIXES" >> changelog.md
             echo "" >> changelog.md
           fi
-          
+
           if [ -n "$OTHER" ]; then
             echo "### 📝 Other Changes" >> changelog.md
             echo "$OTHER" >> changelog.md
             echo "" >> changelog.md
           fi
-          
+
           echo "### 📦 Installation" >> changelog.md
           echo "\`\`\`bash" >> changelog.md
           echo "pnpm add @simpleplatform/sdk@${{ needs.version.outputs.ts-version }}" >> changelog.md
@@ -196,17 +196,17 @@ jobs:
       - name: Update CHANGELOG.md
         run: |
           cd sdks/ts
-          
+
           if [ ! -f CHANGELOG.md ]; then
             echo "# Changelog" > CHANGELOG.md
             echo "" >> CHANGELOG.md
             echo "All notable changes to the TypeScript SDK will be documented in this file." >> CHANGELOG.md
             echo "" >> CHANGELOG.md
           fi
-          
+
           cat ../../changelog.md CHANGELOG.md > CHANGELOG.tmp
           mv CHANGELOG.tmp CHANGELOG.md
-          
+
           git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
           git config --local user.name "Simple DevOps"
           git add CHANGELOG.md

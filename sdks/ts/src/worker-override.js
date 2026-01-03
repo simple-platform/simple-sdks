@@ -13,11 +13,12 @@ const pendingHostRequests = new Map()
 self.addEventListener('message', (event) => {
   const message = event && event.data
   if (
-    typeof message !== 'object' ||
-    message === null ||
-    message.type !== 'host_response'
-  )
+    typeof message !== 'object'
+    || message === null
+    || message.type !== 'host_response'
+  ) {
     return
+  }
 
   const pending = pendingHostRequests.get(message.requestId)
   if (!pending)
