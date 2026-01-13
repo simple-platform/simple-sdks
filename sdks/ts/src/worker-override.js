@@ -2,7 +2,7 @@
  * @file SDK Worker Override Module.
  * This file exports worker-compatible implementations of `execute` and
  * `executeAsync`. The SDK's build tool will use esbuild's `alias` feature
- * to replace the original `@simple/sdk/host` module with this one during
+ * to replace the original `@simpleplatform/sdk/host` module with this one during
  * the async application build.
  */
 
