@@ -7,8 +7,8 @@ packages:
   - packages/*
 
 overrides:
-  '@typescript-eslint/eslint-plugin': 8.49.0
-  ts-api-utils: 2.1.0
+  '@typescript-eslint/eslint-plugin': 8.53.0
+  ts-api-utils: 2.4.0
 
 onlyBuiltDependencies:
   - esbuild
