@@ -21,7 +21,7 @@ async function main() {
   /**
    * This is a local esbuild plugin to solve our specific problem.
    * It intercepts module resolution. When it sees a file inside the
-   * @simple/sdk package trying to import the exact relative path './host',
+   * @simpleplatform/sdk package trying to import the exact relative path './host',
    * it redirects the bundler to our worker-override.js script instead.
    * This is the robust way to swap implementations at build time.
    */
@@ -30,7 +30,7 @@ async function main() {
     setup(build) {
       // Find the absolute path to the SDK's dist directory.
       // We need this to check if an import is coming from our SDK.
-      const sdkDistPath = path.dirname(require.resolve('@simple/sdk'))
+      const sdkDistPath = path.dirname(require.resolve('@simpleplatform/sdk'))
 
       // The 'onResolve' hook intercepts module lookups.
       build.onResolve({ filter: /^\.\/host$/ }, (args) => {
@@ -137,7 +137,7 @@ async function main() {
       minify: true,
       outfile: outFileAbs,
       stdin: {
-        contents: `import simple from '@simple/sdk'; simple.Handle(() => {});`,
+        contents: `import simple from '@simpleplatform/sdk'; simple.Handle(() => {});`,
         // eslint-disable-next-line node/prefer-global/process
         resolveDir: process.cwd(),
       },
