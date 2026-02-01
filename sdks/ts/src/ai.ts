@@ -103,7 +103,7 @@ export interface AICommonOptions {
 
   /**
    * If true, forces the AI to provide a detailed, multi-step reasoning
-   * process in the generated output. Defaults to false.
+   * process in the generated output. Defaults to true.
    */
   reasoning?: boolean
 
@@ -270,7 +270,7 @@ async function _executeAIOperation(
   const {
     model,
     prompt,
-    reasoning,
+    reasoning = true,
     reasoningBudget,
     regenerate = false,
     systemPrompt,
