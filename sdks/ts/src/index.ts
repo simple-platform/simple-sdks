@@ -1,7 +1,8 @@
+/* eslint-disable perfectionist/sort-imports */
+import './internal/global'
+
 import type { Context, SimpleRequest, SimpleResponse } from './types'
 import * as host from './host'
-
-import './internal/global'
 
 export * from './storage'
 export * from './types'
