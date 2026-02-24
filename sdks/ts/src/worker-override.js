@@ -11,22 +11,21 @@ const pendingHostRequests = new Map()
 
 // eslint-disable-next-line no-restricted-globals
 self.addEventListener('message', (event) => {
-  const message = event && event.data
-  if (
-    typeof message !== 'object'
-    || message === null
-    || message.type !== 'host_response'
-  ) {
+  const message = event.data
+  if (message.type !== 'host_response')
     return
-  }
 
   const pending = pendingHostRequests.get(message.requestId)
   if (!pending)
     return
 
+  const errorMsg = typeof message.response.error === 'object' && message.response.error?.message
+    ? message.response.error.message
+    : message.response.error ?? 'Unknown host error'
+
   message.response.ok
     ? pending.resolve(message.response)
-    : pending.reject(new Error(message.response.error ?? 'Unknown host error'))
+    : pending.reject(new Error(errorMsg))
 
   pendingHostRequests.delete(message.requestId)
 })
