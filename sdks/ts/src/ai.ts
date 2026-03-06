@@ -192,6 +192,23 @@ export interface AITranscribeOptions extends Omit<AICommonOptions, 'prompt'> {
 }
 
 /**
+ * Options for searching faces within the Face Engine.
+ */
+export interface AIFaceSearchOptions {
+  /**
+   * Maximum number of matches to return.
+   * Defaults to 5.
+   */
+  maxFaces?: number
+
+  /**
+   * Minimum similarity percentage (0-100) required for a match.
+   * Defaults to 85.0.
+   */
+  similarityThreshold?: number
+}
+
+/**
  * The response structure from a successful AI `extract` or `summarize` operation.
  */
 export interface AIExecutionResult {
@@ -562,4 +579,142 @@ export async function transcribe(
     },
     context,
   )
+}
+
+// ============================================================================
+// Face Recognition API
+// ============================================================================
+
+let _collectionEnsured = false
+
+/**
+ * Internal helper to ensure the face collection exists before making face operations.
+ * Caches the result per Javascript isolate execution to minimize RPC overhead over
+ * sequential calls in the same logic.
+ */
+async function _ensureFaceCollection(context: Context): Promise<void> {
+  if (_collectionEnsured)
+    return
+
+  const response = await hostExecute('action:ai/face/ensure-collection', {}, context)
+  if (!response.ok) {
+    throw new Error(response.error?.message || 'Failed to ensure face collection.')
+  }
+
+  _collectionEnsured = true
+}
+
+/**
+ * Enrolls a face for a subject. The face is associated with the given `subjectId`
+ * within the tenant's secure collection.
+ *
+ * @param subjectId A unique identifier for the subject (e.g., employee ID, user ID).
+ * @param image The image containing the face to enroll. Can be a base64 string or a DocumentHandle.
+ * @param context The execution context provided by the host.
+ * @returns A promise that resolves to an object containing the enrolled `face_id`.
+ * @throws Will throw an error if the operation fails or inputs are invalid.
+ */
+export async function enrollFace(
+  subjectId: string,
+  image: DocumentHandle | string,
+  context: Context,
+): Promise<{ face_id: string }> {
+  if (!subjectId) {
+    throw new Error('The `subjectId` parameter is required for `enrollFace`.')
+  }
+
+  if (!image) {
+    throw new Error('The `image` parameter is required for `enrollFace`.')
+  }
+
+  // Ensure the tenant's collection is ready before enrolling
+  await _ensureFaceCollection(context)
+
+  // Upload pending documents if given handles
+  const processedImage = await _uploadPendingFiles(image, context)
+
+  const payload = {
+    image: processedImage,
+    subject_id: subjectId,
+  }
+
+  const response = await hostExecute('action:ai/face/enroll', payload, context)
+  if (!response.ok) {
+    throw new Error(response.error?.message || 'Face enrollment failed.')
+  }
+
+  return response.data
+}
+
+/**
+ * Searches for faces matching the provided image within the tenant's collection.
+ *
+ * @param image The image to search for. Can be a base64 string or a DocumentHandle.
+ * @param options Configuration for the search operation (e.g., maxFaces, similarityThreshold).
+ * @param context The execution context provided by the host.
+ * @returns A promise that resolves to a list of matching faces and their confidence scores.
+ * @throws Will throw an error if the operation fails or inputs are invalid.
+ */
+export async function searchFace(
+  image: DocumentHandle | string,
+  options: AIFaceSearchOptions = {},
+  context: Context,
+): Promise<any> {
+  if (!image) {
+    throw new Error('The `image` parameter is required for `searchFace`.')
+  }
+
+  // Ensure collection exists before searching
+  await _ensureFaceCollection(context)
+
+  const processedImage = await _uploadPendingFiles(image, context)
+
+  // Map JS property names to Elixir convention if needed, though they are passed as options
+  // and parsed correctly in simple_logic if expected.
+  // The simple_ai FaceEngine expects snake_case for options like max_faces or similarity_threshold.
+  const mappedOptions: Record<string, any> = {}
+  if (options.maxFaces !== undefined)
+    mappedOptions.max_faces = options.maxFaces
+  if (options.similarityThreshold !== undefined)
+    mappedOptions.similarity_threshold = options.similarityThreshold
+
+  const payload = {
+    image: processedImage,
+    options: mappedOptions,
+  }
+
+  const response = await hostExecute('action:ai/face/search', payload, context)
+  if (!response.ok) {
+    throw new Error(response.error?.message || 'Face search failed.')
+  }
+
+  return response.data
+}
+
+/**
+ * Deletes one or more faces from the tenant's collection by their face IDs.
+ *
+ * @param faceIds An array of face IDs to delete.
+ * @param context The execution context provided by the host.
+ * @returns A promise that resolves to an object indicating the IDs of successfully deleted faces.
+ * @throws Will throw an error if the operation fails.
+ */
+export async function deleteFace(faceIds: string[], context: Context): Promise<{ deleted: string[] }> {
+  if (!faceIds || !Array.isArray(faceIds) || faceIds.length === 0) {
+    throw new Error('The `faceIds` parameter must be a non-empty array for `deleteFace`.')
+  }
+
+  await _ensureFaceCollection(context)
+
+  const payload = {
+    face_ids: faceIds,
+  }
+
+  const response = await hostExecute('action:ai/face/delete', payload, context)
+  if (!response.ok) {
+    throw new Error(response.error?.message || 'Face deletion failed.')
+  }
+
+  // Ensure consistent return format
+  return { deleted: Array.isArray(response.data) ? response.data : response.data?.deleted || [] }
 }
