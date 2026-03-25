@@ -26,9 +26,9 @@ export interface DocumentHandle {
   storage_path: string
 }
 
-/** Represents the source configuration for downloading an external file. */
+/** Represents the source configuration for an external file upload (URL or in-memory bytes). */
 export interface ExternalFileSource {
-  /** Optional authentication configuration for accessing the external file. */
+  /** Optional authentication configuration for accessing the external file (URL path only). */
   auth?: {
     /** Bearer token for bearer authentication. */
     bearer_token?: string
@@ -43,8 +43,20 @@ export interface ExternalFileSource {
     username?: string
   }
 
-  /** The URL of the external file to download. */
-  url: string
+  /**
+   * Base64-encoded binary content for in-memory uploads.
+   * Use this with `filename` and `mime_type` instead of `url`.
+   */
+  bytes?: string
+
+  /** Original filename — required when using `bytes`. */
+  filename?: string
+
+  /** MIME type of the file — required when using `bytes`. */
+  mime_type?: string
+
+  /** The URL of the external file to download. Mutually exclusive with `bytes`. */
+  url?: string
 }
 
 /** Contains metadata about the specific logic execution. */
