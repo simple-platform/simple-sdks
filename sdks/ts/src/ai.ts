@@ -585,25 +585,6 @@ export async function transcribe(
 // Face Recognition API
 // ============================================================================
 
-let _collectionEnsured = false
-
-/**
- * Internal helper to ensure the face collection exists before making face operations.
- * Caches the result per Javascript isolate execution to minimize RPC overhead over
- * sequential calls in the same logic.
- */
-async function _ensureFaceCollection(context: Context): Promise<void> {
-  if (_collectionEnsured)
-    return
-
-  const response = await hostExecute('action:ai/face/ensure-collection', {}, context)
-  if (!response.ok) {
-    throw new Error(response.error?.message || 'Failed to ensure face collection.')
-  }
-
-  _collectionEnsured = true
-}
-
 /**
  * Enrolls a face for a subject. The face is associated with the given `subjectId`
  * within the tenant's secure collection.
@@ -627,10 +608,7 @@ export async function enrollFace(
     throw new Error('The `image` parameter is required for `enrollFace`.')
   }
 
-  // Ensure the tenant's collection is ready before enrolling
-  await _ensureFaceCollection(context)
-
-  // Upload pending documents if given handles
+  // Upload pending DocumentHandles to ephemeral storage
   const processedImage = await _uploadPendingFiles(image, context)
 
   const payload = {
@@ -663,9 +641,6 @@ export async function searchFace(
   if (!image) {
     throw new Error('The `image` parameter is required for `searchFace`.')
   }
-
-  // Ensure collection exists before searching
-  await _ensureFaceCollection(context)
 
   const processedImage = await _uploadPendingFiles(image, context)
 
@@ -703,8 +678,6 @@ export async function deleteFace(faceIds: string[], context: Context): Promise<{
   if (!faceIds || !Array.isArray(faceIds) || faceIds.length === 0) {
     throw new Error('The `faceIds` parameter must be a non-empty array for `deleteFace`.')
   }
-
-  await _ensureFaceCollection(context)
 
   const payload = {
     face_ids: faceIds,
