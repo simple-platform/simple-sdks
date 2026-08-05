@@ -154,25 +154,37 @@ const result = await graphql.mutate(
 
 ### HTTP Module
 
-Make external HTTP requests with a clean interface:
+Make external HTTP requests with a clean interface.
+
+Every function resolves with an `HttpResponse<T>` envelope — `status`, `headers`,
+`ok`, and the parsed `body`. A non-2xx reply from the remote server is **not** an
+exception: it resolves with `ok: false` so you can inspect the status and body.
+Only a failure to reach the server throws.
 
 ```typescript
 import * as http from '@simpleplatform/sdk/http'
 
 // GET request
-const data = await http.get(
+const users = await http.get<Array<{ id: string, name: string }>>(
   'https://api.example.com/users',
   { Authorization: 'Bearer token123' },
   request.context
 )
 
-// POST request
-const result = await http.post(
+console.log(users.status) // 200
+console.log(users.body) // [{ id: "...", name: "..." }]
+
+// POST request — check the status before trusting the body
+const created = await http.post(
   'https://api.example.com/orders',
   { productId: '456', quantity: 2 },
   { 'Content-Type': 'application/json' },
   request.context
 )
+
+if (!created.ok) {
+  throw new Error(`Order rejected with status ${created.status}`)
+}
 
 // Custom request
 const response = await http.fetch(
