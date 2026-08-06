@@ -15,7 +15,7 @@
     "node": ">=25"
   },
   "scripts": {
-    "lint": "eslint sdks/ts .github *.{js,ts,json}"
+    "lint": "eslint ."
   },
   "dependencies": {
     "is-ci": "^4.1.0"
