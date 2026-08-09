@@ -132,5 +132,12 @@
   "rust-analyzer.check.extraEnv": {
     "RUSTUP_HOME": "${workspaceFolder}/.rustup",
     "RUSTC": "${workspaceFolder}/.devbox/nix/profile/default/bin/rustc"
+  },
+  "kestra.schema.match-path": "flows",
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": [
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml"
+    ]
   }
 }
