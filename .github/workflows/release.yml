@@ -62,17 +62,33 @@ jobs:
       #     not been released yet" — whichever run picks them up, the version
       #     published is the one those commits earned.
       #
-      # `major_pattern` matches the conventional-commits `!` where it is defined
-      # to sit, immediately before the colon. That anchoring is what lets
-      # `search_commit_body` stay on below: the body is searched for the feature
-      # and fix scopes while a major bump stays tied to the subject line.
+      # WHILE THIS CRATE IS 0.x, A BREAKING CHANGE BUMPS THE MINOR.
+      #
+      # Cargo does not treat 0.x as an unfinished 1.0: below one, the MINOR is
+      # the incompatibility boundary, so `0.1` and `0.2` are different versions
+      # to a caller and `^0.1` never moves onto `0.2` by itself. The minor
+      # therefore already carries, before 1.0, exactly what the major carries
+      # after it.
+      #
+      # So `!` is read as a minor bump here, alongside `feat`. Left as a major
+      # bump it would take the first deliberate break from 0.1.0 straight to
+      # 1.0.0 — declaring the API stable as a side effect of a punctuation mark,
+      # which is the one thing 0.x exists to avoid saying.
+      #
+      # Reaching 1.0.0 is a judgement that the surface is worth committing to,
+      # so it is written out in full and cannot be typed by accident. Until
+      # someone writes that sentence, this lane stays in 0.x.
+      #
+      # `search_commit_body` stays on below, and both patterns are anchored on
+      # the scope, so a body may carry them and a subject need not be the only
+      # place a release is earned.
       - name: Rust SDK Version
         id: rust-version
         uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
         with:
           tag_prefix: v
-          major_pattern: '/\(sdk-rust\)!:/'
-          minor_pattern: '/feat\(sdk-rust\):/'
+          major_pattern: '/\(sdk-rust\) declares the API stable/'
+          minor_pattern: '/(feat\(sdk-rust\):)|(\(sdk-rust\)!:)/'
           version_format: '${major}.${minor}.${patch}'
           change_path: sdks/rust
           namespace: rust
