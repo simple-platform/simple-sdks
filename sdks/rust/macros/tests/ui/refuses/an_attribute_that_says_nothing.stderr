@@ -1,0 +1,32 @@
+error: `#[simple]` takes its constraints in parentheses: `#[simple(length(max = 64))]`.
+       accepted here: range(min = …, max = …), length(min = …, max = …), pattern = "…", format = "…", default = …, example = …, deprecated
+  --> tests/ui/refuses/an_attribute_that_says_nothing.rs:10:5
+   |
+10 |     #[simple]
+   |     ^^^^^^^^^
+
+error: `#[simple()]` constrains nothing. Write a constraint in it, or remove it.
+       accepted here: range(min = …, max = …), length(min = …, max = …), pattern = "…", format = "…", default = …, example = …, deprecated
+  --> tests/ui/refuses/an_attribute_that_says_nothing.rs:13:5
+   |
+13 |     #[simple()]
+   |     ^^^^^^^^^^^
+
+error: `#[simple]` takes its constraints in parentheses: `#[simple(length(max = 64))]`.
+       accepted here: range(min = …, max = …), length(min = …, max = …), pattern = "…", format = "…", default = …, example = …, deprecated
+  --> tests/ui/refuses/an_attribute_that_says_nothing.rs:16:5
+   |
+16 |     #[simple = "length(max = 64)"]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `range()` sets no bound. Write `range(min = 1, max = 90)`, or remove it.
+  --> tests/ui/refuses/an_attribute_that_says_nothing.rs:19:14
+   |
+19 |     #[simple(range())]
+   |              ^^^^^
+
+error: `pattern` is empty, which constrains nothing. Write `pattern = "^KNOW"`, or remove it.
+  --> tests/ui/refuses/an_attribute_that_says_nothing.rs:22:24
+   |
+22 |     #[simple(pattern = "")]
+   |                        ^^

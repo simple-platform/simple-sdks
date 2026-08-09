@@ -1,0 +1,23 @@
+error: `length(min = …)` takes a whole number, and `"1"` is a string.
+ --> tests/ui/refuses/a_value_of_the_wrong_type.rs:9:27
+  |
+9 |     #[simple(length(min = "1"))]
+  |                           ^^^
+
+error: `range(max = …)` takes a number, and `true` is a boolean.
+  --> tests/ui/refuses/a_value_of_the_wrong_type.rs:12:26
+   |
+12 |     #[simple(range(max = true))]
+   |                          ^^^^
+
+error: `length(max = …)` counts whole things, and `2.5` is a fraction.
+  --> tests/ui/refuses/a_value_of_the_wrong_type.rs:15:27
+   |
+15 |     #[simple(length(max = 2.5))]
+   |                           ^^^
+
+error: `pattern` takes a string, and `1` is a whole number. Write `pattern = "^KNOW"`.
+  --> tests/ui/refuses/a_value_of_the_wrong_type.rs:18:24
+   |
+18 |     #[simple(pattern = 1)]
+   |                        ^

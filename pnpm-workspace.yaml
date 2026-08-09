@@ -5,6 +5,10 @@ trustPolicy: no-downgrade
 packages:
   - sdks/*
   - packages/*
+  # sdks/rust is a cargo crate, not a pnpm package. Excluding it by name states
+  # that directly, so the workspace membership of `sdks/rust` is a decision
+  # written here rather than a consequence of which files happen to be present.
+  - '!sdks/rust'
 
 overrides:
   '@typescript-eslint/eslint-plugin': 8.53.0
