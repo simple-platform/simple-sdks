@@ -8,13 +8,19 @@ on:
     branches:
       - main
 
-# ONE RELEASE AT A TIME. Two runs publishing at once race each other into the
-# same environment and the same registries, and the second to finish overwrites
-# the first's tag push. In-progress runs are not cancelled: a run that has
-# already uploaded to a registry cannot be undone by stopping it.
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+# SERIALISATION LIVES ON THE PUBLISH JOBS, NOT ON THE WORKFLOW.
+#
+# Two runs uploading to one registry at once race each other, so publishes have
+# to queue — but only against publishes to the same registry. A group around the
+# whole workflow makes every job wait behind every other job, and a publish waits
+# on a human: the deployment review on each registry's environment can hold a run
+# for as long as it takes someone to read the changelog. One sat for 6h11m, and
+# the next push spent 30 minutes of that queued behind it with nothing to do but
+# compute a version and run a build that had no bearing on the release ahead.
+#
+# So each publish job carries its own `concurrency` block. Everything else in
+# this file — versioning, building, linting, the gate — is free to run whenever
+# it is pushed, because none of it touches a registry.
 
 permissions:
   contents: read
@@ -33,22 +39,44 @@ jobs:
       rust-toolchain: ${{ steps.rust-toolchain.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
+      # THIS PACKAGE IS PAST 1.0, SO THE MAJOR IS ITS INCOMPATIBILITY BOUNDARY.
+      #
+      # Above one, `^1.2` never moves onto `2.0` by itself, so cutting a major
+      # tells every installed caller that their next `pnpm update` stops here
+      # until they have done the migration. When that happens is a judgement
+      # about timing and about the note that ships alongside it, and the diff
+      # cannot make it: a break can land on `main` well ahead of the release that
+      # carries it, and it can be taken back off again. Both have happened here.
+      #
+      # So a major is written out in full and cannot be typed by accident. Until
+      # someone writes that sentence, this lane cuts patches and minors. A `!`
+      # still records the break where a reader looks for it — in `git log`, and
+      # under Breaking Changes in the changelog step below — but recording a
+      # break and choosing the release that carries it are two different acts,
+      # and only the second one ends in an upload.
+      #
+      # `search_commit_body` is OFF for this lane, and that is what makes the
+      # sentence above safe to write down. With bodies searched it would be
+      # enough to QUOTE the policy — in a commit explaining it, or a README edit
+      # pasting it — to compute a major from a change that declared nothing. The
+      # subject line is the one place a release is deliberate, so this lane reads
+      # only that. The Rust step below turns it off for the same reason.
       - name: TypeScript SDK Version
         id: ts-version
         uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
         with:
           tag_prefix: v
-          major_pattern: '/(\(sdk-ts\).*!)|BREAKING CHANGE/'
+          major_pattern: '/\(sdk-ts\)!?: release the next major/'
           minor_pattern: '/feat\(sdk-ts\):/'
           version_format: '${major}.${minor}.${patch}'
           change_path: sdks/ts
           namespace: ts
           bump_each_commit: false
-          search_commit_body: true
+          search_commit_body: false
           enable_prerelease_mode: false
           debug: false
 
@@ -140,17 +168,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
+      # Pinned by commit, like every other action in this file. `@v3` is a branch
+      # in that repository rather than a tag, so it is a name that can be moved
+      # over a different tree without the reference here changing; the trailing
+      # comment records the released tag the pinned commit carries.
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v3.0.0
         with:
           version: 10.32.1
 
+      # pnpm is on PATH by the time this runs, so `cache: pnpm` can ask it where
+      # its store lives. Naming the cache explicitly also settles which package
+      # manager is cached: from v5 this action reads package.json's
+      # `packageManager` field when no `cache` is given, and an explicit value
+      # takes precedence over that.
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '25'
           cache: pnpm
@@ -219,7 +256,7 @@ jobs:
 
       - name: Upload changelog
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: changelog
           path: changelog.md
@@ -227,7 +264,7 @@ jobs:
 
       - name: Upload build
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ts-sdk
           path: sdks/ts/dist
@@ -267,16 +304,29 @@ jobs:
     environment:
       name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
+    # One upload to npm at a time, and nothing else waits on it. The group names
+    # the registry and nothing else — there is one package here and only `main`
+    # reaches this job, so the registry is the whole of what has to queue.
+    # In-progress runs are not cancelled: a run that has already uploaded to a
+    # registry cannot be undone by stopping it.
+    concurrency:
+      group: publish-npmjs.org
+      cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
+      # `package-manager-cache: false` because pnpm is not on PATH yet — the
+      # Corepack step below is what puts it there. From v5 this action caches for
+      # the package manager named in package.json's `packageManager` field unless
+      # it is told not to, and caching pnpm means asking pnpm where its store is.
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '25'
+          package-manager-cache: false
 
       - name: Enable Corepack
         run: corepack enable
@@ -285,10 +335,23 @@ jobs:
         run: pnpm install
 
       - name: Download changelog
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: changelog
 
+      # THE VERSION OF RECORD IS THE TAG AND THE REGISTRY.
+      #
+      # `sdks/ts/package.json` carries `0.0.0` in the repository — a number no
+      # release has ever had — and this step writes the computed one into the
+      # checkout that is about to be packed, so the published package carries it.
+      # Nothing commits that edit back. `main` is protected, so the only ways to
+      # land it are to open the branch or to hand a release job a credential that
+      # bypasses the protection, and what either would buy is a second copy of
+      # what the `v<version>-ts` tag and the npm registry already say.
+      #
+      # The release notes go the same way: the GitHub Release at the end of this
+      # job carries the changelog this run generated, so there is no CHANGELOG.md
+      # in the tree that could fall out of step with what was actually published.
       - name: Update package version
         run: |
           cd sdks/ts
@@ -301,26 +364,6 @@ jobs:
           pnpm publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Update CHANGELOG.md
-        run: |
-          cd sdks/ts
-
-          if [ ! -f CHANGELOG.md ]; then
-            echo "# Changelog" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
-            echo "All notable changes to the TypeScript SDK will be documented in this file." >> CHANGELOG.md
-            echo "" >> CHANGELOG.md
-          fi
-
-          cat ../../changelog.md CHANGELOG.md > CHANGELOG.tmp
-          mv CHANGELOG.tmp CHANGELOG.md
-
-          git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
-          git config --local user.name "Simple DevOps"
-          git add CHANGELOG.md package.json
-          git commit -m "chore(sdk-ts): release version ${{ needs.version.outputs.ts-version }} [skip ci]" || true
-          git push || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
@@ -340,7 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -436,7 +479,7 @@ jobs:
       # workflow run and each carries its own release notes through to publish.
       - name: Upload changelog
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: rust-changelog
           path: rust-changelog.md
@@ -444,7 +487,7 @@ jobs:
 
       - name: Upload build
         if: github.ref == 'refs/heads/main' && !github.event.pull_request
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: rust-sdk
           path: sdks/rust/target/package/*.crate
@@ -477,9 +520,14 @@ jobs:
     environment:
       name: crates.io
       url: https://crates.io/crates/simpleplatform-sdk/${{ needs.version.outputs.rust-version }}
+    # Its own group, so a crate release queues behind crate releases and behind
+    # nothing else. See the note on the TypeScript lane above.
+    concurrency:
+      group: publish-crates.io
+      cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -493,10 +541,18 @@ jobs:
           rustc --version
 
       - name: Download changelog
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: rust-changelog
 
+      # THE VERSION OF RECORD IS THE TAG AND THE REGISTRY.
+      #
+      # Both manifests carry `0.0.0` in the repository — a number no release has
+      # ever had — and this step writes the computed one into the checkout that
+      # cargo is about to package, so the published crates carry it. Nothing
+      # commits that edit back; see the note on the TypeScript lane above for
+      # why, and for where the release notes live instead.
+      #
       # `sed` rather than a helper: cargo has no counterpart to `pnpm version`,
       # and cargo-edit's `cargo set-version` would mean a from-source install on
       # every release. The substitution is anchored to the start of a line, which
@@ -571,32 +627,6 @@ jobs:
           # npm one.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
         run: cargo publish --allow-dirty
-
-      - name: Update CHANGELOG.md
-        run: |
-          cd sdks/rust
-
-          if [ ! -f CHANGELOG.md ]; then
-            echo "# Changelog" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
-            echo "All notable changes to the Rust SDK will be documented in this file." >> CHANGELOG.md
-            echo "" >> CHANGELOG.md
-          fi
-
-          cat ../../rust-changelog.md CHANGELOG.md > CHANGELOG.tmp
-          mv CHANGELOG.tmp CHANGELOG.md
-
-          git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
-          git config --local user.name "Simple DevOps"
-          git add CHANGELOG.md Cargo.toml macros/Cargo.toml Cargo.lock
-          git commit -m "chore(sdk-rust): release version ${{ needs.version.outputs.rust-version }} [skip ci]" || true
-
-          # publish-typescript may have pushed its own release commit to main
-          # while this job was uploading to crates.io. Rebasing onto whatever
-          # landed first keeps both lanes' release commits when a single run
-          # publishes both SDKs.
-          git pull --rebase || true
-          git push || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
