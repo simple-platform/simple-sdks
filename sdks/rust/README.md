@@ -23,6 +23,20 @@ member constraints turns it off with `default-features = false`.
 ### What an action's crate names
 
 - `simpleplatform-sdk`, `serde` and `serde_json` as dependencies, as above.
+- An `async` feature that hands the flag on to this crate:
+
+  ```toml
+  [features]
+  async = [ "simpleplatform-sdk/async" ]
+  ```
+
+  This is what makes the browser artifact buildable. The two builds below select
+  between two import sets, and they select with `--features async` — a flag
+  cargo resolves against the crate being **built**, which is your action, not
+  its dependency. So the action needs a feature of that name to pass along.
+  Without it the browser build stops at `does not contain this feature: async`.
+  An action whose execution environment is `server` never needs it.
+
 - A release profile: `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
   `strip = true`.
 - Nothing else. `allocate_buffer` and `set_response_buffer` reach the module's
