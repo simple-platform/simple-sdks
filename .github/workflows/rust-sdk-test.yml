@@ -1,0 +1,233 @@
+# THE RUST GATE. Every check the Rust SDK is held to runs here, on pull
+# requests and on pushes to `main`, for any path that can change what the crate
+# builds or the toolchain it is built with.
+#
+# ONE AUTHORITY FOR THE TOOLCHAIN VERSION. `devbox.json` is where a
+# contributor's Rust comes from, so it is where CI's comes from too — read out
+# of the file below with `jq`, never copied into an `env:` block here. One place
+# to write the number is one place to keep right.
+#
+# WHICH MAKES devbox.json A TRIGGER PATH. The paths list names the producer of
+# that number as well as its consumers: editing RUST_VERSION changes what every
+# job below installs, so editing devbox.json runs every job below.
+#
+# THE STEPS ARE sdks/rust/README.md's "Checks" SECTION, IN ORDER. If a check is
+# added there it belongs here, and vice versa. `--all-targets` is deliberately
+# absent from the two wasm clippy lines: the tests are host-only by design, and
+# asking clippy to build them for wasm asks it to build `testing`, which is not
+# compiled there.
+name: Rust SDK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/rust-sdk-test.yml
+      - devbox.json
+      - sdks/rust/**
+  pull_request:
+    paths:
+      - .github/workflows/rust-sdk-test.yml
+      - devbox.json
+      - sdks/rust/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Resolved once and handed to the other jobs, so the assertion below runs once
+  # and every job provably installs the same toolchain.
+  toolchain:
+    name: Resolve toolchain
+    runs-on: ubuntu-latest
+    outputs:
+      rust-version: ${{ steps.devbox.outputs.rust-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Read RUST_VERSION from devbox.json
+        id: devbox
+        run: |
+          set -euo pipefail
+
+          # `// empty` rather than jq's default `null`, so the two checks below
+          # see an empty string and report the missing key here, by name.
+          version=$(jq -r '.env.RUST_VERSION // empty' devbox.json)
+
+          if [ -z "$version" ]; then
+            echo "devbox.json has no .env.RUST_VERSION. It is the only authority for the Rust version; if it moved, move this read with it." >&2
+            exit 1
+          fi
+
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "devbox.json .env.RUST_VERSION is '$version', which is not a toolchain version" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "rust-version=$version" >> "$GITHUB_OUTPUT"
+          echo "Rust \`$version\`, read from \`devbox.json\`." >> "$GITHUB_STEP_SUMMARY"
+
+  # The host checks. The crate's tests, examples and doc tests all run natively —
+  # there is no wasm, no toolchain and no emulator in this job by design.
+  check:
+    name: Host checks
+    needs: toolchain
+    runs-on: ubuntu-latest
+
+    env:
+      RUST_VERSION: ${{ needs.toolchain.outputs.rust-version }}
+
+    defaults:
+      run:
+        working-directory: sdks/rust
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # rustup by hand rather than a third-party action: the version to install
+      # is already decided by devbox.json above, and asking for it with
+      # `--component rustfmt,clippy` puts both in the toolchain by construction.
+      - name: Set up Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy
+          rustup default "$RUST_VERSION"
+          rustc --version
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sdks/rust/target
+          key: ${{ runner.os }}-cargo-host-${{ env.RUST_VERSION }}-${{ hashFiles('sdks/rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-host-${{ env.RUST_VERSION }}-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The async feature swaps which host imports the module declares, so it is
+      # a configuration of its own and is held to the same warning-free bar.
+      - name: Clippy (async)
+        run: cargo clippy --all-targets --features async -- -D warnings
+
+      # Unit tests, the two integration suites, and the `test = true` examples —
+      # which are the ported actions, and are the acceptance test.
+      - name: Test
+        run: cargo test
+
+      # Every public example in this crate is a doc test, so they get a step of
+      # their own and stay covered whatever shape the line above takes.
+      - name: Doc tests
+        run: cargo test --doc
+
+  # Building and linting for what actually ships: two artifacts from one source,
+  # each declaring the imports its own host binds. Both are built here so both
+  # can be read.
+  wasm:
+    name: wasm32-wasip1
+    needs: toolchain
+    runs-on: ubuntu-latest
+
+    env:
+      RUST_VERSION: ${{ needs.toolchain.outputs.rust-version }}
+
+    defaults:
+      run:
+        working-directory: sdks/rust
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+          rustup target add wasm32-wasip1
+          rustc --version
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sdks/rust/target
+          key: ${{ runner.os }}-cargo-wasm-${{ env.RUST_VERSION }}-${{ hashFiles('sdks/rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-${{ env.RUST_VERSION }}-
+
+      - name: Clippy for wasm32-wasip1
+        run: cargo clippy --target wasm32-wasip1 --lib --examples -- -D warnings
+
+      - name: Clippy for wasm32-wasip1 (async)
+        run: cargo clippy --target wasm32-wasip1 --lib --examples --features async -- -D warnings
+
+      # BUILD THE EXAMPLES. This crate is a library, and linking it into a
+      # binary is what emits a `.wasm` module — the artifact the import check
+      # below reads. An example links it here the way an action links it in
+      # production.
+      #
+      # The server build: a host call is answered synchronously.
+      - name: Build the server artifact
+        run: cargo build --target wasm32-wasip1 --release --examples
+
+      # The browser build: a host call parks the module and wasm-opt's asyncify
+      # pass resumes it. The client host binds four imports, so this build
+      # declares a different import set from the one above.
+      - name: Build the browser artifact
+        run: |
+          cp target/wasm32-wasip1/release/examples/load_knowledge.wasm "$RUNNER_TEMP/server.wasm"
+          cargo build --target wasm32-wasip1 --release --features async --examples
+          cp target/wasm32-wasip1/release/examples/load_knowledge.wasm "$RUNNER_TEMP/browser.wasm"
+
+      # The claim is not that both builds succeeded but that each artifact
+      # declares exactly the imports its own host binds, and that the two sets
+      # differ. This reads that out of the modules themselves.
+      - name: Each artifact declares the imports its host binds
+        run: node ../../.github/scripts/check-wasm-imports.mjs "$RUNNER_TEMP/server.wasm" "$RUNNER_TEMP/browser.wasm"
+
+  # `cargo publish --dry-run` packages the crate and runs cargo's verification
+  # build of the extracted tarball. It is the step that covers what only
+  # packaging shows: that the README path resolves, that the `license` string
+  # parses, that every file the crate needs is included, and that the package
+  # compiles from its extracted form the same way it does in this checkout.
+  #
+  # Registry-side checks — the token, ownership of the name, and the version
+  # being free — belong to the upload itself, in `release.yml`.
+  package:
+    name: Publish dry run
+    needs: toolchain
+    runs-on: ubuntu-latest
+
+    env:
+      RUST_VERSION: ${{ needs.toolchain.outputs.rust-version }}
+
+    defaults:
+      run:
+        working-directory: sdks/rust
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustc --version
+
+      - name: Package the crate without uploading it
+        run: cargo publish --dry-run

@@ -1,24 +1,23 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
   "packages": {
-    "rustup": "1.28.2",
+    "rustup": "1.29.0",
     "nodejs": "25.8.1"
   },
   "env": {
     "COREPACK_INTEGRITY_KEYS": "0",
     "DEVBOX_COREPACK_ENABLED": "true",
-    "RUST_VERSION": "1.90.0",
+    "RUST_VERSION": "1.97.1",
     "RUST_BACKTRACE": "full"
   },
   "shell": {
     "init_hook": [
-      "projectDir=$(dirname $(readlink -f \"$0\"))",
-      "rustupHomeDir=\"$projectDir\"/.rustup",
+      "rustupHomeDir=\"$PWD\"/.rustup",
       "mkdir -p $rustupHomeDir",
       "export RUSTUP_HOME=$rustupHomeDir",
-      "export LIBRARY_PATH=$LIBRARY_PATH:\"$projectDir/nix/profile/default/lib\"",
-      "if ! rustc --version | grep -q \"${RUST_VERSION}\"; then rustup install ${RUST_VERSION} && rustup default ${RUST_VERSION}; fi",
-      "rustup component add rust-analyzer"
+      "if ! rustc --version 2>/dev/null | grep -q \"${RUST_VERSION}\"; then rustup install ${RUST_VERSION} && rustup default ${RUST_VERSION}; fi",
+      "rustup component list --installed 2>/dev/null | grep -q '^rust-analyzer' || rustup component add rust-analyzer",
+      "rustup target list --installed 2>/dev/null | grep -qx 'wasm32-wasip1' || rustup target add wasm32-wasip1"
     ]
   }
 }

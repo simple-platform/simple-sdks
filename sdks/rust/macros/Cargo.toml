@@ -1,0 +1,58 @@
+[package]
+name = "simpleplatform-sdk-macros"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Member constraints for Simple Platform actions written in Rust"
+
+# THIS CRATE EXISTS BECAUSE A PROC-MACRO CRATE CAN EXPORT ONLY MACROS.
+#
+# `[lib] proc-macro = true` below is what makes `#[derive(Schema)]` a thing rustc
+# will run, and a crate carrying that flag may export nothing else. So the
+# authoring surface an action types — `simple::run`, `Request`, `Error` — stays
+# in `simpleplatform-sdk`, and this crate holds the one derive it re-exports.
+#
+# An action never names this crate. It depends on `simpleplatform-sdk`, whose
+# default `derive` feature pulls this in and re-exports `Schema` through the
+# prelude, so one dependency and one import line still cover everything.
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/simple-platform/simple-sdks"
+homepage = "https://docs.simple.dev"
+documentation = "https://docs.rs/simpleplatform-sdk-macros"
+
+# The SDK's keywords and categories, because the two crates are one thing to
+# search for: whichever of them a reader lands on is the one they were after.
+keywords = [
+  "simple",
+  "simple-platform",
+  "simple-sdk",
+  "simple-platform-sdk",
+  "simple-rust-sdk"
+]
+categories = [
+  "wasm",
+  "api-bindings"
+]
+
+[lib]
+name = "simpleplatform_sdk_macros"
+proc-macro = true
+
+# All three are what `serde_derive` already brings into the lock file, so an
+# action that writes constraints compiles the same set of crates it would have
+# compiled for `#[derive(Deserialize)]` anyway.
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = "3.0"
+
+# THE ERRORS ARE THE PRODUCT, SO THE ERRORS ARE WHAT THE TESTS READ.
+#
+# `trybuild` compiles a file that is meant not to compile and compares the whole
+# diagnostic — message, file, line, column and the underlined span — against a
+# recorded `.stderr`. That is the only way to hold a compile error to its exact
+# wording and its exact span, which is what `tests/ui/refuses` does. It is a
+# development dependency of this crate alone and reaches nothing that ships.
+[dev-dependencies]
+trybuild = "1.0"

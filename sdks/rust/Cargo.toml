@@ -1,0 +1,117 @@
+# TWO CRATES, ONE CHECKOUT, ONE SET OF CHECKS.
+#
+# `macros/` holds the `Schema` derive. It is a separate crate because a
+# `proc-macro = true` crate may export only macros, and it is a member of this
+# workspace so that one `cargo fmt`, one `cargo clippy` and one `cargo test`
+# from this directory cover both crates and share one `Cargo.lock` and one
+# `target/`.
+#
+# `default-members` names both explicitly. A workspace whose root is itself a
+# package otherwise defaults to that package alone, which would leave the derive
+# and its compile-error tests outside every command run from here.
+[workspace]
+members = [ "macros" ]
+default-members = [
+  ".",
+  "macros"
+]
+
+[package]
+name = "simpleplatform-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Simple Platform Rust SDK"
+
+# THE CRATE NAME IS THE WHOLE NAME. crates.io has no scopes, so this crate takes
+# the bare `simpleplatform-sdk`, and the `simpleplatform_sdk` lib below is what an
+# action actually types.
+#
+# The licence is the repository's: the root LICENSE is the Apache License 2.0,
+# which is SPDX `Apache-2.0` and is what sdks/ts declares as well. Cargo takes
+# the SPDX expression on its own, and the file itself lives at the repository
+# root.
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/simple-platform/simple-sdks"
+homepage = "https://docs.simple.dev"
+documentation = "https://docs.rs/simpleplatform-sdk"
+
+# The same keywords sdks/ts publishes, with `rust` where it says `ts`.
+# crates.io allows five, each at most twenty characters, so
+# `simple-platform-ts-sdk`'s counterpart does not fit and is the one left out.
+keywords = [
+  "simple",
+  "simple-platform",
+  "simple-sdk",
+  "simple-platform-sdk",
+  "simple-rust-sdk"
+]
+categories = [
+  "wasm",
+  "api-bindings"
+]
+
+[lib]
+name = "simpleplatform_sdk"
+
+[dependencies]
+serde = { version = "1.0", features = [ "derive" ] }
+serde_json = "1.0"
+
+# The `Schema` derive, re-exported from `lib.rs` and from the prelude, so an
+# action naming this one crate can write `#[simple(…)]`. `version` as well as
+# `path` because a published crate resolves its dependencies from the registry;
+# `optional` because the `derive` feature below is what turns it on.
+simpleplatform-sdk-macros = { version = "0.1.0", path = "macros", optional = true }
+
+[features]
+# ON BY DEFAULT, THE WAY `serde` HAS `derive`.
+#
+# An action that writes `#[simple(…)]` writes one dependency and one import
+# line, because the derive it needs is already there. An action that writes no
+# constraints turns the feature off — `default-features = false` — and then
+# builds no proc-macro at all.
+default = [ "derive" ]
+
+# `#[derive(Schema)]` and the `#[simple(…)]` attribute it makes legal.
+derive = [ "dep:simpleplatform-sdk-macros" ]
+
+# THIS FEATURE SELECTS THE IMPORT SET.
+#
+# The client host binds `__call`, `__cast`, `__getContext` and
+# `__getContextSize` in the `simple` namespace, and with this feature on the
+# module declares exactly those four: the reply arrives through
+# `set_response_buffer`, written by the host while the module is parked by
+# asyncify. With it off, the module also declares the execution-result pair,
+# which is what the server host binds.
+async = []
+
+# THE ACCEPTANCE TEST IS A REAL ACTION.
+#
+# It is an example because it is an action — a binary with a `main` that calls
+# `simple::run`, built for `wasm32-wasip1` exactly as a real one is. `test =
+# true` also runs the `#[cfg(test)] mod tests` inside it on `cargo test`, which
+# is where an action author's tests live and so is where the test seam is
+# demonstrated.
+[[example]]
+name = "load_knowledge"
+test = true
+
+# A second action written against the crate: two host calls — a read, then a
+# write — and several ways to refuse.
+[[example]]
+name = "close_duplicate_lead"
+test = true
+
+# A third: the modules composing in one handler — settings, then storage, then
+# ai, then graphql — which is the only place they are shown together.
+[[example]]
+name = "file_expense_receipt"
+test = true
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

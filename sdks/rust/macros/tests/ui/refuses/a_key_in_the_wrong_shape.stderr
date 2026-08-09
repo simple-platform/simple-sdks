@@ -1,0 +1,17 @@
+error: `range` takes its bounds in parentheses: `range(min = 1, max = 90)`.
+  --> tests/ui/refuses/a_key_in_the_wrong_shape.rs:10:14
+   |
+10 |     #[simple(range = 1)]
+   |              ^^^^^
+
+error: `length` takes its bounds in parentheses: `length(min = 1, max = 500)`.
+  --> tests/ui/refuses/a_key_in_the_wrong_shape.rs:13:14
+   |
+13 |     #[simple(length)]
+   |              ^^^^^^
+
+error: `pattern` takes a value: `pattern = "^KNOW"`.
+  --> tests/ui/refuses/a_key_in_the_wrong_shape.rs:16:14
+   |
+16 |     #[simple(pattern("^KNOW"))]
+   |              ^^^^^^^

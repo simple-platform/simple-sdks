@@ -1,0 +1,29 @@
+error: `minLength` is what the schema calls it. Write it as `length(min = …)`.
+ --> tests/ui/refuses/a_name_the_schema_gives_it.rs:9:14
+  |
+9 |     #[simple(minLength = 5)]
+  |              ^^^^^^^^^
+
+error: `max_length` is what the schema calls it. Write it as `length(max = …)`.
+  --> tests/ui/refuses/a_name_the_schema_gives_it.rs:13:14
+   |
+13 |     #[simple(max_length = 3)]
+   |              ^^^^^^^^^^
+
+error: `minItems` is what the schema calls it. Write it as `length(min = …)`.
+  --> tests/ui/refuses/a_name_the_schema_gives_it.rs:17:14
+   |
+17 |     #[simple(minItems = 1)]
+   |              ^^^^^^^^
+
+error: `minimum` is what the schema calls it. Write it as `range(min = …)`.
+  --> tests/ui/refuses/a_name_the_schema_gives_it.rs:21:14
+   |
+21 |     #[simple(minimum = 1)]
+   |              ^^^^^^^
+
+error: `maximum` is what the schema calls it. Write it as `range(max = …)`.
+  --> tests/ui/refuses/a_name_the_schema_gives_it.rs:25:14
+   |
+25 |     #[simple(maximum = 90)]
+   |              ^^^^^^^

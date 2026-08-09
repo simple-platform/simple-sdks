@@ -1,0 +1,13 @@
+error: `rnage` is not a member constraint. Did you mean `range`?
+       accepted here: range(min = …, max = …), length(min = …, max = …), pattern = "…", format = "…", default = …, example = …, deprecated
+ --> tests/ui/refuses/a_key_nobody_accepts.rs:9:14
+  |
+9 |     #[simple(rnage(min = 1))]
+  |              ^^^^^
+
+error: `collection` is not a member constraint.
+       accepted here: range(min = …, max = …), length(min = …, max = …), pattern = "…", format = "…", default = …, example = …, deprecated
+  --> tests/ui/refuses/a_key_nobody_accepts.rs:12:14
+   |
+12 |     #[simple(collection = "leads")]
+   |              ^^^^^^^^^^

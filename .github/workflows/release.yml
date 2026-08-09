@@ -19,6 +19,10 @@ jobs:
       ts-version: ${{ steps.ts-version.outputs.version }}
       ts-version-tag: ${{ steps.ts-version.outputs.version_tag }}
       ts-changed: ${{ steps.ts-version.outputs.changed }}
+      rust-version: ${{ steps.rust-version.outputs.version }}
+      rust-version-tag: ${{ steps.rust-version.outputs.version_tag }}
+      rust-changed: ${{ steps.rust-version.outputs.changed }}
+      rust-toolchain: ${{ steps.rust-toolchain.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -44,6 +48,64 @@ jobs:
         if: steps.ts-version.outputs.debug_output
         run: |
           echo "${{ steps.ts-version.outputs.debug_output }}"
+
+      # WHAT STARTS A RELEASE. This workflow runs on pushes to `main` and on pull
+      # requests against `main` — see `on:` at the top of this file. Tags are an
+      # output of it and never an input.
+      #
+      #   * `namespace` keeps the two version histories apart: this step reads
+      #     back only `v<version>-rust` tags and the TypeScript step only
+      #     `v<version>-ts`, so each lane is versioned by its own releases.
+      #   * `change_path` is the path a lane's version is computed over. The
+      #     action compares the newest tag in its own namespace against `HEAD`
+      #     for that path, so `changed` means "this path holds commits that have
+      #     not been released yet" — whichever run picks them up, the version
+      #     published is the one those commits earned.
+      #
+      # `major_pattern` matches the conventional-commits `!` where it is defined
+      # to sit, immediately before the colon. That anchoring is what lets
+      # `search_commit_body` stay on below: the body is searched for the feature
+      # and fix scopes while a major bump stays tied to the subject line.
+      - name: Rust SDK Version
+        id: rust-version
+        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        with:
+          tag_prefix: v
+          major_pattern: '/\(sdk-rust\)!:/'
+          minor_pattern: '/feat\(sdk-rust\):/'
+          version_format: '${major}.${minor}.${patch}'
+          change_path: sdks/rust
+          namespace: rust
+          bump_each_commit: false
+          search_commit_body: true
+          enable_prerelease_mode: false
+          debug: false
+
+      - name: Display Rust Debug Output
+        if: steps.rust-version.outputs.debug_output
+        run: |
+          echo "${{ steps.rust-version.outputs.debug_output }}"
+
+      # The Rust toolchain has exactly one authority in this repository and it is
+      # devbox.json, the same file a contributor's toolchain comes from. Read, not
+      # copied: a number written down twice is a number that drifts.
+      - name: Rust Toolchain Version
+        id: rust-toolchain
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.env.RUST_VERSION // empty' devbox.json)
+          if [ -z "$version" ]; then
+            echo "devbox.json has no .env.RUST_VERSION. It is the only authority for the Rust version; if it moved, move this read with it." >&2
+            exit 1
+          fi
+          case "$version" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "devbox.json .env.RUST_VERSION is '$version', which is not a toolchain version" >&2
+              exit 1
+              ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build-typescript:
     name: Build TypeScript SDK
@@ -232,5 +294,277 @@ jobs:
           body_path: changelog.md
           draft: false
           prerelease: ${{ contains(needs.version.outputs.ts-version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-rust:
+    name: Build Rust SDK
+    needs: version
+    if: needs.version.outputs.rust-changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        env:
+          RUST_VERSION: ${{ needs.version.outputs.rust-toolchain }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy
+          rustup default "$RUST_VERSION"
+          rustup target add wasm32-wasip1
+          rustc --version
+
+      # The release path gates itself rather than trusting that rust-sdk-test.yml
+      # ran, the same way build-typescript runs `pnpm lint` rather than trusting
+      # that something else linted. The two overlap on a pull request that touches
+      # sdks/rust; that is the intended cost.
+      - name: Gate
+        working-directory: sdks/rust
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --features async -- -D warnings
+          cargo test
+
+      # Both wasm builds, because the two feature configurations declare
+      # different import sets and each one ships to a host that binds its own.
+      #
+      # `--examples` links the library into binaries, and a binary is what emits
+      # a `.wasm` module with an import section — the same way an action links
+      # the crate in production.
+      #
+      # What ships from this lane is the source, so `cargo package` is its
+      # artifact: it builds the crate tarball exactly as `cargo publish` will.
+      - name: Build Rust SDK
+        working-directory: sdks/rust
+        run: |
+          cargo build --target wasm32-wasip1 --release --examples
+          cargo build --target wasm32-wasip1 --release --features async --examples
+          cargo package
+
+      - name: Generate Changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          # Get the previous tag for this SDK
+          PREV_TAG=$(git tag -l "v*-rust" --sort=-version:refname | head -n 1)
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-rust)" -- sdks/rust)
+          else
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-rust)" -- sdks/rust)
+          fi
+
+          # Organize commits by type
+          FEATURES=$(echo "$COMMITS" | grep "feat(sdk-rust):" || true)
+          FIXES=$(echo "$COMMITS" | grep "fix(sdk-rust):" || true)
+          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\(sdk-rust\)!:" || true)
+          OTHER=$(echo "$COMMITS" | grep -v -E "feat\(sdk-rust\):|fix\(sdk-rust\):" || true)
+
+          # Build changelog
+          echo "## Rust SDK ${{ needs.version.outputs.rust-version }}" > rust-changelog.md
+          echo "" >> rust-changelog.md
+
+          if [ -n "$BREAKING" ]; then
+            echo "### ⚠️ Breaking Changes" >> rust-changelog.md
+            echo "$BREAKING" >> rust-changelog.md
+            echo "" >> rust-changelog.md
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            echo "### ✨ Features" >> rust-changelog.md
+            echo "$FEATURES" >> rust-changelog.md
+            echo "" >> rust-changelog.md
+          fi
+
+          if [ -n "$FIXES" ]; then
+            echo "### 🐛 Bug Fixes" >> rust-changelog.md
+            echo "$FIXES" >> rust-changelog.md
+            echo "" >> rust-changelog.md
+          fi
+
+          if [ -n "$OTHER" ]; then
+            echo "### 📝 Other Changes" >> rust-changelog.md
+            echo "$OTHER" >> rust-changelog.md
+            echo "" >> rust-changelog.md
+          fi
+
+          echo "### 📦 Installation" >> rust-changelog.md
+          echo "\`\`\`bash" >> rust-changelog.md
+          echo "cargo add simpleplatform-sdk@${{ needs.version.outputs.rust-version }}" >> rust-changelog.md
+          echo "\`\`\`" >> rust-changelog.md
+
+      # Artifact names are per lane, because both lanes can run in the same
+      # workflow run and each carries its own release notes through to publish.
+      - name: Upload changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-changelog
+          path: rust-changelog.md
+          retention-days: 5
+
+      - name: Upload build
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-sdk
+          path: sdks/rust/target/package/*.crate
+          retention-days: 5
+
+      - name: Create Release Summary
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          echo "## 📋 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Crate:** simpleplatform-sdk" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.version.outputs.rust-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ needs.version.outputs.rust-version-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog Preview" >> $GITHUB_STEP_SUMMARY
+          cat rust-changelog.md >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ Review the changelog above before approving the deployment**" >> $GITHUB_STEP_SUMMARY
+
+  publish-rust:
+    name: Publish Rust SDK
+    needs: [version, build-rust]
+    if: needs.version.outputs.rust-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment:
+      name: production
+      url: https://crates.io/crates/simpleplatform-sdk/${{ needs.version.outputs.rust-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        env:
+          RUST_VERSION: ${{ needs.version.outputs.rust-toolchain }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustup target add wasm32-wasip1
+          rustc --version
+
+      - name: Download changelog
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: rust-changelog
+
+      # `sed` rather than a helper: cargo has no counterpart to `pnpm version`,
+      # and cargo-edit's `cargo set-version` would mean a from-source install on
+      # every release. The substitution is anchored to the start of a line, which
+      # in this manifest is the [package] version alone — a dependency's version
+      # sits inside braces on its own line. The count is asserted first, so the
+      # step rewrites exactly the one line it means to.
+      - name: Update crate version
+        working-directory: sdks/rust
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.rust-version }}"
+
+          # `|| true` hands the count to the check below in every case: grep
+          # exits 1 when it counts zero, and `set -e` would otherwise end the
+          # step before the message can report the number it found.
+          # BOTH CRATES MOVE TOGETHER. The derive is published from this lane as
+          # well, and the SDK names it by version, so a release that versioned
+          # only one of them would upload a crate whose dependency does not
+          # exist at the version it asks for.
+          for manifest in Cargo.toml macros/Cargo.toml; do
+            MATCHES=$(grep -c '^version = ".*"$' "$manifest" || true)
+            if [ "$MATCHES" -ne 1 ]; then
+              echo "expected exactly one package version line in $manifest, found $MATCHES" >&2
+              exit 1
+            fi
+
+            sed -E 's/^version = ".*"$/version = "'"$VERSION"'"/' "$manifest" > "$manifest.next"
+            mv "$manifest.next" "$manifest"
+          done
+
+          # And the line that names it, which is what crates.io resolves against.
+          DEPS=$(grep -c '^simpleplatform-sdk-macros = ' Cargo.toml || true)
+          if [ "$DEPS" -ne 1 ]; then
+            echo "expected exactly one simpleplatform-sdk-macros dependency line, found $DEPS" >&2
+            exit 1
+          fi
+
+          sed -E 's/^(simpleplatform-sdk-macros = \{ version = ")[^"]*(".*)$/\1'"$VERSION"'\2/' \
+            Cargo.toml > Cargo.toml.next
+          mv Cargo.toml.next Cargo.toml
+
+          # Cargo.lock carries the crate's own version too, and cargo refuses to
+          # publish against a stale lock. --offline because nothing needs
+          # resolving: the only entry that moved is this package's.
+          cargo update --workspace --offline
+
+          grep '^version = ' Cargo.toml macros/Cargo.toml
+          grep '^simpleplatform-sdk-macros = ' Cargo.toml
+
+      # --allow-dirty because the step above deliberately edited Cargo.toml in the
+      # checkout; that edit is the release. cargo still runs its own verification
+      # build of the packaged tarball, from its extracted form, before uploading.
+      # THE DERIVE GOES FIRST, AND THE ORDER IS NOT A PREFERENCE. crates.io
+      # resolves a dependency at upload, so the SDK cannot be accepted until the
+      # version it names is already on the registry. cargo waits for the index to
+      # carry the new version before returning, which is what makes the second
+      # publish find the first.
+      - name: Publish the derive to crates.io
+        working-directory: sdks/rust/macros
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
+        run: cargo publish --allow-dirty
+
+      - name: Publish to crates.io
+        working-directory: sdks/rust
+        env:
+          # `CRATE_PUBLISH_TOKEN` is the `production` environment secret holding a
+          # crates.io API token scoped to publish-update for both crates. cargo
+          # reads the token from `CARGO_REGISTRY_TOKEN`, so the mapping happens
+          # here.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
+        run: cargo publish --allow-dirty
+
+      - name: Update CHANGELOG.md
+        run: |
+          cd sdks/rust
+
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to the Rust SDK will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+          cat ../../rust-changelog.md CHANGELOG.md > CHANGELOG.tmp
+          mv CHANGELOG.tmp CHANGELOG.md
+
+          git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
+          git config --local user.name "Simple DevOps"
+          git add CHANGELOG.md Cargo.toml Cargo.lock
+          git commit -m "chore(sdk-rust): release version ${{ needs.version.outputs.rust-version }} [skip ci]" || true
+
+          # publish-typescript may have pushed its own release commit to main
+          # while this job was uploading to crates.io. Rebasing onto whatever
+          # landed first keeps both lanes' release commits when a single run
+          # publishes both SDKs.
+          git pull --rebase || true
+          git push || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          tag_name: ${{ needs.version.outputs.rust-version-tag }}
+          name: Rust SDK ${{ needs.version.outputs.rust-version }}
+          body_path: rust-changelog.md
+          draft: false
+          prerelease: ${{ contains(needs.version.outputs.rust-version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
