@@ -101,8 +101,8 @@ fn main() {
 /// with the file already stored and the expense not filed.
 ///
 /// @tool
-/// @short_desc File an expense from a receipt, reading its merchant, currency and total out of the file.
-/// @when_use An employee has a receipt that should become a filed expense.
+/// @shortdesc File an expense from a receipt, reading its merchant, currency and total out of the file.
+/// @usewhen An employee has a receipt that should become a filed expense.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     let employee = request.data.employee_id.trim();
     let receipt_url = request.data.receipt_url.trim();

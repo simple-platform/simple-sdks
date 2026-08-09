@@ -1,19 +1,19 @@
-error: `short_desc` describes the action, not one of its members. Write it in the action's doc comment as `@short_desc`.
-       On the action: `@tool`, `@short_desc` and `@when_use`.
+error: `shortdesc` describes the action, not one of its members. Write it in the action's doc comment as `@shortdesc`.
+       On the action: `@tool`, `@shortdesc` and `@usewhen`.
  --> tests/ui/refuses/a_tag_that_belongs_to_the_action.rs:9:14
   |
-9 |     #[simple(short_desc = "The days to look back over.")]
-  |              ^^^^^^^^^^
+9 |     #[simple(shortdesc = "The days to look back over.")]
+  |              ^^^^^^^^^
 
-error: `when_use` describes the action, not one of its members. Write it in the action's doc comment as `@when_use`.
-       On the action: `@tool`, `@short_desc` and `@when_use`.
+error: `usewhen` describes the action, not one of its members. Write it in the action's doc comment as `@usewhen`.
+       On the action: `@tool`, `@shortdesc` and `@usewhen`.
   --> tests/ui/refuses/a_tag_that_belongs_to_the_action.rs:12:14
    |
-12 |     #[simple(when_use = "Looking back over a window.")]
-   |              ^^^^^^^^
+12 |     #[simple(usewhen = "Looking back over a window.")]
+   |              ^^^^^^^
 
 error: `tool` describes the action, not one of its members. Write it in the action's doc comment as `@tool`.
-       On the action: `@tool`, `@short_desc` and `@when_use`.
+       On the action: `@tool`, `@shortdesc` and `@usewhen`.
   --> tests/ui/refuses/a_tag_that_belongs_to_the_action.rs:15:14
    |
 15 |     #[simple(tool)]

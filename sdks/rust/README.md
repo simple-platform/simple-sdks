@@ -112,9 +112,9 @@ const CLOSE_LEAD: &str = r#"
 /// linked to it, so a later report still reaches both records.
 ///
 /// @tool
-/// @short_desc Close a duplicate lead, pointing it at the surviving record.
-/// @when_use A lead is a duplicate of one already in the system.
-/// @when_use Two leads share a contact and one should be retired.
+/// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+/// @usewhen A lead is a duplicate of one already in the system.
+/// @usewhen Two leads share a contact and one should be retired.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     if request.data.lead_id == request.data.duplicate_of {
         return Err(Error::invalid("A lead cannot be a duplicate of itself.")
@@ -221,9 +221,9 @@ handler — the same comment that carries its description:
 /// linked to it, so a later report still reaches both records.
 ///
 /// @tool
-/// @short_desc Close a duplicate lead, pointing it at the surviving record.
-/// @when_use A lead is a duplicate of one already in the system.
-/// @when_use Two leads share a contact and one should be retired.
+/// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+/// @usewhen A lead is a duplicate of one already in the system.
+/// @usewhen Two leads share a contact and one should be retired.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     // ...
 }
@@ -235,11 +235,11 @@ Give the handler a name to hang them on, and pass it to `simple::run`:
 fn main() { simple::run(handler) }
 ```
 
-| Tag           | Shape                                           | What it says                                                  |
-| ------------- | ----------------------------------------------- | ------------------------------------------------------------- |
-| `@tool`       | bare, no value                                  | This action can be reached as a tool                          |
-| `@short_desc` | one line, up to 300 characters, written once    | What this is, read in a listing of tools                      |
-| `@when_use`   | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else |
+| Tag          | Shape                                           | What it says                                                  |
+| ------------ | ----------------------------------------------- | ------------------------------------------------------------- |
+| `@tool`      | bare, no value                                  | This action can be reached as a tool                          |
+| `@shortdesc` | one line, up to 300 characters, written once    | What this is, read in a listing of tools                      |
+| `@usewhen`   | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else |
 
 **The prose above the tags is the full description.** It stays exactly as
 written — the first paragraph and everything under it — so the long form of what

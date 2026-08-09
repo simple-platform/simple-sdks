@@ -92,9 +92,9 @@ fn main() {
 /// lead that is already closed is left as it is.
 ///
 /// @tool
-/// @short_desc Close a duplicate lead, pointing it at the surviving record.
-/// @when_use A lead is a duplicate of one already in the system.
-/// @when_use Two leads share a contact and one should be retired.
+/// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+/// @usewhen A lead is a duplicate of one already in the system.
+/// @usewhen Two leads share a contact and one should be retired.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     let duplicate = request.data.lead_id.trim();
     let survivor = request.data.duplicate_of.trim();

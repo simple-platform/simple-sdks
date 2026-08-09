@@ -131,9 +131,9 @@ fn main() {
 /// one it cannot have.
 ///
 /// @tool
-/// @short_desc Fetch knowledge articles by id, each with its title, body, and who last updated it when.
-/// @when_use The id of a knowledge article is known and its contents are needed.
-/// @when_use Several knowledge ids came out of a search and have to be read together.
+/// @shortdesc Fetch knowledge articles by id, each with its title, body, and who last updated it when.
+/// @usewhen The id of a knowledge article is known and its contents are needed.
+/// @usewhen Several knowledge ids came out of a search and have to be read together.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     let ids = wanted_ids(request.data.ids)?;
 
