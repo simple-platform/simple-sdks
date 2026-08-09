@@ -174,11 +174,11 @@ fn one(meta: &ParseNestedMeta, member: &str, written: &mut Vec<String>) -> Resul
 
         // The three tags an action carries. They are written in the action's
         // doc comment, above `fn handler`, and describe the action as a whole.
-        "tool" | "short_desc" | "when_use" => Err(Error::new_spanned(
+        "tool" | "shortdesc" | "usewhen" => Err(Error::new_spanned(
             &meta.path,
             format!(
                 "`{key}` describes the action, not one of its members. Write it in the action's \
-                 doc comment as `@{key}`.\nOn the action: `@tool`, `@short_desc` and `@when_use`."
+                 doc comment as `@{key}`.\nOn the action: `@tool`, `@shortdesc` and `@usewhen`."
             ),
         )),
 

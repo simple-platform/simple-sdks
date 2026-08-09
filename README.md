@@ -85,8 +85,8 @@ struct Output {
 /// Greet someone by name.
 ///
 /// @tool
-/// @short_desc Greet someone by name.
-/// @when_use A caller wants a greeting for a person.
+/// @shortdesc Greet someone by name.
+/// @usewhen A caller wants a greeting for a person.
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     Ok(Output {
         message: format!("Hello, {}!", request.data.name),

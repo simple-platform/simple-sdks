@@ -6,10 +6,10 @@ use simpleplatform_sdk_macros::Schema;
 
 #[derive(Schema)]
 struct Payload {
-    #[simple(short_desc = "The days to look back over.")]
+    #[simple(shortdesc = "The days to look back over.")]
     days: u32,
 
-    #[simple(when_use = "Looking back over a window.")]
+    #[simple(usewhen = "Looking back over a window.")]
     window: u32,
 
     #[simple(tool)]

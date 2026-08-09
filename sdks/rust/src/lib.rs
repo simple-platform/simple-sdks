@@ -63,17 +63,17 @@
 //! /// and linked to it, so a later report still reaches both.
 //! ///
 //! /// @tool
-//! /// @short_desc Close a duplicate lead, pointing it at the surviving record.
-//! /// @when_use A lead is a duplicate of one already in the system.
-//! /// @when_use Two leads share a contact and one should be retired.
+//! /// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+//! /// @usewhen A lead is a duplicate of one already in the system.
+//! /// @usewhen Two leads share a contact and one should be retired.
 //! fn handler(request: Request<Input>) -> Result<Output, Error> { /* ... */ }
 //! ```
 //!
 //! - `@tool` — bare, with no value. It marks the action as one that can be
 //!   reached as a tool.
-//! - `@short_desc` — one line, up to 300 characters. What this is, read in a
+//! - `@shortdesc` — one line, up to 300 characters. What this is, read in a
 //!   listing of tools.
-//! - `@when_use` — one line, up to 100 characters, written up to ten times. One
+//! - `@usewhen` — one line, up to 100 characters, written up to ten times. One
 //!   occasion each, for reaching for this rather than something else.
 //!
 //! The prose above the tags stays as written, and is the full description.
