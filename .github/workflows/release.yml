@@ -254,8 +254,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # ONE ENVIRONMENT PER REGISTRY, NOT ONE PER RELEASE.
+    #
+    # A deployment review is granted to an ENVIRONMENT, not to a job, so two
+    # lanes sharing one environment are approved by one click: releasing the
+    # crate would have released the package beside it. Naming the environment
+    # after the registry it publishes to keeps each approval about one artifact,
+    # and gives each registry's token an environment of its own to live in.
+    #
+    # A language added later takes its own — a Go SDK does not publish to a
+    # registry at all, and a Python one would take `pypi.org`.
     environment:
-      name: production
+      name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
     steps:
       - name: Checkout
@@ -462,8 +472,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Its own environment, so approving a crate release approves exactly that.
+    # See the note on the TypeScript lane above.
     environment:
-      name: production
+      name: crates.io
       url: https://crates.io/crates/simpleplatform-sdk/${{ needs.version.outputs.rust-version }}
     steps:
       - name: Checkout
@@ -549,10 +561,14 @@ jobs:
       - name: Publish to crates.io
         working-directory: sdks/rust
         env:
-          # `CRATE_PUBLISH_TOKEN` is the `production` environment secret holding a
-          # crates.io API token scoped to publish-update for both crates. cargo
-          # reads the token from `CARGO_REGISTRY_TOKEN`, so the mapping happens
-          # here.
+          # `CRATE_PUBLISH_TOKEN` is a secret of the `crates.io` environment above,
+          # holding a registry token scoped to publish-update for BOTH crates —
+          # the SDK and its derive, which this step uploads together. cargo reads
+          # the token from `CARGO_REGISTRY_TOKEN`, so the mapping happens here.
+          #
+          # An environment secret is only visible to a job that names that
+          # environment, so this token belongs to `crates.io` and not beside the
+          # npm one.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
         run: cargo publish --allow-dirty
 
