@@ -1,6 +1,9 @@
 [package]
 name = "simpleplatform-sdk-macros"
-version = "0.1.0"
+# Placeholder, like the SDK's. The git tag and crates.io are the version of
+# record; the release workflow writes the computed number here, in the checkout
+# it packages, and commits nothing back. See `../Cargo.toml`.
+version = "0.0.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Member constraints for Simple Platform actions written in Rust"

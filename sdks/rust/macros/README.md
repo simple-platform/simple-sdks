@@ -7,9 +7,8 @@ This crate is an implementation detail of
 that instead — it re-exports everything here, so an action names one dependency
 and writes one import line.
 
-```toml
-[dependencies]
-simpleplatform-sdk = "0.1"
+```bash
+cargo add simpleplatform-sdk
 ```
 
 ```rust

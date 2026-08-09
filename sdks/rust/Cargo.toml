@@ -18,7 +18,15 @@ default-members = [
 
 [package]
 name = "simpleplatform-sdk"
-version = "0.1.0"
+# THE VERSION OF RECORD IS THE GIT TAG AND crates.io, NOT THIS LINE.
+#
+# `0.0.0` is a number no release has or ever will have, and it is here so that
+# the manifest states nothing it cannot keep. The release workflow writes the
+# version it computes into this line, into `macros/Cargo.toml`, and into the
+# `simpleplatform-sdk-macros` requirement below, in the checkout it packages —
+# so the crates on crates.io carry the real number — and commits none of it
+# back. To read what is released, read `git tag -l 'v*-rust'` or the registry.
+version = "0.0.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Simple Platform Rust SDK"
@@ -62,8 +70,10 @@ serde_json = "1.0"
 # The `Schema` derive, re-exported from `lib.rs` and from the prelude, so an
 # action naming this one crate can write `#[simple(…)]`. `version` as well as
 # `path` because a published crate resolves its dependencies from the registry;
-# `optional` because the `derive` feature below is what turns it on.
-simpleplatform-sdk-macros = { version = "0.1.0", path = "macros", optional = true }
+# `optional` because the `derive` feature below is what turns it on. The version
+# tracks this crate's own — placeholder here, computed at release — because the
+# two crates are versioned and published together.
+simpleplatform-sdk-macros = { version = "0.0.0", path = "macros", optional = true }
 
 [features]
 # ON BY DEFAULT, THE WAY `serde` HAS `derive`.
