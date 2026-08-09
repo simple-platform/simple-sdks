@@ -68,12 +68,6 @@ cargo add simpleplatform-sdk
 ```
 
 ```rust
-//! Greet someone by name.
-//!
-//! @tool
-//! @short_desc Greet someone by name.
-//! @when_use A caller wants a greeting for a person.
-
 use simpleplatform_sdk::prelude::*;
 
 #[derive(Deserialize, Schema)]
@@ -88,13 +82,18 @@ struct Output {
     message: String,
 }
 
-fn main() {
-    simple::run(|request: Request<Input>| {
-        Ok(Output {
-            message: format!("Hello, {}!", request.data.name),
-        })
+/// Greet someone by name.
+///
+/// @tool
+/// @short_desc Greet someone by name.
+/// @when_use A caller wants a greeting for a person.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    Ok(Output {
+        message: format!("Hello, {}!", request.data.name),
     })
 }
+
+fn main() { simple::run(handler) }
 ```
 
 Build it and run its tests with the platform CLI:

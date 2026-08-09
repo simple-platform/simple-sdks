@@ -8,6 +8,14 @@ on:
     branches:
       - main
 
+# ONE RELEASE AT A TIME. Two runs publishing at once race each other into the
+# same environment and the same registries, and the second to finish overwrites
+# the first's tag push. In-progress runs are not cancelled: a run that has
+# already uploaded to a registry cannot be undone by stopping it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -79,9 +87,11 @@ jobs:
       # so it is written out in full and cannot be typed by accident. Until
       # someone writes that sentence, this lane stays in 0.x.
       #
-      # `search_commit_body` stays on below, and both patterns are anchored on
-      # the scope, so a body may carry them and a subject need not be the only
-      # place a release is earned.
+      # `search_commit_body` is OFF for this lane, and that is what makes the
+      # sentence above safe to write down. Searched bodies, it would be enough to
+      # QUOTE the policy — in a commit explaining it, or a README edit pasting it
+      # — to compute 1.0.0 from a change that declared nothing. The subject line
+      # is the one place a release is deliberate, so this lane reads only that.
       - name: Rust SDK Version
         id: rust-version
         uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
@@ -93,7 +103,7 @@ jobs:
           change_path: sdks/rust
           namespace: rust
           bump_each_commit: false
-          search_commit_body: true
+          search_commit_body: false
           enable_prerelease_mode: false
           debug: false
 
@@ -516,10 +526,11 @@ jobs:
             Cargo.toml > Cargo.toml.next
           mv Cargo.toml.next Cargo.toml
 
-          # Cargo.lock carries the crate's own version too, and cargo refuses to
-          # publish against a stale lock. --offline because nothing needs
-          # resolving: the only entry that moved is this package's.
-          cargo update --workspace --offline
+          # Cargo.lock carries each crate's own version too, and cargo refuses to
+          # publish against a stale lock. This resolves online: `--workspace`
+          # re-resolves every member's graph, which a cold registry cache cannot
+          # do offline, and this job has no cache and no prior build.
+          cargo update --workspace
 
           grep '^version = ' Cargo.toml macros/Cargo.toml
           grep '^simpleplatform-sdk-macros = ' Cargo.toml
@@ -527,17 +538,14 @@ jobs:
       # --allow-dirty because the step above deliberately edited Cargo.toml in the
       # checkout; that edit is the release. cargo still runs its own verification
       # build of the packaged tarball, from its extracted form, before uploading.
-      # THE DERIVE GOES FIRST, AND THE ORDER IS NOT A PREFERENCE. crates.io
-      # resolves a dependency at upload, so the SDK cannot be accepted until the
-      # version it names is already on the registry. cargo waits for the index to
-      # carry the new version before returning, which is what makes the second
-      # publish find the first.
-      - name: Publish the derive to crates.io
-        working-directory: sdks/rust/macros
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
-        run: cargo publish --allow-dirty
-
+      # ONE INVOCATION PUBLISHES BOTH CRATES, and must not be split into two.
+      #
+      # `default-members` selects the SDK and the derive, and cargo publishes a
+      # selection in dependency order, waiting for the registry index to carry
+      # each one before it uploads what depends on it. Publishing the derive in a
+      # step of its own does not help the order — it is already right — and makes
+      # this step fail, because cargo refuses a version the registry already
+      # holds before it packages anything.
       - name: Publish to crates.io
         working-directory: sdks/rust
         env:
@@ -564,7 +572,7 @@ jobs:
 
           git config --local user.email "154070804+simple-platform-devops@users.noreply.github.com"
           git config --local user.name "Simple DevOps"
-          git add CHANGELOG.md Cargo.toml Cargo.lock
+          git add CHANGELOG.md Cargo.toml macros/Cargo.toml Cargo.lock
           git commit -m "chore(sdk-rust): release version ${{ needs.version.outputs.rust-version }} [skip ci]" || true
 
           # publish-typescript may have pushed its own release commit to main

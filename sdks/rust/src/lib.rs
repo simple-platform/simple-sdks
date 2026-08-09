@@ -53,19 +53,20 @@
 //! is — in the doc comments and on the members themselves. There is nothing to
 //! keep in step by hand.
 //!
-//! Three tags describe the action, in the doc comment above `handler` — the
-//! same comment that carries its description:
+//! Three tags describe the action, written with `///` in the doc comment above
+//! the handler — the same comment that carries its description:
 //!
 //! ```text
-//! //! Close a duplicate lead and point it at the record that survives.
-//! //!
-//! //! The surviving lead keeps its activity; the duplicate is marked closed
-//! //! and linked to it, so a later report still reaches both.
-//! //!
-//! //! @tool
-//! //! @short_desc Close a duplicate lead, pointing it at the surviving record.
-//! //! @when_use A lead is a duplicate of one already in the system.
-//! //! @when_use Two leads share a contact and one should be retired.
+//! /// Close a duplicate lead and point it at the record that survives.
+//! ///
+//! /// The surviving lead keeps its activity; the duplicate is marked closed
+//! /// and linked to it, so a later report still reaches both.
+//! ///
+//! /// @tool
+//! /// @short_desc Close a duplicate lead, pointing it at the surviving record.
+//! /// @when_use A lead is a duplicate of one already in the system.
+//! /// @when_use Two leads share a contact and one should be retired.
+//! fn handler(request: Request<Input>) -> Result<Output, Error> { /* ... */ }
 //! ```
 //!
 //! - `@tool` — bare, with no value. It marks the action as one that can be
@@ -257,13 +258,9 @@ pub use serde_json;
 /// A module's types stay in the module. The exception is a type an action has
 /// to write down in order to make the call — the ones that appear in a public
 /// signature, which are the options a call takes and the value it answers with:
-/// [`ai::Options`](crate::ai::Options),
-/// [`ai::TranscribeOptions`](crate::ai::TranscribeOptions),
-/// [`ai::FaceSearch`](crate::ai::FaceSearch),
-/// [`ai::Execution`](crate::ai::Execution),
-/// [`storage::Source`](crate::storage::Source),
-/// [`storage::Target`](crate::storage::Target) and
-/// [`DocumentHandle`](crate::storage::DocumentHandle).
+/// [`ai::Options`], [`ai::TranscribeOptions`], [`ai::FaceSearch`],
+/// [`ai::Execution`], [`storage::Source`], [`storage::Target`] and
+/// [`DocumentHandle`].
 ///
 /// What a call chooses *inside* one of those is reached through its own module
 /// and needs no import, because [`simple`](crate) is already in scope:
@@ -271,9 +268,9 @@ pub use serde_json;
 /// `simple::storage::Auth::bearer("t-1234")`. A settings read names no type at
 /// all, and neither do the five HTTP method functions.
 ///
-/// [`http::Request`](crate::http::Request) is the one signature type that stays
-/// in its module, so that `Request` here always means the request an action was
-/// called with. An outbound request is written under the module it belongs to —
+/// [`http::Request`] is the one signature type that stays in its module, so that
+/// `Request` here always means the request an action was called with. An
+/// outbound request is written under the module it belongs to —
 /// `use simpleplatform_sdk::http;`, then `http::fetch(http::Request { .. })` —
 /// which keeps both names available in the same file, each meaning one thing.
 pub mod prelude {

@@ -132,6 +132,14 @@ jobs:
       - name: Doc tests
         run: cargo test --doc
 
+      # The rendered documentation is what a reader meets on docs.rs, and a
+      # broken link there is invisible to every check above: rustdoc warns and
+      # exits zero. `-D warnings` is what makes this a gate rather than a note.
+      - name: Documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --workspace
+
   # Building and linting for what actually ships: two artifacts from one source,
   # each declaring the imports its own host binds. Both are built here so both
   # can be read.

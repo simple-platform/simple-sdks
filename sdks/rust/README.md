@@ -35,16 +35,6 @@ Create your first Simple Platform action. This is the whole of `src/main.rs` —
 what the action is, what it accepts, and what it does:
 
 ```rust
-//! Close a duplicate lead and point it at the record that survives.
-//!
-//! The surviving lead keeps its activity; the duplicate is marked closed and
-//! linked to it, so a later report still reaches both records.
-//!
-//! @tool
-//! @short_desc Close a duplicate lead, pointing it at the surviving record.
-//! @when_use A lead is a duplicate of one already in the system.
-//! @when_use Two leads share a contact and one should be retired.
-
 use simpleplatform_sdk::prelude::*;
 
 /// The lead to close, and the one it is a duplicate of.
@@ -102,35 +92,44 @@ const CLOSE_LEAD: &str = r#"
     }
   }"#;
 
-fn main() {
-    simple::run(|request: Request<Input>| {
-        if request.data.lead_id == request.data.duplicate_of {
-            return Err(Error::invalid("A lead cannot be a duplicate of itself.")
-                .hint("Pass two different lead identifiers."));
-        }
+/// Close a duplicate lead and point it at the record that survives.
+///
+/// The surviving lead keeps its activity; the duplicate is marked closed and
+/// linked to it, so a later report still reaches both records.
+///
+/// @tool
+/// @short_desc Close a duplicate lead, pointing it at the surviving record.
+/// @when_use A lead is a duplicate of one already in the system.
+/// @when_use Two leads share a contact and one should be retired.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    if request.data.lead_id == request.data.duplicate_of {
+        return Err(Error::invalid("A lead cannot be a duplicate of itself.")
+            .hint("Pass two different lead identifiers."));
+    }
 
-        let found: Found = simple::graphql::query(
-            IDLE_LEAD,
-            json!({ "id": request.data.lead_id, "days": request.data.idle_days }),
-        )?;
+    let found: Found = simple::graphql::query(
+        IDLE_LEAD,
+        json!({ "id": request.data.lead_id, "days": request.data.idle_days }),
+    )?;
 
-        if found.leads.is_empty() {
-            return Err(Error::invalid("That lead has been active too recently.")
-                .hint("Raise idle_days, or close the lead by hand."));
-        }
+    if found.leads.is_empty() {
+        return Err(Error::invalid("That lead has been active too recently.")
+            .hint("Raise idle_days, or close the lead by hand."));
+    }
 
-        let closed: Closed = simple::graphql::mutate(
-            CLOSE_LEAD,
-            json!({ "id": request.data.lead_id, "merged": request.data.duplicate_of }),
-        )?;
+    let closed: Closed = simple::graphql::mutate(
+        CLOSE_LEAD,
+        json!({ "id": request.data.lead_id, "merged": request.data.duplicate_of }),
+    )?;
 
-        Ok(Output {
-            rows_changed: closed.result.affected_rows,
-            closed: request.data.lead_id,
-            merged_into: request.data.duplicate_of,
-        })
+    Ok(Output {
+        rows_changed: closed.result.affected_rows,
+        closed: request.data.lead_id,
+        merged_into: request.data.duplicate_of,
     })
 }
+
+fn main() { simple::run(handler) }
 ```
 
 No lifetimes, no `async`, no `unsafe`, no envelope, no context threading, one
@@ -198,19 +197,28 @@ step by hand.
 
 #### The three tags
 
-Three tags describe the action, in the doc comment above `handler` — the same
-comment that carries its description:
+Three tags describe the action, written with `///` in the doc comment above the
+handler — the same comment that carries its description:
 
 ```rust
-//! Close a duplicate lead and point it at the record that survives.
-//!
-//! The surviving lead keeps its activity; the duplicate is marked closed and
-//! linked to it, so a later report still reaches both records.
-//!
-//! @tool
-//! @short_desc Close a duplicate lead, pointing it at the surviving record.
-//! @when_use A lead is a duplicate of one already in the system.
-//! @when_use Two leads share a contact and one should be retired.
+/// Close a duplicate lead and point it at the record that survives.
+///
+/// The surviving lead keeps its activity; the duplicate is marked closed and
+/// linked to it, so a later report still reaches both records.
+///
+/// @tool
+/// @short_desc Close a duplicate lead, pointing it at the surviving record.
+/// @when_use A lead is a duplicate of one already in the system.
+/// @when_use Two leads share a contact and one should be retired.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    // ...
+}
+```
+
+Give the handler a name to hang them on, and pass it to `simple::run`:
+
+```rust
+fn main() { simple::run(handler) }
 ```
 
 | Tag           | Shape                                           | What it says                                                  |
@@ -606,6 +614,7 @@ it.
 ```sh
 cargo test                                                   # host, no wasm
 cargo test --doc                                             # every example compiles
+RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --workspace       # the rendered docs
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings                    # host
 cargo clippy --all-targets --features async -- -D warnings   # host, async cfg
