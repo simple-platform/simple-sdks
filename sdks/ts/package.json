@@ -49,6 +49,10 @@
       "types": "./dist/host.d.ts",
       "default": "./dist/host.js"
     },
+    "./space": {
+      "types": "./dist/space/index.d.ts",
+      "default": "./dist/space/index.js"
+    },
     "./worker": "./dist/worker-override.js",
     "./package.json": "./package.json"
   },
@@ -61,7 +65,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc && cp src/worker-override.js dist/ && cp cli/build.js dist/",
+    "build": "rm -rf dist && tsc && cp src/worker-override.js dist/ && cp cli/build.js dist/ && cp src/space/package.json dist/space/",
+    "test": "pnpm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "prepare": "pnpm run build"
   },
   "dependencies": {
