@@ -179,7 +179,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v3.0.0
         with:
-          version: 10.32.1
+          version: 11.5.3
 
       # pnpm is on PATH by the time this runs, so `cache: pnpm` can ask it where
       # its store lives. Naming the cache explicitly also settles which package
