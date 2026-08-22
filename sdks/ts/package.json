@@ -65,7 +65,7 @@
     "prepare": "pnpm run build"
   },
   "dependencies": {
-    "esbuild": "0.27.4"
+    "esbuild": "0.28.1"
   },
   "devDependencies": {
     "@types/node": "25.5.0",
