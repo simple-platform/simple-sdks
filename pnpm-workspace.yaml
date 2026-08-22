@@ -11,7 +11,7 @@ packages:
   - '!sdks/rust'
 
 overrides:
-  '@typescript-eslint/eslint-plugin': 8.53.0
+  '@typescript-eslint/eslint-plugin': 8.65.0
   ts-api-utils: 2.4.0
 
 onlyBuiltDependencies:
