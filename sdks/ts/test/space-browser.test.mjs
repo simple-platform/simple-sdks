@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { PROTOCOL_VERSION } from '../dist/space/core.js'
 import {
   connectSpace,
   SpaceDataError,
   SpaceProtocolError,
 } from '../dist/space/index.js'
-import { PROTOCOL_VERSION } from '../dist/space/core.js'
 
 class FakePort {
   onmessage = null

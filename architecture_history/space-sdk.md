@@ -90,26 +90,26 @@ An embedded Space does not need a record route to use the SDK. Record protocol n
 The connection also exposes the host-supplied context:
 
 ```ts
-type SpaceContext =
-  | { kind: 'standalone' }
-  | {
-    kind: 'record'
-    applicationId: string
-    tableName: string
-    recordId: string
-  }
+type SpaceContext
+  = | { kind: 'standalone' }
+    | {
+      kind: 'record'
+      applicationId: string
+      tableName: string
+      recordId: string
+    }
 ```
 
 There is intentionally no inferred or `unknown` context variant. Context is descriptive page information, while `records.current()` remains the route-owned primary session with the shared behavior, validation, error, dirty-state, and header lifecycle.
 
 ## Ownership and security boundaries
 
-| Owner | Responsibility |
-| --- | --- |
-| SDK | Public types, request construction, response validation, snapshot immutability, structured client errors, and browser MessagePort adaptation. |
+| Owner         | Responsibility                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SDK           | Public types, request construction, response validation, snapshot immutability, structured client errors, and browser MessagePort adaptation.                      |
 | Platform host | Handshake/origin checks, capability negotiation, record-session lookup, permission enforcement, Record Behavior execution, persistence, and GraphQL authorization. |
-| Server | Tenant, record, field, action, and data authorization; authoritative data validation and mutation enforcement. |
-| Space author | Rendering snapshots and errors, choosing permitted application-data operations, and calling record commands for record workflow writes. |
+| Server        | Tenant, record, field, action, and data authorization; authoritative data validation and mutation enforcement.                                                     |
+| Space author  | Rendering snapshots and errors, choosing permitted application-data operations, and calling record commands for record workflow writes.                            |
 
 No presentation capability is an authorization boundary. The host and server validate every command and GraphQL operation.
 
@@ -118,8 +118,8 @@ No presentation capability is an authorization boundary. The host and server val
 ### Imports
 
 ```ts
-import { connectSpace } from '@simpleplatform/sdk/space'
 import type { RecordHandle, RecordSnapshot } from '@simpleplatform/sdk/space'
+import { connectSpace } from '@simpleplatform/sdk/space'
 ```
 
 ### Connection and primary record
