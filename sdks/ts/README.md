@@ -40,6 +40,96 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
 | **Storage**  | `@simpleplatform/sdk/storage`  | File upload and management                     |
+| **Space**    | `@simpleplatform/sdk/space`    | Behavior-aware record workflows in a Space     |
+
+## Embedded Spaces
+
+Use the explicit Space subpaths inside an embedded browser Space. The package
+root remains the Action/WASM API, so Action code never imports browser globals
+by accident.
+
+```typescript
+import { connectSpace } from '@simpleplatform/sdk/space'
+
+const hostOrigin = new URL(document.referrer).origin
+const simple = await connectSpace({ targetOrigin: hostOrigin })
+const record = await simple.records.current()
+
+await record.update({ first_name: 'Ada' }) // Stages values and runs update Behavior.
+const result = await record.submit() // Runs submit Behavior, then persists on success.
+
+if (!result.ok) {
+  const { errors, fields } = record.snapshot()
+  // Render every field's error/info plus form-level errors.
+}
+```
+
+Connect once when the Space starts and reuse the returned client. One embedded iframe has one host MessagePort handshake.
+
+`records.current()` returns the platform-owned record for the current record
+page. Its handle exposes immutable snapshots, `update(values)`, and `submit()`.
+The host enforces permissions and runs Record Behaviors; the Space only renders
+the returned state.
+
+### Space context
+
+`simple.context` is explicit host-provided page context. It is never inferred
+from a Space URL or the iframe DOM.
+
+```ts
+switch (simple.context.kind) {
+  case 'standalone':
+    break
+  case 'record':
+    console.log(
+      simple.context.applicationId,
+      simple.context.tableName,
+      simple.context.recordId,
+    )
+    break
+}
+```
+
+The two exact context forms are `{ kind: 'standalone' }` and
+`{ kind: 'record', applicationId, tableName, recordId }`. There is no
+`unknown` context variant. A missing or malformed context rejects
+`connectSpace()` with `SpaceProtocolError` code `invalid_response`.
+
+`connectSpace()` works in any embedded Space, including standalone dashboards
+and tools. In a non-record Space, `simple.data` remains available while
+`simple.records.current()` rejects with `SpaceProtocolError` code `unavailable`
+and explains that the Space must be configured as a record view.
+
+### Space data access
+
+Use `simple.data` for application data that is not the record form currently
+being edited. It uses the Space's existing, host-authorized GraphQL bridge.
+
+```typescript
+const users = await simple.data.query<{ users: Array<{ id: string, email: string }> }>(
+  `query ListUsers($limit: Int!) {
+    users: dev_simple_system__users(limit: $limit) {
+      id
+      email
+    }
+  }`,
+  { limit: 10 },
+)
+
+const result = await simple.data.mutate<{ insert_demo__note: { id: string } }>(
+  `mutation CreateNote($body: String!) {
+    insert_demo__note(object: { body: $body }) {
+      id
+    }
+  }`,
+  { body: 'Follow up with the customer.' },
+)
+```
+
+Use `record.update()` and `record.submit()` for writes to the current record.
+Those commands preserve Record Behaviors, validation, documents, and the shared
+record state used by the platform header. `simple.data.mutate()` is for other
+authorized application data; it must not be used to bypass a record workflow.
 
 ---
 

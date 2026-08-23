@@ -38,6 +38,7 @@ The Simple Platform SDKs provide first-class support for:
 - **🔐 Security Policies**: Author declarative, role-based access control with a fluent API
 - **⚙️ Settings Management**: Access application configuration securely
 - **📁 Storage Operations**: Upload and manage files with content-addressable storage
+- **🧾 Embedded Record Spaces**: Use behavior-aware record workflows through the browser-safe Space entry point
 - **⚡ WASM Performance**: Optimized for the Simple Platform's high-performance runtime
 
 ---
