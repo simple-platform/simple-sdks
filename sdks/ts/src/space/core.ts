@@ -2,14 +2,14 @@ export const PROTOCOL_VERSION = 1 as const
 
 export type SpaceContext
   = | {
-      applicationId: string
-      kind: 'record'
-      recordId: string
-      tableName: string
-    }
-    | {
-      kind: 'standalone'
-    }
+    applicationId: string
+    kind: 'record'
+    recordId: string
+    tableName: string
+  }
+  | {
+    kind: 'standalone'
+  }
 
 export interface RecordFieldSnapshot {
   error: null | string
