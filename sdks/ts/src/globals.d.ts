@@ -18,44 +18,17 @@ declare const __USER_SCRIPT_BUNDLE__: string | undefined
 declare const __IS_WORKER_BUILD__: boolean
 
 /**
- * WebAssembly memory bridge interface, provided by the Javy/Rust plugin.
- */
-declare const __wasm: {
-  alloc: (size: number) => number
-  clear_response_buffer: () => void
-  dealloc: (ptr: number, size: number) => void
-  get_response_len: () => number
-  get_response_ptr: () => number
-  read_string: (ptr: number, len: number) => string
-  write_string: (ptr: number, data: string) => void
-}
-
-/**
  * Host communication interface, provided by the Javy/Rust plugin.
  */
 declare const __host: {
-  call: (
-    namePtr: number,
-    nameLen: number,
-    paramsPtr: number,
-    paramsLen: number,
-    contextPtr: number,
-    contextLen: number,
-  ) => void
+  /** Calls an action and returns its parsed response. */
+  call: (name: string, params: unknown) => unknown
 
-  cast: (
-    namePtr: number,
-    nameLen: number,
-    paramsPtr: number,
-    paramsLen: number,
-    contextPtr: number,
-    contextLen: number,
-  ) => void
+  /** Calls an action without waiting for it to answer. */
+  cast: (name: string, params: unknown) => void
 
-  getContext: (ptr: number) => void
-  getContextSize: () => number
-  getExecutionResult: (ptr: number) => void
-  getExecutionResultSize: () => number
+  /** The execution context the host assembled, already parsed. */
+  getContext: () => unknown
 }
 
 // Asyncify ABI functions injected by wasm-opt
