@@ -24,9 +24,6 @@ export async function execute<T = any>(query: string, variables: any, context: C
     // eslint-disable-next-line no-console
     console.log('[GraphQL] response.error:', JSON.stringify(response.error, null, 2))
 
-    // eslint-disable-next-line no-console
-    console.log('[GraphQL] response.data:', JSON.stringify(response.data, null, 2))
-
     throw new Error(response.error?.message ?? 'GraphQL query failed')
   }
 
