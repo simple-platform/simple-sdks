@@ -175,8 +175,10 @@ function readInputFromHost(): string {
   }
 
   // Otherwise, we are in the main WASM module and must read from the host ABI.
-  const buffer = host.getContext()
-  return new TextDecoder().decode(buffer)
+  // The runtime parses the context on its own side now, so what comes back is a
+  // value rather than bytes. Both branches of this function still answer with
+  // text because that is what its callers parse.
+  return JSON.stringify(host.getContext())
 }
 
 function returnError(message: string, context?: Context): void {
