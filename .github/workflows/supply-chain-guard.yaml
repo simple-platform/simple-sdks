@@ -1,0 +1,30 @@
+name: Supply chain guard
+
+# Runs scripts/supply-chain-guard.sh --tree on GitHub's runners, so the scan
+# happens somewhere the person pushing does not control.
+#
+# The job id is `guard` because the branch ruleset requires a status check with
+# exactly that context. Renaming the job makes every pull request unmergeable:
+# the required check never reports and the merge box waits indefinitely. There
+# is deliberately no paths filter for the same reason -- a workflow that
+# declines to start produces no status at all, which a required check cannot
+# tell apart from one that has not finished yet.
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for hidden code
+        run: bash scripts/supply-chain-guard.sh --tree
