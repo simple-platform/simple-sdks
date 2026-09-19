@@ -1,0 +1,54 @@
+{
+  "name": "@simpleplatform/ui-kit",
+  "type": "module",
+  "version": "0.1.0-alpha.0",
+  "description": "Supported UI contracts and framework bridges for Simple Spaces",
+  "license": "Apache-2.0",
+  "sideEffects": [
+    "./dist/elements/index.js",
+    "./dist/elements/status-badge.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
+    },
+    "./elements": {
+      "types": "./dist/elements/index.d.ts",
+      "import": "./dist/elements/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./theme.css": "./theme.css",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "README.md",
+    "custom-elements.json",
+    "dist",
+    "theme.css"
+  ],
+  "scripts": {
+    "build": "node --eval \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18.3.0 <20"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "happy-dom": "20.8.9",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "customElements": "custom-elements.json"
+}
