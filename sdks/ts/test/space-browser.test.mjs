@@ -49,6 +49,21 @@ class FakeSpaceWindow {
   }
 }
 
+class FakeThemeDocument {
+  values = new Map()
+
+  documentElement = {
+    style: {
+      removeProperty: (name) => {
+        const value = this.values.get(name) ?? ''
+        this.values.delete(name)
+        return value
+      },
+      setProperty: (name, value) => this.values.set(name, value),
+    },
+  }
+}
+
 function primaryRecordResponse(requestId) {
   return {
     ok: true,
@@ -73,18 +88,28 @@ const recordContext = {
   tableName: 'user',
 }
 
-async function connectWithHost(port, context, protocols) {
+async function connectWithHost(port, context, protocols, theme, document) {
   const spaceWindow = new FakeSpaceWindow()
   const connection = connectSpace({
+    document,
     targetOrigin: 'https://acme.simple.lcl',
     window: spaceWindow,
   })
   spaceWindow.dispatchMessage({
-    data: { context, protocols, type: 'INIT_RPC' },
+    data: { context, protocols, theme, type: 'INIT_RPC' },
     origin: 'https://acme.simple.lcl',
     ports: [port],
   })
   return connection
+}
+
+const lightTheme = {
+  mode: 'light',
+  variables: {
+    '--simple-color-canvas': '#fff',
+    '--simple-color-text-primary': '#111',
+  },
+  version: 1,
 }
 
 test('forwards versioned requests over a dedicated MessagePort', async () => {
@@ -180,6 +205,57 @@ test('negotiates record protocol v1 during the existing Space handshake', async 
   })
 
   assert.equal((await primaryRecord).id, 'space-session-primary')
+})
+
+test('applies the initial host theme and fully replaces it when the host changes theme', async () => {
+  const document = new FakeThemeDocument()
+  const port = new FakePort()
+  await connectWithHost(port, { kind: 'standalone' }, undefined, lightTheme, document)
+
+  assert.deepEqual(Object.fromEntries(document.values), lightTheme.variables)
+
+  port.emit({
+    theme: {
+      mode: 'dark',
+      variables: { '--simple-color-canvas': '#111' },
+      version: 1,
+    },
+    type: 'THEME_CHANGED',
+  })
+
+  assert.deepEqual(Object.fromEntries(document.values), { '--simple-color-canvas': '#111' })
+})
+
+test('rejects an invalid initial theme snapshot and ignores invalid theme updates', async () => {
+  const document = new FakeThemeDocument()
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const connection = connectSpace({
+    document,
+    targetOrigin: 'https://acme.simple.lcl',
+    window: spaceWindow,
+  })
+
+  spaceWindow.dispatchMessage({
+    data: {
+      context: { kind: 'standalone' },
+      theme: { mode: 'light', variables: { '--not-simple': '#fff' }, version: 1 },
+      type: 'INIT_RPC',
+    },
+    origin: 'https://acme.simple.lcl',
+    ports: [port],
+  })
+
+  await assert.rejects(
+    () => connection,
+    error => error instanceof SpaceProtocolError
+      && error.code === 'invalid_response'
+      && error.message === 'The Space host did not provide a valid theme snapshot.',
+  )
+
+  await connectWithHost(port, { kind: 'standalone' }, undefined, lightTheme, document)
+  port.emit({ theme: { mode: 'violet', variables: {}, version: 1 }, type: 'THEME_CHANGED' })
+  assert.deepEqual(Object.fromEntries(document.values), lightTheme.variables)
 })
 
 test('connects a standalone Space for data access when the host does not negotiate record protocol v1', async () => {

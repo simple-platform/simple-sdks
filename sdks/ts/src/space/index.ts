@@ -5,11 +5,13 @@ import type {
   SimpleClient,
   SpaceDataTransport,
   SpaceTransport,
+  ThemeSnapshot,
 } from './core.js'
 
 import {
   createSimpleClient,
   isSpaceContext,
+  isThemeSnapshot,
   PROTOCOL_VERSION,
   SpaceDataError,
   SpaceProtocolError,
@@ -33,6 +35,7 @@ export type {
   SpaceContext,
   SpaceDataErrorPayload,
   SpaceProtocolErrorPayload,
+  ThemeSnapshot,
 } from './core.js'
 
 interface MessagePortLike {
@@ -42,6 +45,15 @@ interface MessagePortLike {
 }
 
 interface BrowserSpaceTransport extends SpaceDataTransport, SpaceTransport {}
+
+export interface SpaceThemeDocument {
+  documentElement: {
+    style: {
+      removeProperty: (name: string) => string
+      setProperty: (name: string, value: string) => void
+    }
+  }
+}
 
 export interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
@@ -58,6 +70,7 @@ export interface SpaceMessageEvent {
 }
 
 export interface ConnectSpaceOptions {
+  document?: SpaceThemeDocument
   targetOrigin: string
   window?: SpaceWindowLike
 }
@@ -67,7 +80,11 @@ export interface ConnectSpaceOptions {
  * handshake. Record operations become available only when the host negotiates
  * record protocol v1 for a configured record view.
  */
-export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
+export function connectSpace({
+  document = globalThis.document,
+  targetOrigin,
+  window = globalThis.window,
+}: ConnectSpaceOptions): Promise<SimpleClient> {
   if (!window) {
     return Promise.reject(new SpaceProtocolError({
       code: 'unavailable',
@@ -76,6 +93,7 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
   }
 
   return new Promise((resolve, reject) => {
+    const appliedThemeVariables = new Set<string>()
     const onMessage = (event: SpaceMessageEvent) => {
       if (event.origin !== targetOrigin || !isInitializationMessage(event.data))
         return
@@ -98,7 +116,18 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
         return
       }
 
-      const transport = createMessagePortTransport(port)
+      if (event.data.theme !== undefined && !isThemeSnapshot(event.data.theme)) {
+        reject(new SpaceProtocolError({
+          code: 'invalid_response',
+          message: 'The Space host did not provide a valid theme snapshot.',
+        }))
+        return
+      }
+
+      if (event.data.theme)
+        applyThemeSnapshot(document, appliedThemeVariables, event.data.theme)
+
+      const transport = createMessagePortTransport(port, document, appliedThemeVariables)
       const recordTransport = event.data.protocols?.record === PROTOCOL_VERSION
         ? transport
         : undefined
@@ -117,7 +146,11 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
   })
 }
 
-function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTransport {
+function createMessagePortTransport(
+  port: MessagePortLike,
+  document: SpaceThemeDocument | undefined,
+  appliedThemeVariables: Set<string>,
+): BrowserSpaceTransport {
   const pendingData = new Map<string, {
     reject: (reason?: unknown) => void
     resolve: (result: unknown) => void
@@ -136,8 +169,14 @@ function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTranspor
       errors: unknown
       id: unknown
       response: ProtocolResponse<unknown>
+      theme: unknown
       type: string
     }>
+    if (envelope.type === 'THEME_CHANGED') {
+      if (isThemeSnapshot(envelope.theme))
+        applyThemeSnapshot(document, appliedThemeVariables, envelope.theme)
+      return
+    }
     if (envelope.type === 'SPACE_PROTOCOL_RESPONSE' && envelope.response) {
       const requestId = envelope.response.requestId
       const request = pending.get(requestId)
@@ -227,10 +266,28 @@ function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
 function isInitializationMessage(value: unknown): value is {
   context?: unknown
   protocols?: { record?: unknown }
+  theme?: unknown
   type: 'INIT_RPC'
 } {
   if (!value || typeof value !== 'object')
     return false
 
   return (value as { type?: unknown }).type === 'INIT_RPC'
+}
+
+function applyThemeSnapshot(
+  document: SpaceThemeDocument | undefined,
+  appliedThemeVariables: Set<string>,
+  snapshot: ThemeSnapshot,
+): void {
+  if (!document)
+    return
+
+  for (const name of appliedThemeVariables) document.documentElement.style.removeProperty(name)
+  appliedThemeVariables.clear()
+
+  for (const [name, value] of Object.entries(snapshot.variables)) {
+    document.documentElement.style.setProperty(name, value)
+    appliedThemeVariables.add(name)
+  }
 }

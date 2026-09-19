@@ -11,6 +11,13 @@ export type SpaceContext
     kind: 'standalone'
   }
 
+/** A host-resolved, complete replacement of public Space theme variables. */
+export interface ThemeSnapshot {
+  mode: 'dark' | 'light'
+  variables: Readonly<Record<`--simple-${string}`, string>>
+  version: 1
+}
+
 export interface RecordFieldSnapshot {
   error: null | string
   info: null | string
@@ -243,6 +250,20 @@ export function isSpaceContext(value: unknown): value is SpaceContext {
     && context.tableName.length > 0
     && typeof context.recordId === 'string'
     && context.recordId.length > 0
+}
+
+export function isThemeSnapshot(value: unknown): value is ThemeSnapshot {
+  if (!isObjectRecord(value) || value.version !== 1 || (value.mode !== 'dark' && value.mode !== 'light'))
+    return false
+
+  if (!isObjectRecord(value.variables))
+    return false
+
+  return Object.entries(value.variables).every(([name, variableValue]) => {
+    return /^--simple-[a-z0-9-]+$/.test(name)
+      && typeof variableValue === 'string'
+      && variableValue.trim().length > 0
+  })
 }
 
 function executeData<TResult>(

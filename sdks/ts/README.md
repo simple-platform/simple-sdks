@@ -66,6 +66,14 @@ if (!result.ok) {
 
 Connect once when the Space starts and reuse the returned client. One embedded iframe has one host MessagePort handshake.
 
+### Theme transport
+
+The host resolves the tenant's supported semantic theme variables and applies a
+complete snapshot to the Space document root during this handshake. When the
+tenant theme or light/dark mode changes, the host replaces that snapshot over
+the same MessagePort. A Space consumes the documented `--simple-*` variables;
+it does not read parent-document styles or handle raw tenant CSS.
+
 `records.current()` returns the platform-owned record for the current record
 page. Its handle exposes immutable snapshots, `update(values)`, and `submit()`.
 The host enforces permissions and runs Record Behaviors; the Space only renders
