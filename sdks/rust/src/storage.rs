@@ -1,8 +1,9 @@
-//! Putting a file into the platform's store.
+//! Putting a file into the platform's store, and reading one back out.
 //!
 //! Two ways in — bytes this action already holds, and a file behind a URL — and
 //! one thing out of both: a [`DocumentHandle`], which is the value a `:document`
-//! field holds.
+//! field holds. The way out is [`read`], which takes that handle and answers with
+//! the file's bytes.
 //!
 //! ```
 //! # use simpleplatform_sdk::prelude::*;
@@ -42,6 +43,41 @@
 //! are kept once, so uploading a file the store already holds costs a hash and
 //! answers with the handle that was already there.
 //!
+//! # Reading a file back
+//!
+//! ```
+//! # use simpleplatform_sdk::prelude::*;
+//! # use simpleplatform_sdk::storage::DocumentHandle;
+//! # use simpleplatform_sdk::testing;
+//! # let file = b"%PDF-1.7 ...".to_vec();
+//! # let served = file.clone();
+//! # let _session = testing::install(|_name, _params| Ok(json!({ "size": 12 })))
+//! #     .with_bytes(move |_name, params| {
+//! #         let offset = params["offset"].as_u64().unwrap() as usize;
+//! #         let length = params["length"].as_u64().unwrap() as usize;
+//! #         Ok(served[offset..offset + length].to_vec())
+//! #     });
+//! # let handle = DocumentHandle {
+//! #     file_hash: "9f86d081884c".into(),
+//! #     filename: "statement.pdf".into(),
+//! #     mime_type: "application/pdf".into(),
+//! #     size: 12,
+//! #     storage_path: "_staged/9f86d081884c".into(),
+//! # };
+//! let bytes = simple::storage::read(&handle)?;
+//!
+//! assert_eq!(bytes, file);
+//! # Ok::<(), Error>(())
+//! ```
+//!
+//! The bytes cross from the host as they are, with no JSON and no base64. The
+//! size is asked for first, the buffer is allocated once at exactly that size,
+//! and the file arrives in ranges of at most [`MAX_RANGE_BYTES`], each written by
+//! the host straight into its place in that buffer. [`read_range`] reads part of
+//! a file, and [`size`] answers how large it is without reading any of it.
+//!
+//! Reading is for server actions. A browser action is refused.
+//!
 //! # Why the bytes are encoded here
 //!
 //! The call travels as JSON, and JSON carries text. So a buffer is base64 on the
@@ -60,6 +96,19 @@ use crate::host;
 
 /// The host action that stores a file and answers with its handle.
 const UPLOAD_EXTERNAL: &str = "action:storage/upload-external";
+
+/// The host action that answers a stored file's size.
+const STAT: &str = "action:storage/stat";
+
+/// The host action that answers one range of a stored file as its bytes.
+const READ: &str = "action:storage/read";
+
+/// The longest range the host answers one read with.
+///
+/// [`read`] and [`read_range`] cover anything longer in ranges of this size,
+/// into one buffer, so it bounds what the host holds for one call rather than
+/// what an action can read.
+pub const MAX_RANGE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// A stored file, as a `:document` field holds it.
 ///
@@ -353,6 +402,157 @@ fn send(source: Value, target: Target) -> Result<DocumentHandle, Error> {
     })
 }
 
+/// How many bytes a stored file holds, from the store's own record of it.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::storage::DocumentHandle;
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|name, _params| {
+/// #     assert_eq!(name, "action:storage/stat");
+/// #     Ok(json!({ "size": 81_920 }))
+/// # });
+/// # let handle = DocumentHandle {
+/// #     file_hash: "9f86d081884c".into(),
+/// #     filename: "statement.pdf".into(),
+/// #     mime_type: "application/pdf".into(),
+/// #     size: 81_920,
+/// #     storage_path: "_staged/9f86d081884c".into(),
+/// # };
+/// assert_eq!(simple::storage::size(&handle)?, 81_920);
+/// # Ok::<(), Error>(())
+/// ```
+pub fn size(handle: &DocumentHandle) -> Result<u64, Error> {
+    check_handle(handle)?;
+
+    let answer = host::transport()?.call(STAT.to_string(), json!({ "handle": handle }))?;
+
+    answer.get("size").and_then(Value::as_u64).ok_or_else(|| {
+        Error::Host(Fault::new(
+            Code::unspecified(),
+            format!("{STAT} answered without a size: {answer}"),
+        ))
+    })
+}
+
+/// The whole of a stored file.
+///
+/// The size is asked for first, the buffer is allocated once at exactly that
+/// size, and every range is written by the host straight into its place in it.
+/// A file this action has no memory for is refused before anything is read,
+/// and a range answered short — a file that changed while it was read — is
+/// refused rather than handed over incomplete.
+pub fn read(handle: &DocumentHandle) -> Result<Vec<u8>, Error> {
+    let size = size(handle)?;
+
+    let mut bytes = Vec::new();
+    let capacity = usize::try_from(size).map_err(|_too_large| too_large(size))?;
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_no_memory| too_large(size))?;
+
+    let transport = host::transport()?;
+    let mut offset = 0;
+
+    while offset < size {
+        let length = MAX_RANGE_BYTES.min(size - offset);
+        let appended =
+            transport.call_bytes(READ.to_string(), range(handle, offset, length), &mut bytes)?;
+
+        if appended as u64 != length {
+            return Err(short(offset, length, appended));
+        }
+
+        offset += length;
+    }
+
+    Ok(bytes)
+}
+
+/// Up to `length` bytes of a stored file, starting `offset` bytes in.
+///
+/// A range that runs past the end answers with the bytes up to the end; one
+/// that starts at or past the end is refused. A range longer than
+/// [`MAX_RANGE_BYTES`] is read in several, into one buffer.
+pub fn read_range(handle: &DocumentHandle, offset: u64, length: u64) -> Result<Vec<u8>, Error> {
+    check_handle(handle)?;
+
+    if length == 0 {
+        return Err(Error::invalid("A range needs at least one byte.")
+            .hint("Pass a length of one or more, or ask size() how large the file is."));
+    }
+
+    let mut bytes = Vec::new();
+    let capacity = usize::try_from(length).map_err(|_too_large| too_large(length))?;
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_no_memory| too_large(length))?;
+
+    let transport = host::transport()?;
+    let mut read = 0;
+
+    while read < length {
+        let wanted = MAX_RANGE_BYTES.min(length - read);
+        let appended = transport.call_bytes(
+            READ.to_string(),
+            range(handle, offset + read, wanted),
+            &mut bytes,
+        )?;
+
+        read += appended as u64;
+
+        // The file ended inside this range.
+        if (appended as u64) < wanted {
+            break;
+        }
+    }
+
+    Ok(bytes)
+}
+
+/// The parameters of one range read.
+fn range(handle: &DocumentHandle, offset: u64, length: u64) -> Value {
+    json!({ "handle": handle, "offset": offset, "length": length })
+}
+
+/// A file this action cannot hold.
+fn too_large(size: u64) -> Error {
+    Error::failed(format!(
+        "The file is {size} bytes, more than this action has memory for."
+    ))
+    .hint("Raise the action's mem_limit, or read the file in parts with read_range.")
+}
+
+/// A range the host answered with fewer bytes than the file's size promised.
+fn short(offset: u64, length: u64, appended: usize) -> Error {
+    Error::Host(Fault::new(
+        Code::unspecified(),
+        format!(
+            "The file answered {appended} bytes for the {length} at offset {offset}, \
+             so it is not the size it was when the read began."
+        ),
+    ))
+    .hint("Read it again.")
+}
+
+/// Whether a handle names a stored file.
+fn check_handle(handle: &DocumentHandle) -> Result<(), Error> {
+    let named = [
+        ("storage_path", &handle.storage_path),
+        ("filename", &handle.filename),
+        ("file_hash", &handle.file_hash),
+    ];
+
+    for (member, value) in named {
+        if value.trim().is_empty() {
+            return Err(Error::invalid(format!("A document handle needs {member}."))
+                .hint("Pass the handle exactly as the :document field holds it."));
+        }
+    }
+
+    Ok(())
+}
+
 /// Whether a target names a field to attach to.
 fn check_target(target: &Target) -> Result<(), Error> {
     let named = [
@@ -459,6 +659,230 @@ mod tests {
 
     fn target() -> Target {
         Target::new("dev.simple.system", "documents", "attachment")
+    }
+
+    fn handle() -> DocumentHandle {
+        DocumentHandle {
+            file_hash: "9f86d081884c7d65".to_string(),
+            filename: "statement.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 0,
+            storage_path: "_staged/9f86d081884c7d65".to_string(),
+        }
+    }
+
+    /// Every byte value, so bytes passed through any text decoding on the way
+    /// could not compare equal.
+    fn every_byte(count: usize) -> Vec<u8> {
+        (0..count).map(|i| ((i * 7 + 3) % 256) as u8).collect()
+    }
+
+    /// A session serving `file` the way the host does: its size from the store,
+    /// and each range as its bytes, up to the end of the file.
+    fn serving(file: Vec<u8>) -> testing::Session {
+        let size = file.len();
+
+        testing::install(move |name, _params| {
+            assert_eq!(name, "action:storage/stat");
+            Ok(json!({ "size": size }))
+        })
+        .with_bytes(move |name, params| {
+            assert_eq!(name, "action:storage/read");
+            let offset = params["offset"].as_u64().unwrap() as usize;
+            let length = params["length"].as_u64().unwrap() as usize;
+
+            if offset >= file.len() {
+                return Err(Error::invalid(
+                    "'offset' is at or past the end of the file.",
+                ));
+            }
+
+            Ok(file[offset..file.len().min(offset + length)].to_vec())
+        })
+    }
+
+    #[test]
+    fn a_read_answers_the_file_byte_for_byte() {
+        let file = every_byte(5_000);
+        let _session = serving(file.clone());
+
+        assert_eq!(read(&handle()).unwrap(), file);
+    }
+
+    #[test]
+    fn a_read_allocates_once_at_exactly_the_size_the_store_reports() {
+        let file = every_byte(40 * 1024 * 1024 + 17);
+        let _session = serving(file.clone());
+
+        let bytes = read(&handle()).unwrap();
+
+        assert_eq!(bytes.len(), file.len());
+        assert_eq!(bytes.capacity(), file.len());
+        assert!(bytes == file);
+    }
+
+    #[test]
+    fn a_large_read_asks_for_ranges_no_longer_than_the_host_answers() {
+        let file = every_byte(40 * 1024 * 1024 + 17);
+        let session = serving(file);
+
+        read(&handle()).unwrap();
+
+        let ranges: Vec<(u64, u64)> = session
+            .calls()
+            .iter()
+            .filter(|call| call.name == "action:storage/read")
+            .map(|call| {
+                (
+                    call.params["offset"].as_u64().unwrap(),
+                    call.params["length"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+
+        let mib = 1024 * 1024;
+        assert_eq!(
+            ranges,
+            vec![
+                (0, 16 * mib),
+                (16 * mib, 16 * mib),
+                (32 * mib, 8 * mib + 17)
+            ]
+        );
+    }
+
+    #[test]
+    fn every_read_carries_the_handle_it_was_given() {
+        let session = serving(every_byte(10));
+
+        read(&handle()).unwrap();
+
+        for call in session.calls() {
+            assert_eq!(
+                call.params["handle"],
+                serde_json::to_value(handle()).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_file_is_read_without_asking_for_a_range() {
+        let session = serving(Vec::new());
+
+        assert_eq!(read(&handle()).unwrap(), Vec::<u8>::new());
+        assert_eq!(session.calls().len(), 1);
+    }
+
+    #[test]
+    fn a_range_answered_short_is_refused_rather_than_handed_over() {
+        let _session = testing::install(|_name, _params| Ok(json!({ "size": 100 })))
+            .with_bytes(|_name, _params| Ok(vec![0; 60]));
+
+        let error = read(&handle()).unwrap_err();
+
+        assert!(error.message().contains("60 bytes for the 100 at offset 0"));
+    }
+
+    #[test]
+    fn a_host_refusal_reaches_the_caller_with_its_own_message() {
+        let _session = testing::install(|_name, _params| Ok(json!({ "size": 10 }))).with_bytes(
+            |_name, _params| Err(Error::invalid("No stored file matches this handle.")),
+        );
+
+        let error = read(&handle()).unwrap_err();
+
+        assert!(error
+            .message()
+            .contains("action:storage/read failed: No stored file matches this handle."));
+    }
+
+    #[test]
+    fn a_file_larger_than_this_action_can_hold_is_refused_before_any_range() {
+        let session = testing::install(|_name, _params| Ok(json!({ "size": u64::MAX })));
+
+        let error = read(&handle()).unwrap_err();
+
+        assert!(error
+            .message()
+            .contains("more than this action has memory for"));
+        assert_eq!(session.calls().len(), 1);
+    }
+
+    #[test]
+    fn size_answers_what_the_store_reports() {
+        let _session = testing::install(|_name, _params| Ok(json!({ "size": 81_920 })));
+
+        assert_eq!(size(&handle()).unwrap(), 81_920);
+    }
+
+    #[test]
+    fn a_range_answers_exactly_that_range() {
+        let file = every_byte(10_000);
+        let _session = serving(file.clone());
+
+        assert_eq!(
+            read_range(&handle(), 4_000, 1_500).unwrap(),
+            file[4_000..5_500]
+        );
+    }
+
+    #[test]
+    fn a_range_running_past_the_end_answers_up_to_the_end() {
+        let file = every_byte(10_000);
+        let _session = serving(file.clone());
+
+        assert_eq!(read_range(&handle(), 9_990, 100).unwrap(), file[9_990..]);
+    }
+
+    #[test]
+    fn a_range_starting_past_the_end_is_refused() {
+        let _session = serving(every_byte(10));
+
+        assert!(read_range(&handle(), 10, 1).is_err());
+    }
+
+    #[test]
+    fn an_empty_range_is_refused_before_anything_is_sent() {
+        let session = serving(every_byte(10));
+
+        assert!(read_range(&handle(), 0, 0).is_err());
+        assert!(session.calls().is_empty());
+    }
+
+    #[test]
+    fn a_handle_missing_what_names_the_file_is_refused_before_anything_is_sent() {
+        let session = serving(every_byte(10));
+
+        for broken in [
+            DocumentHandle {
+                storage_path: String::new(),
+                ..handle()
+            },
+            DocumentHandle {
+                filename: " ".to_string(),
+                ..handle()
+            },
+            DocumentHandle {
+                file_hash: String::new(),
+                ..handle()
+            },
+        ] {
+            assert_eq!(
+                read(&broken).unwrap_err().code().as_str(),
+                "INVALID_TOOL_INPUT"
+            );
+        }
+
+        assert!(session.calls().is_empty());
+    }
+
+    #[test]
+    fn a_session_with_no_bytes_reply_says_how_to_give_it_one() {
+        let _session = testing::install(|_name, _params| Ok(json!({ "size": 10 })));
+
+        let error = read(&handle()).unwrap_err();
+
+        assert!(error.message().contains("was given no way to"));
     }
 
     #[test]

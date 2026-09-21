@@ -17,7 +17,7 @@ use simpleplatform_sdk::testing;
 /// `abi` is private and `cfg(target_arch = "wasm32")`; `host::set`,
 /// `host::transport`, `host::unwrap_reply`, `host::DONE` and `envelope` are all
 /// `pub(crate)`. The only public things in `host` are the `Transport` trait and
-/// its three methods. An action writes values and reads values; addresses,
+/// its four methods. An action writes values and reads values; addresses,
 /// allocations and the ambient slot are the crate's business.
 ///
 /// This test holds that line: it uses the whole public surface, and the

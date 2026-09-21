@@ -51,6 +51,22 @@ pub trait Transport {
     /// they have to inspect themselves.
     fn call(&self, name: String, params: Value) -> Result<Value, Error>;
 
+    /// Run an action whose reply is a run of bytes, and append them to `into`.
+    ///
+    /// Answers with how many bytes were appended. The bytes arrive as they
+    /// are — no envelope, no text encoding — and a host that refused answers
+    /// with a typed error instead, exactly as [`Transport::call`] does.
+    ///
+    /// Provided, so a transport written before this method existed still
+    /// compiles; the provided one refuses every such call.
+    fn call_bytes(&self, name: String, params: Value, into: &mut Vec<u8>) -> Result<usize, Error> {
+        let _unsent = (params, into);
+
+        Err(Error::failed(format!(
+            "{name} answers with bytes, and this transport cannot carry them."
+        )))
+    }
+
     /// Run an action and do not wait for it.
     fn cast(&self, name: String, params: Value);
 
@@ -109,12 +125,7 @@ mod guest {
 
     impl Transport for Guest {
         fn call(&self, name: String, params: Value) -> Result<Value, Error> {
-            let payload = serde_json::to_string(&params).map_err(|cause| {
-                Error::Json(crate::error::Fault::new(
-                    crate::codes::Code::InvalidToolInput,
-                    format!("The parameters for {name} could not be encoded: {cause}"),
-                ))
-            })?;
+            let payload = encode(&name, &params)?;
 
             let reply = abi::call(&name, &payload).ok_or_else(|| {
                 Error::Host(crate::error::Fault::new(
@@ -133,6 +144,50 @@ mod guest {
             super::unwrap_reply(&name, value)
         }
 
+        #[cfg(not(feature = "async"))]
+        fn call_bytes(
+            &self,
+            name: String,
+            params: Value,
+            into: &mut Vec<u8>,
+        ) -> Result<usize, Error> {
+            let payload = encode(&name, &params)?;
+
+            match abi::call_bytes(&name, &payload, into) {
+                abi::Bytes::Appended(count) => Ok(count),
+                abi::Bytes::Refused(envelope) => {
+                    let value: Value = serde_json::from_str(&envelope).map_err(|cause| {
+                        Error::Json(crate::error::Fault::new(
+                            crate::codes::Code::unspecified(),
+                            format!("{name} refused with something that is not JSON: {cause}"),
+                        ))
+                    })?;
+
+                    // The size said refusal, so a document saying otherwise is
+                    // still a refusal: nothing was appended.
+                    super::unwrap_reply(&name, value).and_then(|_contradicted| {
+                        Err(Error::Host(crate::error::Fault::new(
+                            crate::codes::Code::unspecified(),
+                            format!("{name} was refused and gave no reason."),
+                        )))
+                    })
+                }
+            }
+        }
+
+        #[cfg(feature = "async")]
+        fn call_bytes(
+            &self,
+            name: String,
+            _params: Value,
+            _into: &mut Vec<u8>,
+        ) -> Result<usize, Error> {
+            Err(Error::failed(format!(
+                "{name} answers with bytes, which only a server action can receive."
+            ))
+            .hint("Set the action's execution environment to server."))
+        }
+
         fn cast(&self, name: String, params: Value) {
             // A cast has nowhere to report a failure to, and the one cast that
             // matters is `__done__` — which is how the host learns a run
@@ -147,6 +202,16 @@ mod guest {
         fn context(&self) -> Option<String> {
             abi::context()
         }
+    }
+
+    /// The parameters as the JSON text the host reads.
+    fn encode(name: &str, params: &Value) -> Result<String, Error> {
+        serde_json::to_string(params).map_err(|cause| {
+            Error::Json(crate::error::Fault::new(
+                crate::codes::Code::InvalidToolInput,
+                format!("The parameters for {name} could not be encoded: {cause}"),
+            ))
+        })
     }
 
     static TRANSPORT: OnceLock<Guest> = OnceLock::new();
