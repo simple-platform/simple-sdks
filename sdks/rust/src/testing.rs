@@ -90,6 +90,9 @@ pub struct Call {
     pub params: Value,
 }
 
+/// How a test answers a call whose reply is a run of bytes.
+type BytesReply = Box<dyn Fn(String, Value) -> Result<Vec<u8>, Error>>;
+
 /// The shared middle of a session: what the transport writes and the test reads.
 #[derive(Default)]
 struct Recorder {
@@ -97,6 +100,7 @@ struct Recorder {
     done: RefCell<Option<Value>>,
     request: RefCell<String>,
     context: RefCell<Context>,
+    bytes: RefCell<Option<BytesReply>>,
 }
 
 /// A host that answers from a closure and remembers what it was asked.
@@ -126,6 +130,47 @@ impl Transport for Mock {
         };
 
         host::unwrap_reply(&name, reply)
+    }
+
+    /// The bytes closure's answer, appended as the real transport appends them.
+    /// A refusal takes the same envelope ladder as [`Mock::call`], so a test
+    /// sees the error production would have raised.
+    fn call_bytes(&self, name: String, params: Value, into: &mut Vec<u8>) -> Result<usize, Error> {
+        if let Ok(mut calls) = self.recorder.calls.try_borrow_mut() {
+            calls.push(Call {
+                name: name.clone(),
+                params: params.clone(),
+            });
+        }
+
+        let answer = match self.recorder.bytes.try_borrow() {
+            Ok(reply) => match reply.as_ref() {
+                Some(reply) => reply(name.clone(), params),
+                None => {
+                    return Err(Error::failed(format!(
+                        "{name} answers with bytes, and this session was given no way to."
+                    ))
+                    .hint("Answer it with Session::with_bytes."))
+                }
+            },
+            Err(_busy) => {
+                return Err(Error::failed(format!(
+                    "{name} was called from inside the session's own reply."
+                )))
+            }
+        };
+
+        match answer {
+            Ok(bytes) => {
+                into.extend_from_slice(&bytes);
+                Ok(bytes.len())
+            }
+            Err(refusal) => host::unwrap_reply(
+                &name,
+                json!({ "ok": false, "error": { "message": refusal.message() } }),
+            )
+            .map(|_never| 0),
+        }
     }
 
     fn cast(&self, name: String, params: Value) {
@@ -191,6 +236,24 @@ impl Session {
     pub fn with_request(self, data: Value) -> Session {
         if let Ok(mut request) = self.recorder.request.try_borrow_mut() {
             *request = data.to_string();
+        }
+
+        self
+    }
+
+    /// Answer the calls whose reply is a run of bytes, such as a read of a
+    /// stored file's range, from `reply`.
+    ///
+    /// `reply` is handed the action name and its parameters, and answers with
+    /// the bytes the host would have written or an [`Error`] for a host that
+    /// refused. Every other call is still answered by the closure the session
+    /// was installed with.
+    pub fn with_bytes<F>(self, reply: F) -> Session
+    where
+        F: Fn(String, Value) -> Result<Vec<u8>, Error> + 'static,
+    {
+        if let Ok(mut slot) = self.recorder.bytes.try_borrow_mut() {
+            *slot = Some(Box::new(reply));
         }
 
         self
