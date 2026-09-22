@@ -74,7 +74,8 @@
 //! size is asked for first, the buffer is allocated once at exactly that size,
 //! and the file arrives in ranges of at most [`MAX_RANGE_BYTES`], each written by
 //! the host straight into its place in that buffer. [`read_range`] reads part of
-//! a file, and [`size`] answers how large it is without reading any of it.
+//! a file the same way, from the size first, and [`size`] answers how large it
+//! is without reading any of it.
 //!
 //! Reading is for server actions. A browser action is refused.
 //!
@@ -443,37 +444,22 @@ pub fn size(handle: &DocumentHandle) -> Result<u64, Error> {
 /// and a range answered short — a file that changed while it was read — is
 /// refused rather than handed over incomplete.
 pub fn read(handle: &DocumentHandle) -> Result<Vec<u8>, Error> {
-    let size = size(handle)?;
+    let total = size(handle)?;
 
-    let mut bytes = Vec::new();
-    let capacity = usize::try_from(size).map_err(|_too_large| too_large(size))?;
-    bytes
-        .try_reserve_exact(capacity)
-        .map_err(|_no_memory| too_large(size))?;
-
-    let transport = host::transport()?;
-    let mut offset = 0;
-
-    while offset < size {
-        let length = MAX_RANGE_BYTES.min(size - offset);
-        let appended =
-            transport.call_bytes(READ.to_string(), range(handle, offset, length), &mut bytes)?;
-
-        if appended as u64 != length {
-            return Err(short(offset, length, appended));
-        }
-
-        offset += length;
-    }
-
-    Ok(bytes)
+    read_span(handle, 0, total)
 }
 
 /// Up to `length` bytes of a stored file, starting `offset` bytes in.
 ///
-/// A range that runs past the end answers with the bytes up to the end; one
-/// that starts at or past the end is refused. A range longer than
-/// [`MAX_RANGE_BYTES`] is read in several, into one buffer.
+/// The size is asked for first, so the range is held at what the file has past
+/// `offset`: one that runs past the end answers with exactly the bytes up to
+/// the end, and one that starts at or past the end is refused before any range
+/// is read. What is left is read as [`read`] reads a whole file — in ranges of
+/// at most [`MAX_RANGE_BYTES`], into one buffer allocated once at that length,
+/// each range answered in full or refused.
+///
+/// Asking for the size first is also what makes a host that cannot read
+/// stored files refuse in its own words, before any range is asked of it.
 pub fn read_range(handle: &DocumentHandle, offset: u64, length: u64) -> Result<Vec<u8>, Error> {
     check_handle(handle)?;
 
@@ -482,6 +468,20 @@ pub fn read_range(handle: &DocumentHandle, offset: u64, length: u64) -> Result<V
             .hint("Pass a length of one or more, or ask size() how large the file is."));
     }
 
+    let total = size(handle)?;
+
+    if offset >= total {
+        return Err(past_end(offset, total));
+    }
+
+    read_span(handle, offset, length.min(total - offset))
+}
+
+/// Exactly `length` bytes from `offset`, which the file's size says are there.
+///
+/// The buffer is allocated once at `length` before any range is asked for, and
+/// every range must arrive whole.
+fn read_span(handle: &DocumentHandle, offset: u64, length: u64) -> Result<Vec<u8>, Error> {
     let mut bytes = Vec::new();
     let capacity = usize::try_from(length).map_err(|_too_large| too_large(length))?;
     bytes
@@ -489,22 +489,21 @@ pub fn read_range(handle: &DocumentHandle, offset: u64, length: u64) -> Result<V
         .map_err(|_no_memory| too_large(length))?;
 
     let transport = host::transport()?;
-    let mut read = 0;
+    let mut done = 0;
 
-    while read < length {
-        let wanted = MAX_RANGE_BYTES.min(length - read);
+    while done < length {
+        let wanted = MAX_RANGE_BYTES.min(length - done);
         let appended = transport.call_bytes(
             READ.to_string(),
-            range(handle, offset + read, wanted),
+            range(handle, offset + done, wanted),
             &mut bytes,
         )?;
 
-        read += appended as u64;
-
-        // The file ended inside this range.
-        if (appended as u64) < wanted {
-            break;
+        if appended as u64 != wanted {
+            return Err(short(offset + done, wanted, appended));
         }
+
+        done += wanted;
     }
 
     Ok(bytes)
@@ -515,12 +514,20 @@ fn range(handle: &DocumentHandle, offset: u64, length: u64) -> Value {
     json!({ "handle": handle, "offset": offset, "length": length })
 }
 
-/// A file this action cannot hold.
-fn too_large(size: u64) -> Error {
+/// A read this action cannot hold.
+fn too_large(length: u64) -> Error {
     Error::failed(format!(
-        "The file is {size} bytes, more than this action has memory for."
+        "Reading {length} bytes needs more memory than this action has."
     ))
     .hint("Raise the action's mem_limit, or read the file in parts with read_range.")
+}
+
+/// A range that starts where the file has nothing left to read.
+fn past_end(offset: u64, total: u64) -> Error {
+    Error::invalid(format!(
+        "The range starts at byte {offset}, at or past the end of the file, which is {total} bytes."
+    ))
+    .hint("Ask size() how large the file is, and start the range before its end.")
 }
 
 /// A range the host answered with fewer bytes than the file's size promised.
@@ -798,14 +805,27 @@ mod tests {
 
     #[test]
     fn a_file_larger_than_this_action_can_hold_is_refused_before_any_range() {
-        let session = testing::install(|_name, _params| Ok(json!({ "size": u64::MAX })));
+        let largest = u64::MAX;
+        let session = testing::install(move |_name, _params| Ok(json!({ "size": largest })));
 
         let error = read(&handle()).unwrap_err();
 
+        assert_eq!(
+            error.message(),
+            format!("Reading {largest} bytes needs more memory than this action has.")
+        );
+        assert_eq!(session.calls().len(), 1);
+
+        let error = read_range(&handle(), 0, largest).unwrap_err();
+
         assert!(error
             .message()
-            .contains("more than this action has memory for"));
-        assert_eq!(session.calls().len(), 1);
+            .contains("needs more memory than this action has"));
+        assert_eq!(
+            session.calls().len(),
+            2,
+            "one size lookup each, and no range"
+        );
     }
 
     #[test]
@@ -816,14 +836,32 @@ mod tests {
     }
 
     #[test]
-    fn a_range_answers_exactly_that_range() {
+    fn a_size_refusal_keeps_the_hosts_own_message() {
+        let _session = testing::install(|_name, _params| {
+            Err(Error::invalid("No stored file matches this handle."))
+        });
+
+        let error = size(&handle()).unwrap_err();
+
+        assert_eq!(
+            error.message(),
+            "action:storage/stat failed: No stored file matches this handle."
+        );
+    }
+
+    #[test]
+    fn a_range_answers_exactly_that_range_after_asking_for_the_size() {
         let file = every_byte(10_000);
-        let _session = serving(file.clone());
+        let session = serving(file.clone());
 
         assert_eq!(
             read_range(&handle(), 4_000, 1_500).unwrap(),
             file[4_000..5_500]
         );
+
+        let names: Vec<String> = session.calls().into_iter().map(|call| call.name).collect();
+
+        assert_eq!(names, ["action:storage/stat", "action:storage/read"]);
     }
 
     #[test]
@@ -835,10 +873,163 @@ mod tests {
     }
 
     #[test]
-    fn a_range_starting_past_the_end_is_refused() {
-        let _session = serving(every_byte(10));
+    fn a_range_starting_at_or_past_the_end_is_refused_before_any_range() {
+        for offset in [10, 11, 20] {
+            let session = serving(every_byte(10));
 
-        assert!(read_range(&handle(), 10, 1).is_err());
+            let error = read_range(&handle(), offset, 1).unwrap_err();
+
+            assert_eq!(error.code().as_str(), "INVALID_TOOL_INPUT");
+            assert_eq!(
+                error.message(),
+                format!(
+                    "The range starts at byte {offset}, at or past the end of the file, which is 10 bytes."
+                )
+            );
+            assert_eq!(
+                error.fault().hint(),
+                "Ask size() how large the file is, and start the range before its end."
+            );
+            assert!(ranges(&session).is_empty());
+        }
+    }
+
+    /// The offset and length of every range the host was asked for, in order.
+    fn ranges(session: &testing::Session) -> Vec<(u64, u64)> {
+        session
+            .calls()
+            .iter()
+            .filter(|call| call.name == "action:storage/read")
+            .map(|call| {
+                (
+                    call.params["offset"].as_u64().unwrap(),
+                    call.params["length"].as_u64().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    /// A file's size, the offset and the length a range asks for, and the
+    /// offset and length of every range the host is asked for in turn.
+    type Case = (u64, u64, u64, Vec<(u64, u64)>);
+
+    // The same cases pin the Go and TypeScript SDKs. A range is held at what
+    // the file has past its offset, so the file ending exactly where a range
+    // of 16 MiB does never leads to asking for a range at the end.
+    #[test]
+    fn a_range_is_held_at_what_the_file_has_at_every_boundary() {
+        let mib: u64 = 1024 * 1024;
+        let largest = every_byte(32 * 1024 * 1024 + 5);
+
+        let cases: Vec<Case> = vec![
+            (16 * mib, 0, 16 * mib, vec![(0, 16 * mib)]),
+            (16 * mib, 0, 16 * mib + 1, vec![(0, 16 * mib)]),
+            (
+                16 * mib + 1,
+                0,
+                16 * mib + 1,
+                vec![(0, 16 * mib), (16 * mib, 1)],
+            ),
+            (
+                32 * mib + 5,
+                0,
+                32 * mib + 5,
+                vec![(0, 16 * mib), (16 * mib, 16 * mib), (32 * mib, 5)],
+            ),
+            (
+                32 * mib + 5,
+                0,
+                48 * mib,
+                vec![(0, 16 * mib), (16 * mib, 16 * mib), (32 * mib, 5)],
+            ),
+            (
+                32 * mib + 5,
+                16 * mib,
+                16 * mib + 1,
+                vec![(16 * mib, 16 * mib), (32 * mib, 1)],
+            ),
+            (32 * mib, 16 * mib, 16 * mib + 1, vec![(16 * mib, 16 * mib)]),
+            (10, 9, 5, vec![(9, 1)]),
+        ];
+
+        for (size, offset, length, asked) in cases {
+            let file = largest[..size as usize].to_vec();
+            let session = serving(file.clone());
+
+            let bytes = read_range(&handle(), offset, length).unwrap();
+            let end = size.min(offset + length) as usize;
+
+            assert_eq!(
+                bytes.len(),
+                end - offset as usize,
+                "{size} {offset} {length}"
+            );
+            assert_eq!(bytes.capacity(), bytes.len(), "{size} {offset} {length}");
+            assert!(
+                bytes == file[offset as usize..end],
+                "{size} {offset} {length}"
+            );
+            assert_eq!(ranges(&session), asked, "{size} {offset} {length}");
+            assert_eq!(session.calls()[0].name, "action:storage/stat");
+        }
+
+        for (size, offset, length) in [
+            (0, 0, 1),
+            (10, 10, 1),
+            (10, 11, 1),
+            (10, 20, 32 * mib),
+            (16 * mib, 16 * mib, 16 * mib + 1),
+        ] {
+            let session = serving(largest[..size as usize].to_vec());
+
+            let error = read_range(&handle(), offset, length).unwrap_err();
+
+            assert!(
+                error.message().contains(&format!(
+                    "at or past the end of the file, which is {size} bytes"
+                )),
+                "{size} {offset} {length}: {}",
+                error.message()
+            );
+            assert!(ranges(&session).is_empty(), "{size} {offset} {length}");
+        }
+
+        for size in [0, 16 * mib, 16 * mib + 1, 32 * mib + 5] {
+            let file = largest[..size as usize].to_vec();
+            let _session = serving(file.clone());
+
+            assert!(read(&handle()).unwrap() == file, "{size}");
+        }
+    }
+
+    // A host from before stored files could be read answers a byte read in
+    // its JSON envelope, as though the envelope were the file. The size is
+    // asked for first, which such a host refuses as a request it does not
+    // know, so the envelope is never asked for and never handed over.
+    #[test]
+    fn a_host_that_cannot_read_stored_files_refuses_before_any_range() {
+        let session = testing::install(|name, _params| {
+            Err(Error::invalid(format!("Unknown request: {name}")))
+        })
+        .with_bytes(|_name, _params| {
+            Ok(
+                br#"{"ok":false,"error":{"message":"Unknown request: action:storage/read"}}"#
+                    .to_vec(),
+            )
+        });
+
+        for error in [
+            read_range(&handle(), 0, 64).unwrap_err(),
+            read_range(&handle(), 0, 32 * 1024 * 1024).unwrap_err(),
+            read(&handle()).unwrap_err(),
+        ] {
+            assert_eq!(
+                error.message(),
+                "action:storage/stat failed: Unknown request: action:storage/stat"
+            );
+        }
+
+        assert!(ranges(&session).is_empty());
     }
 
     #[test]
