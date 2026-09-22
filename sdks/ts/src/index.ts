@@ -181,25 +181,27 @@ function readInputFromHost(): string {
 }
 
 /**
- * Reads the request the host sent: the value `JSON.parse(readInputFromHost())`
- * is, or `undefined` when there is no input at all. `JSON.parse` never returns
- * `undefined`, so the two cannot be confused.
+ * Reads the request the host sent, or `undefined` when it sent none.
  *
- * The request data skips a round trip that gave it back unchanged.
+ * Inside a WASM module the request is handed over as a value the runtime
+ * parsed from the host's own JSON, so it is read as it arrived. It used to be
+ * serialised and parsed again, which cost the whole payload twice over — the
+ * data is one string holding all of it, so ten megabytes were escaped into a
+ * new string and unescaped into another — and gave back what it started with,
+ * apart from the two values JSON cannot write: a negative zero came back as
+ * zero, and an infinite number as null. An action now sees what the host sent,
+ * those two included.
  *
- * Inside a WASM module the request arrives already parsed, and it used to be
- * turned back into text only to be parsed again. For most of the request that
- * round trip is cheap. For `data` it is not: the data is one string holding the
- * whole payload, so a ten megabyte request was escaped into a new string,
- * unescaped into another, and ended up exactly the string it started as, since
- * `JSON.parse(JSON.stringify(s))` is `s` for every string.
+ * Nothing here writes to the value. It belongs to the host, which stays free to
+ * hand over a frozen envelope, to answer `data` from a getter, or to read its
+ * own envelope back — as an action does when it calls `getContext` itself.
  *
- * So the data is kept as it arrived and everything else still takes the round
- * trip, which keeps the rest of the request exactly what it was, including the
- * one thing the round trip changes: a negative zero anywhere in the headers or
- * the context still arrives as zero. The data's place is held by an empty string
- * so its key keeps its position. Anything that is not a request with string
- * data takes the whole round trip, as before.
+ * The script worker in the browser reads a different thing. There the host
+ * leaves the request on the global as a JavaScript object of its own making,
+ * which reached the worker as a structured clone and can hold what JSON has no
+ * form for, such as a `Date` or an `undefined`. The round trip is what turns
+ * that into the request an action expects, so that path keeps it until a sweep
+ * of its own decides otherwise.
  */
 function readRequestFromHost(): SimpleRequest | undefined {
   if ((globalThis as any).__SIMPLE_INITIAL_PAYLOAD__) {
@@ -207,20 +209,10 @@ function readRequestFromHost(): SimpleRequest | undefined {
     return inputText ? JSON.parse(inputText) : undefined
   }
 
-  const envelope = host.getContext()
-
-  if (envelope === null || typeof envelope !== 'object' || typeof envelope.data !== 'string') {
-    const inputText = JSON.stringify(envelope)
-    return inputText ? JSON.parse(inputText) : undefined
-  }
-
-  const data: string = envelope.data
-  envelope.data = ''
-
-  const request: SimpleRequest = JSON.parse(JSON.stringify(envelope))
-  request.data = data
-
-  return request
+  // `undefined` is what the runtime answers when the host sent no input at all,
+  // and it is the one thing a parsed JSON document can never be, so no request
+  // is mistaken for a missing one.
+  return host.getContext()
 }
 
 function returnError(message: string, context?: Context): void {
