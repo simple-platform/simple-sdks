@@ -111,6 +111,14 @@ const READ: &str = "action:storage/read";
 /// what an action can read.
 pub const MAX_RANGE_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Where a size stops being one every SDK counts exactly.
+///
+/// The TypeScript and Go SDKs read the size as a floating-point number, which
+/// holds every whole number below 2^53 exactly and rounds past it. A size at or
+/// past this is refused here too, so the same answer from the store reads the
+/// same in all three.
+const MAX_EXACT_SIZE: u64 = 1 << 53;
+
 /// A stored file, as a `:document` field holds it.
 ///
 /// This is a pointer to the contents rather than the contents: it is what an
@@ -428,12 +436,16 @@ pub fn size(handle: &DocumentHandle) -> Result<u64, Error> {
 
     let answer = host::transport()?.call(STAT.to_string(), json!({ "handle": handle }))?;
 
-    answer.get("size").and_then(Value::as_u64).ok_or_else(|| {
-        Error::Host(Fault::new(
-            Code::unspecified(),
-            format!("{STAT} answered without a size: {answer}"),
-        ))
-    })
+    answer
+        .get("size")
+        .and_then(Value::as_u64)
+        .filter(|size| *size < MAX_EXACT_SIZE)
+        .ok_or_else(|| {
+            Error::Host(Fault::new(
+                Code::unspecified(),
+                format!("{STAT} answered without a size: {answer}"),
+            ))
+        })
 }
 
 /// The whole of a stored file.
@@ -805,7 +817,7 @@ mod tests {
 
     #[test]
     fn a_file_larger_than_this_action_can_hold_is_refused_before_any_range() {
-        let largest = u64::MAX;
+        let largest = MAX_EXACT_SIZE - 1;
         let session = testing::install(move |_name, _params| Ok(json!({ "size": largest })));
 
         let error = read(&handle()).unwrap_err();
@@ -833,6 +845,28 @@ mod tests {
         let _session = testing::install(|_name, _params| Ok(json!({ "size": 81_920 })));
 
         assert_eq!(size(&handle()).unwrap(), 81_920);
+    }
+
+    #[test]
+    fn a_size_that_is_not_a_count_every_sdk_holds_exactly_is_refused() {
+        for answer in [
+            json!({}),
+            json!({ "size": -1 }),
+            json!({ "size": 1.5 }),
+            json!({ "size": "10" }),
+            json!({ "size": MAX_EXACT_SIZE }),
+            json!("10"),
+        ] {
+            let reply = answer.clone();
+            let _session = testing::install(move |_name, _params| Ok(reply.clone()));
+
+            let error = size(&handle()).unwrap_err();
+
+            assert_eq!(
+                error.message(),
+                format!("action:storage/stat answered without a size: {answer}")
+            );
+        }
     }
 
     #[test]
