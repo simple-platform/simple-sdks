@@ -550,7 +550,10 @@ let head = simple::storage::read_range(&handle, 0, 1024)?; // the first kilobyte
 The bytes cross from the host as they are, with no JSON and no base64. `read`
 asks for the size first, allocates once at exactly that size, and has each range
 of at most `MAX_RANGE_BYTES` written by the host straight into its place in that
-buffer. Reading is for server actions; a browser action is refused.
+buffer. `read_range` asks for the size first too, so a range that runs past the
+end answers with exactly the bytes up to the end, and one that starts at or past
+the end is refused before any of it is read. Reading is for server actions; a
+browser action is refused.
 
 In a test, `Session::with_bytes` answers the reads:
 
