@@ -163,23 +163,48 @@ test('a range answered short is refused rather than handed over', async () => {
   await assert.rejects(storage.read(handle(), context), /60 bytes for the 100 at offset 0/)
 })
 
-test('a host refusal reaches the caller with its own message', async () => {
+test('a host refusal reaches the caller with its own message, naming the call', async () => {
   install({
     call: () => ({ data: { size: 10 }, ok: true }),
     callBytes: () => ({ error: { message: 'No stored file matches this handle.' }, ok: false }),
   })
 
-  await assert.rejects(storage.read(handle(), context), { message: 'No stored file matches this handle.' })
+  await assert.rejects(storage.read(handle(), context), {
+    message: 'action:storage/read failed: No stored file matches this handle.',
+  })
 
   install({ call: () => ({ error: { message: 'No stored file matches this handle.' }, ok: false }) })
 
-  await assert.rejects(storage.size(handle(), context), { message: 'No stored file matches this handle.' })
+  await assert.rejects(storage.size(handle(), context), {
+    message: 'action:storage/stat failed: No stored file matches this handle.',
+  })
+})
+
+test('a refusal that gives no reason still names the call', async () => {
+  for (const refusal of [{ ok: false }, { error: { message: ' ' }, ok: false }]) {
+    install({
+      call: () => ({ data: { size: 10 }, ok: true }),
+      callBytes: () => refusal,
+    })
+
+    await assert.rejects(storage.read(handle(), context), {
+      message: 'action:storage/read failed: The host refused the call and gave no reason.',
+    })
+
+    install({ call: () => refusal })
+
+    await assert.rejects(storage.size(handle(), context), {
+      message: 'action:storage/stat failed: The host refused the call and gave no reason.',
+    })
+  }
 })
 
 test('a reply that is not bytes is a refusal, whatever it says', async () => {
   install({ callBytes: () => ({ data: 'not bytes', ok: true }) })
 
-  await assert.rejects(storage.readRange(handle(), 0, 10, context), /was refused and gave no reason/)
+  await assert.rejects(storage.readRange(handle(), 0, 10, context), {
+    message: 'action:storage/read was refused and gave no reason.',
+  })
 })
 
 test('a file larger than this action can hold is refused before any range', async () => {

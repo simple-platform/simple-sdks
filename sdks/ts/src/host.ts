@@ -49,7 +49,8 @@ export function execute<T = any>(actionName: string, params: any, context: Conte
  * The runtime hands the bytes over as a `Uint8Array` that owns them: no JSON,
  * no base64, and no address. A host that refused answers with its ordinary
  * envelope instead, returned here as a failed response, so a caller checks
- * `ok` exactly as it does for `execute`.
+ * `ok` exactly as it does for `execute`. Its message names the call — `<action>
+ * failed: <the host's reason>` — worded as the Rust and Go SDKs word it.
  *
  * A runtime plugin released before this call existed does not provide it, and
  * is refused here, before anything is sent, rather than handed a reply it
@@ -73,10 +74,15 @@ export function executeBytes(actionName: string, params: any, context: Context):
   // else. A refusal that says it succeeded is still a refusal: no bytes came.
   const refusal = reply as SimpleResponse | null | undefined
 
-  return {
-    error: { message: refusal?.error?.message ?? `${actionName} was refused and gave no reason.` },
-    ok: false,
-  }
+  if (refusal?.ok !== false)
+    return { error: { message: `${actionName} was refused and gave no reason.` }, ok: false }
+
+  const reason = refusal.error?.message
+
+  if (typeof reason !== 'string' || reason.trim() === '')
+    return { error: { message: `${actionName} failed: The host refused the call and gave no reason.` }, ok: false }
+
+  return { error: { message: `${actionName} failed: ${reason}` }, ok: false }
 }
 
 /**

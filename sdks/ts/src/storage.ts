@@ -193,7 +193,7 @@ export async function size(handle: DocumentHandle, context: Context): Promise<nu
   const response = await hostExecute<{ size?: unknown }>(STAT, { handle }, context)
 
   if (!response.ok)
-    throw new Error(response.error?.message ?? `${STAT} failed`)
+    throw refused(STAT, response.error?.message)
 
   const answered = response.data?.size
 
@@ -319,6 +319,14 @@ async function readPart(handle: DocumentHandle, offset: number, length: number, 
     throw new Error(response.error?.message ?? `${READ} failed`)
 
   return response.data as Uint8Array
+}
+
+/** The error for a call the host refused in its envelope, naming the call. */
+function refused(actionName: string, message: string | undefined): Error {
+  if (message === undefined || message.trim() === '')
+    return new Error(`${actionName} failed: The host refused the call and gave no reason.`)
+
+  return new Error(`${actionName} failed: ${message}`)
 }
 
 /** A buffer of exactly `length` bytes, or a refusal saying there is no room. */
