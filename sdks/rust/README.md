@@ -177,7 +177,7 @@ The Rust SDK is organised into focused modules for different capabilities:
 | **GraphQL**  | `simple::graphql`             | Database queries and mutations                         |
 | **HTTP**     | `simple::http`                | External HTTP requests                                 |
 | **Settings** | `simple::settings`            | Application settings retrieval                         |
-| **Storage**  | `simple::storage`             | File upload, and reading a stored file's bytes         |
+| **Storage**  | `simple::storage`             | File upload and management                             |
 | **Errors**   | `simple::{Error, Fault}`      | Typed failures, and what `?` converts into             |
 | **Codes**    | `simple::codes`               | The canonical failure vocabulary: `Code`, `Category`   |
 | **Host**     | `simple::host`                | The `Transport` an action reaches the platform through |
@@ -462,26 +462,8 @@ let updated: Value = simple::http::fetch(simple::http::Request {
     method: simple::http::Method::Patch,
     headers: simple::http::headers(&[("Authorization", "Bearer token123")]),
     body: Some(json!({ "status": "qualified" })),
-    ..simple::http::Request::default()
 })?;
 ```
-
-A request made from the browser can carry the page's own cookies and HTTP
-authentication by naming the browser's credentials mode — `Omit`, `SameOrigin`
-or `Include`:
-
-```rust
-let session: Value = simple::http::fetch(simple::http::Request {
-    url: "https://api.example.com/session".to_string(),
-    credentials: Some(simple::http::Credentials::Include),
-    ..simple::http::Request::default()
-})?;
-```
-
-A request that names none sends none, and the browser host then omits
-credentials. A cross-origin request that includes them still needs the service
-to allow the page's origin and credentials through CORS. The server host has no
-browser credentials and ignores the mode.
 
 An outbound request keeps its module path, the way everything a call chooses
 does, so this adds no import line. It also keeps the two `Request`s apart: the
@@ -555,30 +537,6 @@ handle.size; // the size in bytes
 The store is addressed by content, so identical bytes land under the identical
 hash and are kept once: uploading a file the store already holds answers with the
 handle that was already there.
-
-The way back out takes the same handle and answers with the file's bytes:
-
-```rust
-let bytes: Vec<u8> = simple::storage::read(&handle)?;
-
-let size = simple::storage::size(&handle)?; // without reading any of it
-let head = simple::storage::read_range(&handle, 0, 1024)?; // the first kilobyte
-```
-
-The bytes cross from the host as they are, with no JSON and no base64. `read`
-asks for the size first, allocates once at exactly that size, and has each range
-of at most `MAX_RANGE_BYTES` written by the host straight into its place in that
-buffer. `read_range` asks for the size first too, so a range that runs past the
-end answers with exactly the bytes up to the end, and one that starts at or past
-the end is refused before any of it is read. Reading is for server actions; a
-browser action is refused.
-
-In a test, `Session::with_bytes` answers the reads:
-
-```rust
-let _session = testing::install(|_name, _params| Ok(json!({ "size": 4 })))
-    .with_bytes(|_name, _params| Ok(b"%PDF".to_vec()));
-```
 
 Storing the file and attaching it are separate steps, and attaching it is the
 one that changes tenant data — write the handle into the `:document` field with

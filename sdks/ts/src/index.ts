@@ -111,13 +111,14 @@ async function handle(handler: Handler): Promise<any> {
   // All other contexts (WASM Loader, Elixir Backend) are handled below.
   let context: Context | undefined
   try {
-    const simpleReq = readRequestFromHost()
+    const inputText = readInputFromHost()
 
-    if (simpleReq === undefined) {
+    if (!inputText) {
       returnError('no input payload provided by the host environment', undefined)
       return
     }
 
+    const simpleReq: SimpleRequest = JSON.parse(inputText)
     context = simpleReq.context
 
     // Context 1: This is the initial WASM loader running in the browser.
@@ -178,41 +179,6 @@ function readInputFromHost(): string {
   // value rather than bytes. Both branches of this function still answer with
   // text because that is what its callers parse.
   return JSON.stringify(host.getContext())
-}
-
-/**
- * Reads the request the host sent, or `undefined` when it sent none.
- *
- * Inside a WASM module the request is handed over as a value the runtime
- * parsed from the host's own JSON, so it is read as it arrived. It used to be
- * serialised and parsed again, which cost the whole payload twice over — the
- * data is one string holding all of it, so ten megabytes were escaped into a
- * new string and unescaped into another — and gave back what it started with,
- * apart from the two values JSON cannot write: a negative zero came back as
- * zero, and an infinite number as null. An action now sees what the host sent,
- * those two included.
- *
- * Nothing here writes to the value. It belongs to the host, which stays free to
- * hand over a frozen envelope, to answer `data` from a getter, or to read its
- * own envelope back — as an action does when it calls `getContext` itself.
- *
- * The script worker in the browser reads a different thing. There the host
- * leaves the request on the global as a JavaScript object of its own making,
- * which reached the worker as a structured clone and can hold what JSON has no
- * form for, such as a `Date` or an `undefined`. The round trip is what turns
- * that into the request an action expects, so that path keeps it until a sweep
- * of its own decides otherwise.
- */
-function readRequestFromHost(): SimpleRequest | undefined {
-  if ((globalThis as any).__SIMPLE_INITIAL_PAYLOAD__) {
-    const inputText = readInputFromHost()
-    return inputText ? JSON.parse(inputText) : undefined
-  }
-
-  // `undefined` is what the runtime answers when the host sent no input at all,
-  // and it is the one thing a parsed JSON document can never be, so no request
-  // is mistaken for a missing one.
-  return host.getContext()
 }
 
 function returnError(message: string, context?: Context): void {

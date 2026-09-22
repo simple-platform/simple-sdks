@@ -240,55 +240,6 @@ fn reply() -> Option<String> {
     String::from_utf8(buffer).ok()
 }
 
-/// What a call whose reply is a run of bytes answered.
-#[cfg(not(feature = "async"))]
-pub(crate) enum Bytes {
-    /// This many bytes were appended to the caller's buffer.
-    Appended(usize),
-    /// The host refused, and this is its envelope.
-    Refused(String),
-}
-
-/// Ask the host to run an action whose reply is a run of bytes, and append
-/// them to `into`.
-///
-/// The size comes first, so `into` grows only when the caller did not already
-/// reserve room, and the host writes the bytes straight into its spare
-/// capacity: they are never copied through a second buffer, and never decoded.
-///
-/// A negative size is the host saying it refused. What it writes then is its
-/// envelope, which is read into a buffer of its own and never into `into`.
-#[cfg(not(feature = "async"))]
-pub(crate) fn call_bytes(name: &str, params: &str, into: &mut Vec<u8>) -> Bytes {
-    request(name, params, true);
-
-    // SAFETY: no arguments, no memory, and the host answers with a length.
-    let size = unsafe { __getExecutionResultSize() };
-
-    if size < 0 {
-        let mut envelope = vec![0_u8; size.unsigned_abs() as usize];
-
-        // SAFETY: the buffer is exactly the length the host stated, and is
-        // owned here for the whole call.
-        unsafe { __getExecutionResult(envelope.as_mut_ptr() as i32) };
-
-        return Bytes::Refused(String::from_utf8_lossy(&envelope).into_owned());
-    }
-
-    let size = size as usize;
-    into.reserve(size);
-
-    // SAFETY: `reserve` left at least `size` bytes of spare capacity past the
-    // buffer's length. The host writes exactly `size` bytes there, and the
-    // length is extended over them only once it has.
-    unsafe {
-        __getExecutionResult(into.as_mut_ptr().add(into.len()) as i32);
-        into.set_len(into.len() + size);
-    }
-
-    Bytes::Appended(size)
-}
-
 /// The reply to a parked call, wherever the host said it put it.
 ///
 /// The region is forgotten here rather than by the caller, so a stale one cannot
