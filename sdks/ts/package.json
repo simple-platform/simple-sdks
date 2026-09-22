@@ -45,6 +45,10 @@
       "types": "./dist/security.d.ts",
       "default": "./dist/security.js"
     },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "default": "./dist/storage.js"
+    },
     "./host": {
       "types": "./dist/host.d.ts",
       "default": "./dist/host.js"
