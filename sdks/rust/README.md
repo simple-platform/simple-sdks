@@ -462,8 +462,26 @@ let updated: Value = simple::http::fetch(simple::http::Request {
     method: simple::http::Method::Patch,
     headers: simple::http::headers(&[("Authorization", "Bearer token123")]),
     body: Some(json!({ "status": "qualified" })),
+    ..simple::http::Request::default()
 })?;
 ```
+
+A request made from the browser can carry the page's own cookies and HTTP
+authentication by naming the browser's credentials mode — `Omit`, `SameOrigin`
+or `Include`:
+
+```rust
+let session: Value = simple::http::fetch(simple::http::Request {
+    url: "https://api.example.com/session".to_string(),
+    credentials: Some(simple::http::Credentials::Include),
+    ..simple::http::Request::default()
+})?;
+```
+
+A request that names none sends none, and the browser host then omits
+credentials. A cross-origin request that includes them still needs the service
+to allow the page's origin and credentials through CORS. The server host has no
+browser credentials and ignores the mode.
 
 An outbound request keeps its module path, the way everything a call chooses
 does, so this adds no import line. It also keeps the two `Request`s apart: the
