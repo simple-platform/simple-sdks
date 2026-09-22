@@ -175,10 +175,62 @@ impl fmt::Display for Method {
     }
 }
 
+/// Whether a request made from the browser carries the page's credentials:
+/// its cookies and its HTTP authentication.
+///
+/// These are the three modes of the browser's own fetch, and the browser host
+/// hands the one a request names straight to it. A request that names none
+/// sends none, and the browser host then omits credentials. The server host
+/// makes its requests from no page, so it has no such credentials to send and
+/// ignores the mode.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::testing;
+/// use simpleplatform_sdk::http::{self, Credentials};
+///
+/// # let session = testing::install(|_name, _params| {
+/// #     Ok(json!({ "body": { "user": "U1" }, "headers": {}, "ok": true, "status": 200 }))
+/// # });
+/// let signed_in: Value = http::fetch(http::Request {
+///     url: "https://api.example.com/session".to_string(),
+///     credentials: Some(Credentials::Include),
+///     ..http::Request::default()
+/// })?;
+///
+/// assert_eq!(signed_in["user"], json!("U1"));
+/// # assert_eq!(session.calls()[0].params["credentials"], json!("include"));
+/// # Ok::<(), Error>(())
+/// ```
+///
+/// A cross-origin request that includes them still needs the service to allow
+/// the page's origin and credentials through CORS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Credentials {
+    /// Send no cookies and no HTTP authentication.
+    Omit,
+    /// Send them only to the page's own origin.
+    SameOrigin,
+    /// Send them to any origin, a cross-origin one included.
+    Include,
+}
+
+impl Credentials {
+    /// The mode exactly as it travels on the wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Credentials::Omit => "omit",
+            Credentials::SameOrigin => "same-origin",
+            Credentials::Include => "include",
+        }
+    }
+}
+
 /// One outbound request.
 ///
-/// Every field has a default — `GET`, no headers, no body — so a literal names
-/// the ones it sets and closes with `..Request::default()`.
+/// Every field has a default — `GET`, no headers, no body, no credentials
+/// mode — so a literal names the ones it sets and closes with
+/// `..Request::default()`.
 ///
 /// ```
 /// # use simpleplatform_sdk::prelude::*;
@@ -198,6 +250,7 @@ impl fmt::Display for Method {
 ///     method: Method::Post,
 ///     headers: http::headers(&[("Content-Type", "application/json")]),
 ///     body: Some(json!({ "email": "lead@example.com" })),
+///     ..http::Request::default()
 /// })?;
 ///
 /// assert_eq!(created.id, "L1");
@@ -217,6 +270,10 @@ pub struct Request {
     /// rendered payload arrives byte for byte. Anything else is sent as its
     /// JSON text.
     pub body: Option<Value>,
+    /// Whether a request made from the browser carries the page's cookies and
+    /// HTTP authentication. `None` names no mode, and the browser host then
+    /// omits them. See [`Credentials`].
+    pub credentials: Option<Credentials>,
 }
 
 impl fmt::Debug for Request {
@@ -239,7 +296,7 @@ impl fmt::Debug for Request {
     ///     url: "https://api.example.com/leads".to_string(),
     ///     method: Method::Get,
     ///     headers: http::headers(&[("Authorization", "Bearer t-1234")]),
-    ///     body: None,
+    ///     ..Request::default()
     /// };
     ///
     /// assert!(!format!("{request:?}").contains("t-1234"));
@@ -257,6 +314,7 @@ impl fmt::Debug for Request {
             .field("method", &self.method)
             .field("headers", &names)
             .field("body", &self.body.as_ref().map(Sized_))
+            .field("credentials", &self.credentials)
             .finish()
     }
 }
@@ -421,13 +479,16 @@ fn request(url: &str, method: Method, body: Option<Value>) -> Request {
         method,
         headers: HashMap::new(),
         body,
+        credentials: None,
     }
 }
 
 /// The parameters as the host reads them.
 ///
-/// A member is present when it has something to say: headers that are empty and
-/// a body that was never set are left out rather than sent as nothing.
+/// A member is present when it has something to say: headers that are empty, a
+/// body that was never set and a credentials mode that was never named are left
+/// out rather than sent as nothing. So the host's own default is the one that
+/// applies to a request that names no mode.
 fn params(request: &Request) -> Value {
     let mut params = Map::new();
 
@@ -440,6 +501,10 @@ fn params(request: &Request) -> Value {
 
     if let Some(body) = &request.body {
         params.insert("body".to_string(), json!(wire_body(body)));
+    }
+
+    if let Some(credentials) = request.credentials {
+        params.insert("credentials".to_string(), json!(credentials.as_str()));
     }
 
     Value::Object(params)
@@ -629,6 +694,11 @@ mod tests {
             assert_eq!(params["method"], json!("GET"));
             assert_eq!(params.get("headers"), None, "no headers were asked for");
             assert_eq!(params.get("body"), None, "a GET carries no body");
+            assert_eq!(
+                params.get("credentials"),
+                None,
+                "no credentials mode was named"
+            );
 
             Ok(answered(200, json!({ "id": "L1" })))
         });
@@ -658,6 +728,7 @@ mod tests {
             method: Method::Post,
             headers: headers(&[("Authorization", "Bearer T")]),
             body: Some(json!({ "email": "lead@example.com" })),
+            ..Request::default()
         })
         .unwrap();
 
@@ -680,6 +751,36 @@ mod tests {
             json!("grant_type=client_credentials"),
         )
         .unwrap();
+    }
+
+    // The mode travels in the words the browser's own fetch takes.
+    #[test]
+    fn a_credentials_mode_travels_as_the_browser_names_it() {
+        let session = testing::install(|_name, _params| Ok(answered(200, json!(null))));
+
+        for credentials in [
+            Credentials::Omit,
+            Credentials::SameOrigin,
+            Credentials::Include,
+        ] {
+            let _: Value = fetch(Request {
+                url: "https://api.example.com/session".to_string(),
+                credentials: Some(credentials),
+                ..Request::default()
+            })
+            .unwrap();
+        }
+
+        let sent: Vec<Value> = session
+            .calls()
+            .iter()
+            .map(|call| call.params["credentials"].clone())
+            .collect();
+
+        assert_eq!(
+            sent,
+            vec![json!("omit"), json!("same-origin"), json!("include")]
+        );
     }
 
     #[test]
