@@ -39,7 +39,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **HTTP**     | `@simpleplatform/sdk/http`     | External HTTP requests                         |
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
-| **Storage**  | `@simpleplatform/sdk/storage`  | File upload and management                     |
+| **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes |
 | **Space**    | `@simpleplatform/sdk/space`    | Behavior-aware record workflows in a Space     |
 
 ## Embedded Spaces
@@ -369,6 +369,27 @@ console.log(documentHandle.file_hash) // SHA-256 hash
 console.log(documentHandle.mime_type) // "application/pdf"
 console.log(documentHandle.size) // File size in bytes
 ```
+
+The way back out takes the same handle and answers with the file's bytes:
+
+```typescript
+import { read, readRange, size } from '@simpleplatform/sdk'
+
+const bytes: Uint8Array = await read(documentHandle, request.context)
+
+const length = await size(documentHandle, request.context) // without reading any of it
+const head = await readRange(documentHandle, 0, 1024, request.context) // the first kilobyte
+```
+
+The bytes cross from the host as they are, with no JSON and no base64. `read`
+asks for the size first and reads the file in ranges of at most
+`MAX_RANGE_BYTES` (16 MiB): a file that fits one range arrives as one array, and
+a larger one is read into a single buffer allocated once at exactly its size. A
+range that runs past the end of the file answers with the bytes up to the end.
+
+Reading is for server actions; a browser action is refused. It needs a runtime
+plugin that provides `__host.callBytes`, and an older plugin is refused with a
+message saying so rather than handed bytes it would try to read as JSON.
 
 ### Type Definitions
 

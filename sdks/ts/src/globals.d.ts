@@ -24,6 +24,13 @@ declare const __host: {
   /** Calls an action and returns its parsed response. */
   call: (name: string, params: unknown) => unknown
 
+  /**
+   * Calls an action whose reply is a run of bytes, and returns them as a
+   * `Uint8Array`, or the host's refusal envelope. Absent from runtime plugins
+   * that predate it, and from the browser runtime.
+   */
+  callBytes?: (name: string, params: unknown) => unknown
+
   /** Calls an action without waiting for it to answer. */
   cast: (name: string, params: unknown) => void
 
