@@ -111,14 +111,13 @@ async function handle(handler: Handler): Promise<any> {
   // All other contexts (WASM Loader, Elixir Backend) are handled below.
   let context: Context | undefined
   try {
-    const inputText = readInputFromHost()
+    const simpleReq = readRequestFromHost()
 
-    if (!inputText) {
+    if (simpleReq === undefined) {
       returnError('no input payload provided by the host environment', undefined)
       return
     }
 
-    const simpleReq: SimpleRequest = JSON.parse(inputText)
     context = simpleReq.context
 
     // Context 1: This is the initial WASM loader running in the browser.
@@ -179,6 +178,49 @@ function readInputFromHost(): string {
   // value rather than bytes. Both branches of this function still answer with
   // text because that is what its callers parse.
   return JSON.stringify(host.getContext())
+}
+
+/**
+ * Reads the request the host sent: the value `JSON.parse(readInputFromHost())`
+ * is, or `undefined` when there is no input at all. `JSON.parse` never returns
+ * `undefined`, so the two cannot be confused.
+ *
+ * The request data skips a round trip that gave it back unchanged.
+ *
+ * Inside a WASM module the request arrives already parsed, and it used to be
+ * turned back into text only to be parsed again. For most of the request that
+ * round trip is cheap. For `data` it is not: the data is one string holding the
+ * whole payload, so a ten megabyte request was escaped into a new string,
+ * unescaped into another, and ended up exactly the string it started as, since
+ * `JSON.parse(JSON.stringify(s))` is `s` for every string.
+ *
+ * So the data is kept as it arrived and everything else still takes the round
+ * trip, which keeps the rest of the request exactly what it was, including the
+ * one thing the round trip changes: a negative zero anywhere in the headers or
+ * the context still arrives as zero. The data's place is held by an empty string
+ * so its key keeps its position. Anything that is not a request with string
+ * data takes the whole round trip, as before.
+ */
+function readRequestFromHost(): SimpleRequest | undefined {
+  if ((globalThis as any).__SIMPLE_INITIAL_PAYLOAD__) {
+    const inputText = readInputFromHost()
+    return inputText ? JSON.parse(inputText) : undefined
+  }
+
+  const envelope = host.getContext()
+
+  if (envelope === null || typeof envelope !== 'object' || typeof envelope.data !== 'string') {
+    const inputText = JSON.stringify(envelope)
+    return inputText ? JSON.parse(inputText) : undefined
+  }
+
+  const data: string = envelope.data
+  envelope.data = ''
+
+  const request: SimpleRequest = JSON.parse(JSON.stringify(envelope))
+  request.data = data
+
+  return request
 }
 
 function returnError(message: string, context?: Context): void {
