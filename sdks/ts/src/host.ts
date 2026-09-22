@@ -2,6 +2,7 @@ import type { Context, SimpleResponse } from './types'
 
 interface HostBridge {
   call?: unknown
+  callBytes?: unknown
   cast?: unknown
   getContext?: unknown
   getContextSize?: unknown
@@ -25,6 +26,8 @@ function assertRuntimeAbi(): void {
   }
 }
 
+const BYTES_ABI_MISSING_MESSAGE = 'Reading a reply as bytes needs __host.callBytes, which this runtime plugin does not provide. Install a runtime plugin released with the matching SDK.'
+
 /**
  * Calls an action on the host and returns its response.
  *
@@ -37,6 +40,43 @@ export function execute<T = any>(actionName: string, params: any, context: Conte
   void context
 
   return __host.call(actionName, params ?? null) as SimpleResponse<T>
+}
+
+/**
+ * Calls an action whose reply is a run of bytes, such as a range of a stored
+ * file, and returns them.
+ *
+ * The runtime hands the bytes over as a `Uint8Array` that owns them: no JSON,
+ * no base64, and no address. A host that refused answers with its ordinary
+ * envelope instead, returned here as a failed response, so a caller checks
+ * `ok` exactly as it does for `execute`.
+ *
+ * A runtime plugin released before this call existed does not provide it, and
+ * is refused here, before anything is sent, rather than handed a reply it
+ * would try to read as JSON.
+ */
+export function executeBytes(actionName: string, params: any, context: Context): SimpleResponse<Uint8Array> {
+  assertRuntimeAbi()
+  void context
+
+  if (typeof __host.callBytes !== 'function') {
+    throw new TypeError(BYTES_ABI_MISSING_MESSAGE)
+  }
+
+  const reply = __host.callBytes(actionName, params ?? null)
+
+  if (reply instanceof Uint8Array) {
+    return { data: reply, ok: true }
+  }
+
+  // The runtime answers with bytes or with the host's refusal, and nothing
+  // else. A refusal that says it succeeded is still a refusal: no bytes came.
+  const refusal = reply as SimpleResponse | null | undefined
+
+  return {
+    error: { message: refusal?.error?.message ?? `${actionName} was refused and gave no reason.` },
+    ok: false,
+  }
 }
 
 /**
