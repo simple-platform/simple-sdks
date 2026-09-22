@@ -7,6 +7,13 @@ import { execute as hostExecute } from './host'
  */
 export interface HttpRequest {
   body?: any
+  /**
+   * The browser's credentials mode for the request: whether it carries the
+   * page's cookies and HTTP authentication. A request that names none sends
+   * none, and the browser host then omits credentials. The server host has no
+   * browser credentials and ignores it.
+   */
+  credentials?: 'include' | 'omit' | 'same-origin'
   headers?: Record<string, string>
   method?: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'
   url: string
@@ -33,6 +40,7 @@ export async function fetch<T = any>(request: HttpRequest, context: Context): Pr
 
   const hostRequest = {
     body: request.body ? JSON.stringify(request.body) : undefined,
+    credentials: request.credentials,
     headers: request.headers,
     method: request.method ?? 'GET',
     url: request.url,

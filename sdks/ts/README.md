@@ -274,7 +274,22 @@ const response = await http.fetch(
   },
   request.context
 )
+
+// A browser request that carries the page's cookies
+const session = await http.fetch(
+  {
+    credentials: 'include',
+    url: 'https://api.example.com/session'
+  },
+  request.context
+)
 ```
+
+`credentials` is the browser's credentials mode for the request: `'omit'`,
+`'same-origin'` or `'include'`. A request that names none sends none, and the
+browser host then omits credentials. A cross-origin request that includes them
+still needs the endpoint to allow the page's origin and credentials through
+CORS. The server host has no browser credentials and ignores the option.
 
 ### Security Module
 
