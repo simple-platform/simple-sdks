@@ -373,7 +373,7 @@ console.log(documentHandle.size) // File size in bytes
 The way back out takes the same handle and answers with the file's bytes:
 
 ```typescript
-import { read, readRange, size } from '@simpleplatform/sdk'
+import { read, readRange, size } from '@simpleplatform/sdk/storage'
 
 const bytes: Uint8Array = await read(documentHandle, request.context)
 
