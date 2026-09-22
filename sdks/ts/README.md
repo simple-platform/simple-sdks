@@ -384,8 +384,10 @@ const head = await readRange(documentHandle, 0, 1024, request.context) // the fi
 The bytes cross from the host as they are, with no JSON and no base64. `read`
 asks for the size first and reads the file in ranges of at most
 `MAX_RANGE_BYTES` (16 MiB): a file that fits one range arrives as one array, and
-a larger one is read into a single buffer allocated once at exactly its size. A
-range that runs past the end of the file answers with the bytes up to the end.
+a larger one is read into a single buffer allocated once at exactly its size.
+`readRange` asks for the size first too, so a range that runs past the end of
+the file answers with exactly the bytes up to the end, and one that starts at or
+past the end is refused before any of it is read.
 
 Reading is for server actions; a browser action is refused. It needs a runtime
 plugin that provides `__host.callBytes`, and an older plugin is refused with a

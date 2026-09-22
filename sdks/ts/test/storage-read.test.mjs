@@ -200,7 +200,10 @@ test('a refusal that gives no reason still names the call', async () => {
 })
 
 test('a reply that is not bytes is a refusal, whatever it says', async () => {
-  install({ callBytes: () => ({ data: 'not bytes', ok: true }) })
+  install({
+    call: () => ({ data: { size: 10 }, ok: true }),
+    callBytes: () => ({ data: 'not bytes', ok: true }),
+  })
 
   await assert.rejects(storage.readRange(handle(), 0, 10, context), {
     message: 'action:storage/read was refused and gave no reason.',
@@ -208,10 +211,16 @@ test('a reply that is not bytes is a refusal, whatever it says', async () => {
 })
 
 test('a file larger than this action can hold is refused before any range', async () => {
-  const calls = install({ call: () => ({ data: { size: Number.MAX_SAFE_INTEGER }, ok: true }) })
+  const largest = Number.MAX_SAFE_INTEGER
+  const calls = install({ call: () => ({ data: { size: largest }, ok: true }) })
 
-  await assert.rejects(storage.read(handle(), context), /more memory than this action has/)
+  await assert.rejects(storage.read(handle(), context), {
+    message: `Reading ${largest} bytes needs more memory than this action has. Raise the action's mem_limit, or read the file in parts with readRange.`,
+  })
   assert.equal(calls.length, 1)
+
+  await assert.rejects(storage.readRange(handle(), 0, largest, context), /needs more memory than this action has/)
+  assert.equal(calls.length, 2, 'one size lookup each, and no range')
 })
 
 test('size answers what the store reports', async () => {
@@ -228,11 +237,12 @@ test('a size that is not a count of bytes is refused', async () => {
   }
 })
 
-test('a range answers exactly that range', async () => {
+test('a range answers exactly that range, after asking for the size', async () => {
   const file = everyByte(10_000)
-  serving(file)
+  const calls = serving(file)
 
   assert.deepEqual(await storage.readRange(handle(), 4_000, 1_500, context), file.slice(4_000, 5_500))
+  assert.deepEqual(calls.map(call => call.name), ['action:storage/stat', 'action:storage/read'])
 })
 
 test('a range running past the end answers up to the end', async () => {
@@ -242,10 +252,15 @@ test('a range running past the end answers up to the end', async () => {
   assert.deepEqual(await storage.readRange(handle(), 9_990, 100, context), file.slice(9_990))
 })
 
-test('a range starting past the end is refused', async () => {
-  serving(everyByte(10))
+test('a range starting at or past the end is refused before any range', async () => {
+  for (const offset of [10, 11, 20]) {
+    const calls = serving(everyByte(10))
 
-  await assert.rejects(storage.readRange(handle(), 10, 1, context), /at or past the end/)
+    await assert.rejects(storage.readRange(handle(), offset, 1, context), {
+      message: `The range starts at byte ${offset}, at or past the end of the file, which is 10 bytes. Ask size() how large the file is, and start the range before its end.`,
+    })
+    assert.deepEqual(ranges(calls), [])
+  }
 })
 
 test('a range longer than one read is read into one buffer, in whole ranges', async () => {
@@ -307,18 +322,104 @@ test('a handle missing what names the file is refused before anything is sent', 
   assert.deepEqual(calls, [])
 })
 
-test('a runtime without the byte reply is refused with what to install', async () => {
+test('a runtime without the byte reply is refused with what to install, before any range', async () => {
   const calls = install({ call: () => ({ data: { size: 10 }, ok: true }) })
 
   await assert.rejects(storage.readRange(handle(), 0, 10, context), /__host\.callBytes.*Install a runtime plugin/)
-  assert.deepEqual(calls, [])
+  assert.deepEqual(calls.map(call => call.name), ['action:storage/stat'])
 })
 
-test('a browser action is refused before anything is sent', async () => {
+// The cases every SDK is pinned to: the file's size, the offset and the length
+// asked for, and the offset and length of every range the host is asked for in
+// turn. A range is held at what the file has past its offset, so a file ending
+// exactly where a range of 16 MiB does never leads to asking at the end.
+test('a range is held at what the file has at every boundary', async () => {
+  const largest = everyByte(32 * MIB + 5)
+
+  const cases = [
+    [16 * MIB, 0, 16 * MIB, [[0, 16 * MIB]]],
+    [16 * MIB, 0, 16 * MIB + 1, [[0, 16 * MIB]]],
+    [16 * MIB + 1, 0, 16 * MIB + 1, [[0, 16 * MIB], [16 * MIB, 1]]],
+    [32 * MIB + 5, 0, 32 * MIB + 5, [[0, 16 * MIB], [16 * MIB, 16 * MIB], [32 * MIB, 5]]],
+    [32 * MIB + 5, 0, 48 * MIB, [[0, 16 * MIB], [16 * MIB, 16 * MIB], [32 * MIB, 5]]],
+    [32 * MIB + 5, 16 * MIB, 16 * MIB + 1, [[16 * MIB, 16 * MIB], [32 * MIB, 1]]],
+    [32 * MIB, 16 * MIB, 16 * MIB + 1, [[16 * MIB, 16 * MIB]]],
+    [10, 9, 5, [[9, 1]]],
+  ]
+
+  for (const [size, offset, length, asked] of cases) {
+    const file = largest.subarray(0, size)
+    const calls = serving(file)
+
+    const bytes = await storage.readRange(handle(), offset, length, context)
+    const end = Math.min(size, offset + length)
+
+    assert.equal(bytes.length, end - offset, `${size} ${offset} ${length}`)
+    assert.equal(bytes.buffer.byteLength, bytes.length, `${size} ${offset} ${length}`)
+    assert.ok(same(bytes, file.subarray(offset, end)), `${size} ${offset} ${length}`)
+    assert.deepEqual(ranges(calls), asked, `${size} ${offset} ${length}`)
+    assert.equal(calls[0].name, 'action:storage/stat')
+  }
+
+  for (const [size, offset, length] of [
+    [0, 0, 1],
+    [10, 10, 1],
+    [10, 11, 1],
+    [10, 20, 32 * MIB],
+    [16 * MIB, 16 * MIB, 16 * MIB + 1],
+  ]) {
+    const calls = serving(largest.subarray(0, size))
+
+    await assert.rejects(
+      storage.readRange(handle(), offset, length, context),
+      new RegExp(`at or past the end of the file, which is ${size} bytes`),
+    )
+    assert.deepEqual(ranges(calls), [], `${size} ${offset} ${length}`)
+  }
+
+  for (const size of [0, 16 * MIB, 16 * MIB + 1, 32 * MIB + 5]) {
+    const file = largest.subarray(0, size)
+    serving(file)
+
+    assert.ok(same(await storage.read(handle(), context), file), `${size}`)
+  }
+})
+
+// A host from before stored files could be read answers a byte read in its
+// JSON envelope, as though the envelope were the file. The size is asked for
+// first, which such a host refuses as a request it does not know, so the
+// envelope is never asked for and never handed over.
+test('a host that cannot read stored files refuses before any range', async () => {
+  const calls = install({
+    call: name => ({ error: { message: `Unknown request: ${name}` }, ok: false }),
+    callBytes: () => new TextEncoder().encode('{"ok":false,"error":{"message":"Unknown request: action:storage/read"}}'),
+  })
+
+  const message = 'action:storage/stat failed: Unknown request: action:storage/stat'
+
+  await assert.rejects(storage.readRange(handle(), 0, 64, context), { message })
+  await assert.rejects(storage.readRange(handle(), 0, 32 * MIB, context), { message })
+  await assert.rejects(storage.read(handle(), context), { message })
+  assert.deepEqual(ranges(calls), [])
+})
+
+test('a browser action is refused before any range is read', async () => {
+  // The browser host answers the size lookup, the way it answers any call,
+  // by posting the reply back to the worker.
   const posted = []
+  const listeners = []
   globalThis.self = {
-    addEventListener() {},
-    postMessage: message => posted.push(message),
+    addEventListener: (_type, listener) => listeners.push(listener),
+    postMessage(message) {
+      posted.push(message)
+      queueMicrotask(() => {
+        for (const listener of listeners) {
+          listener({
+            data: { requestId: message.requestId, response: { data: { size: 10 }, ok: true }, type: 'host_response' },
+          })
+        }
+      })
+    },
   }
 
   const browser = await bundle([{
@@ -331,5 +432,5 @@ test('a browser action is refused before anything is sent', async () => {
   }])
 
   await assert.rejects(browser.readRange(handle(), 0, 10, context), /only a server action can receive/)
-  assert.deepEqual(posted, [])
+  assert.deepEqual(posted.map(message => message.request.name), ['action:storage/stat'])
 })

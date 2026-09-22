@@ -237,17 +237,23 @@ export async function read(handle: DocumentHandle, context: Context): Promise<Ui
 /**
  * Returns up to `length` bytes of a stored file, starting `offset` bytes in.
  *
- * A range that runs past the end answers with the bytes up to the end; one
- * that starts at or past the end is refused. A range longer than
- * `MAX_RANGE_BYTES` asks for the file's size first and is read in several,
- * into one buffer.
+ * The size is asked for first, so the range is held at what the file has past
+ * `offset`: one that runs past the end answers with exactly the bytes up to
+ * the end, and one that starts at or past the end is refused before any range
+ * is read. What is left is read as `read` reads a whole file — in ranges of at
+ * most `MAX_RANGE_BYTES`, into one buffer, each range answered in full or
+ * refused.
+ *
+ * Asking for the size first is also what makes a host that cannot read stored
+ * files refuse in its own words, before any range is asked of it.
  *
  * @param handle The document handle, exactly as a `:document` field holds it.
  * @param offset How many bytes into the file the range starts, zero or more.
  * @param length How many bytes to read, one or more.
  * @param context The execution context for the request.
  * @returns A promise that resolves with the range's bytes.
- * @throws If the handle or the range is not valid, or the host refuses.
+ * @throws If the handle or the range is not valid, the range starts at or past
+ * the end of the file, or the host refuses.
  *
  * @example
  * ```typescript
@@ -268,15 +274,10 @@ export async function readRange(
   if (!Number.isSafeInteger(length) || length < 1)
     throw new Error('A range needs at least one byte. Pass a length of one or more, or ask size() how large the file is.')
 
-  if (length <= MAX_RANGE_BYTES)
-    return readPart(handle, offset, length, context)
-
-  // Longer than one range. The size says where the file ends, so every range
-  // is asked for whole and none of them starts past the end.
   const total = await size(handle, context)
 
   if (offset >= total)
-    throw new Error(`The range starts at byte ${offset}, at or past the end of the file, which is ${total} bytes.`)
+    throw new Error(`The range starts at byte ${offset}, at or past the end of the file, which is ${total} bytes. Ask size() how large the file is, and start the range before its end.`)
 
   return readSpan(handle, offset, Math.min(length, total - offset), context)
 }
@@ -301,24 +302,19 @@ async function readSpan(handle: DocumentHandle, offset: number, length: number, 
   return bytes
 }
 
-/** One range that must be answered in full. */
+/** One range, which must be answered in full. */
 async function readExactly(handle: DocumentHandle, offset: number, length: number, context: Context): Promise<Uint8Array> {
-  const part = await readPart(handle, offset, length, context)
+  const response = await hostExecuteBytes(READ, { handle, length, offset }, context)
+
+  if (!response.ok)
+    throw new Error(response.error?.message ?? `${READ} failed: The host refused the call and gave no reason.`)
+
+  const part = response.data as Uint8Array
 
   if (part.length !== length)
     throw new Error(`The file answered ${part.length} bytes for the ${length} at offset ${offset}, so it is not the size it was when the read began. Read it again.`)
 
   return part
-}
-
-/** One range: at most `length` bytes, fewer only where the file ends. */
-async function readPart(handle: DocumentHandle, offset: number, length: number, context: Context): Promise<Uint8Array> {
-  const response = await hostExecuteBytes(READ, { handle, length, offset }, context)
-
-  if (!response.ok)
-    throw new Error(response.error?.message ?? `${READ} failed`)
-
-  return response.data as Uint8Array
 }
 
 /** The error for a call the host refused in its envelope, naming the call. */
