@@ -745,14 +745,16 @@ fn count(metadata: &Value, key: &str) -> Option<u64> {
 /// comes back as it went in.
 fn upload_pending(value: Value) -> Result<Value, Error> {
     if is_pending(&value) {
-        return host::transport()?
-            .call(UPLOAD_EPHEMERAL.to_string(), value)
+        let stored = host::transport()?
+            .call(UPLOAD_EPHEMERAL.to_string(), value.clone())
             .map_err(|cause| {
                 cause.hint(
                     "The file was not uploaded and the operation did not run. Upload the file, \
                      then pass the handle that upload answered with.",
                 )
-            });
+            })?;
+
+        return Ok(stored_handle(value, stored));
     }
 
     if let Value::Array(items) = value {
@@ -766,6 +768,35 @@ fn upload_pending(value: Value) -> Result<Value, Error> {
     }
 
     Ok(value)
+}
+
+/// The handle the operation reads, once a pending file has been stored.
+///
+/// The upload answers with the stored file's own reference: where it is, what
+/// it hashes to, its name, its type and its size. Every one of those keys
+/// describes the file, so every one of them is taken from the upload and none
+/// is carried over. A value from before the upload would name a file that is
+/// no longer the one being read.
+///
+/// Everything else on the handle is the caller's: how the file is to be sent,
+/// which of its pages, and any key added to a file reference later. Those
+/// describe the request, not the file, and the upload knows nothing about
+/// them, so they are carried over. A caller reads a pending file and a stored
+/// one the same way.
+///
+/// `pending` is the one key that is neither. It said the bytes had not been
+/// stored yet. They have been now, so it is dropped. A handle that still
+/// called itself pending would be uploaded a second time on the next pass.
+fn stored_handle(handle: Value, stored: Value) -> Value {
+    match (handle, stored) {
+        (Value::Object(mut handle), Value::Object(stored)) => {
+            handle.remove("pending");
+            handle.extend(stored);
+
+            Value::Object(handle)
+        }
+        (_, stored) => stored,
+    }
 }
 
 /// Whether this is a document handle whose file is still to be uploaded.
@@ -1112,6 +1143,66 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_document_is_read_the_way_the_caller_asked_for_it() {
+        let session = testing::install(|name, _params| {
+            if name == UPLOAD_EPHEMERAL {
+                return Ok(json!({
+                    "file_hash": "ffce20f1",
+                    "filename": "contract.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1_234,
+                    "storage_path": "acme/ephemeral/ffce20f1"
+                }));
+            }
+
+            Ok(answered())
+        });
+
+        let _: Execution<Value> = extract(
+            json!({
+                "file_hash": "staged",
+                "first_page": 12,
+                "last_page": 30,
+                "pending": true,
+                "send_as": "text",
+                "storage_path": "acme/staged/staged"
+            }),
+            "Read it.",
+            json!({ "type": "object" }),
+            Options::default(),
+        )
+        .unwrap();
+
+        let calls = session.calls();
+        let sent = calls[1].params["input"].clone();
+
+        assert_eq!(
+            sent["send_as"],
+            json!("text"),
+            "the caller said how the file was to be sent"
+        );
+        assert_eq!(sent["first_page"], json!(12), "the caller asked for a range");
+        assert_eq!(sent["last_page"], json!(30), "the caller asked for a range");
+        assert_eq!(
+            sent["file_hash"],
+            json!("ffce20f1"),
+            "the file is the one the upload stored"
+        );
+        assert_eq!(
+            sent["storage_path"],
+            json!("acme/ephemeral/ffce20f1"),
+            "the file is read from where the upload put it"
+        );
+        assert_eq!(sent["filename"], json!("contract.pdf"));
+        assert_eq!(sent["mime_type"], json!("application/pdf"));
+        assert_eq!(sent["size"], json!(1_234));
+        assert!(
+            sent.get("pending").is_none(),
+            "the file is stored, so the handle may not still call itself pending"
+        );
+    }
+
+    #[test]
     fn a_document_that_is_already_stored_is_read_where_it_is() {
         let session = testing::install(|_name, _params| Ok(answered()));
 
@@ -1135,7 +1226,12 @@ mod tests {
     fn a_list_of_documents_is_uploaded_item_by_item() {
         let session = testing::install(|name, params| {
             if name == UPLOAD_EPHEMERAL {
-                return Ok(json!({ "stored": params["file_hash"] }));
+                let hash = params["file_hash"].as_str().unwrap_or_default();
+
+                return Ok(json!({
+                    "file_hash": hash,
+                    "storage_path": format!("ephemeral/{hash}")
+                }));
             }
 
             Ok(answered())
@@ -1159,9 +1255,9 @@ mod tests {
         assert_eq!(
             calls[2].params["input"],
             json!([
-                { "stored": "one" },
+                { "file_hash": "one", "storage_path": "ephemeral/one" },
                 { "file_hash": "two", "mime_type": "image/png" },
-                { "stored": "three" }
+                { "file_hash": "three", "storage_path": "ephemeral/three" }
             ])
         );
     }
