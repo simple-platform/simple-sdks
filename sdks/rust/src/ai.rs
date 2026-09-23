@@ -75,6 +75,13 @@
 //! [`Execution`] — the data and the [`Metadata`] beside it — so token counts are
 //! there to record without a second call.
 //!
+//! # Asking for part of a file, or for its text
+//!
+//! A file reference may say how the file should travel and which of its pages
+//! should. [`DocumentInput`] is that reference with those two beside it, and
+//! [`SendAs`] and [`Pages`] are what they say. A plain handle asks for nothing
+//! and sends the whole file the way its type is sent by default.
+//!
 //! # Files that have not been uploaded yet
 //!
 //! A document handle that is still pending is uploaded to ephemeral storage
@@ -87,12 +94,13 @@ use std::fmt;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::codes::Code;
 use crate::error::{Error, Fault};
 use crate::host;
+use crate::storage::DocumentHandle;
 
 /// The primitive that runs an AI operation.
 const ORCHESTRATOR: &str = "logic:dev.simple.system/ai-orchestrator";
@@ -142,6 +150,106 @@ impl fmt::Display for Model {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
+}
+
+/// How a file reaches the model.
+///
+/// It is `#[non_exhaustive]`: a `match` on it needs a `_` arm, so a way added
+/// later does not break an action that was already written.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SendAs {
+    /// The document itself, which is how a PDF travels unless you say
+    /// otherwise.
+    File,
+    /// The text the platform reads out of the document.
+    Text,
+}
+
+/// The pages of a PDF to send, counted from 1 with both ends included.
+///
+/// The two ends are one value here because the engine refuses one without the
+/// other. A half-written range cannot be expressed, so it cannot be sent.
+///
+/// What this type does not decide is still the engine's: a `first` below 1, a
+/// `last` before `first`, or a range that runs past the end of the document is
+/// refused there, before the file is read or anything is spent.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Pages {
+    /// The first page to send, counted from 1.
+    pub first_page: u32,
+    /// The last page to send, included.
+    pub last_page: u32,
+}
+
+impl Pages {
+    /// Pages `first` to `last`, counted from 1 with both ends included.
+    pub fn new(first: u32, last: u32) -> Pages {
+        Pages {
+            first_page: first,
+            last_page: last,
+        }
+    }
+}
+
+/// A stored file handed to an AI operation, together with what should be done
+/// with it.
+///
+/// A PDF travels to the model as a PDF, because the model reads one: its
+/// tables, its layout and its figures survive the trip, and none of them
+/// survive being turned into text. Asking for text is therefore opt-in.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::ai::{self, DocumentInput, Execution, Pages, SendAs};
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|_name, _params| {
+/// #     Ok(json!({ "data": "The first three pages sign the contract off." }))
+/// # });
+/// let contract = DocumentInput {
+///     file: DocumentHandle {
+///         file_hash: "9f2c…".into(),
+///         filename: "contract.pdf".into(),
+///         mime_type: "application/pdf".into(),
+///         size: 1_048_576,
+///         storage_path: "acme/documents/9f/2c/9f2c….pdf".into(),
+///     },
+///     pages: Some(Pages::new(1, 3)),
+///     send_as: Some(SendAs::Text),
+/// };
+///
+/// let read: Execution<String> =
+///     ai::summarize(json!(contract), "Say what it commits us to.", Options::default())?;
+/// # Ok::<(), Error>(())
+/// ```
+///
+/// Refused by the engine, before the file is read or anything is spent:
+///
+/// * [`pages`](DocumentInput::pages) on anything that is not a PDF;
+/// * a range that runs past the end of the document, or one whose last page
+///   precedes its first;
+/// * [`SendAs::Text`] on an image, which is not read as text;
+/// * [`SendAs::File`] on a Word, Excel, PowerPoint, CSV, RTF or text file,
+///   which only ever travels as text.
+///
+/// A page the platform cannot read as text sends the pages asked for as a PDF
+/// instead, so an answer is never built on text with a hole in it.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DocumentInput {
+    /// The stored file, as the upload or the record that holds it answered
+    /// with.
+    #[serde(flatten)]
+    pub file: DocumentHandle,
+
+    /// Which pages of the PDF to send. Unset sends the whole document.
+    #[serde(default, flatten)]
+    pub pages: Option<Pages>,
+
+    /// How the file reaches the model. Unset sends it the way its type is
+    /// sent by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_as: Option<SendAs>,
 }
 
 /// What any operation may be told, beyond the inputs that define it.
@@ -999,6 +1107,54 @@ mod tests {
     /// What the primitive answers when a test does not care what came back.
     fn answered() -> Value {
         json!({ "data": { "ok": true }, "metadata": { "input_tokens": 1, "output_tokens": 2 } })
+    }
+
+    /// A stored file, as an upload answers with one.
+    fn stored() -> DocumentHandle {
+        DocumentHandle {
+            file_hash: "ffce20f1".to_string(),
+            filename: "contract.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            size: 1_234,
+            storage_path: "acme/documents/ffce20f1".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_document_input_travels_as_the_handle_with_the_keys_the_engine_reads() {
+        let sent = json!(DocumentInput {
+            file: stored(),
+            pages: Some(Pages::new(12, 30)),
+            send_as: Some(SendAs::Text),
+        });
+
+        assert_eq!(sent["storage_path"], json!("acme/documents/ffce20f1"));
+        assert_eq!(sent["file_hash"], json!("ffce20f1"));
+        assert_eq!(sent["mime_type"], json!("application/pdf"));
+        assert_eq!(
+            sent["first_page"],
+            json!(12),
+            "a range travels as the two keys the engine reads, not as a nested one"
+        );
+        assert_eq!(sent["last_page"], json!(30));
+        assert_eq!(sent["send_as"], json!("text"));
+    }
+
+    #[test]
+    fn a_document_input_that_asks_for_nothing_carries_neither_key() {
+        let sent = json!(DocumentInput {
+            file: stored(),
+            ..Default::default()
+        });
+
+        assert_eq!(sent["filename"], json!("contract.pdf"));
+        assert_eq!(
+            sent.get("send_as"),
+            None,
+            "asking for nothing says nothing, so the default stays the engine's"
+        );
+        assert_eq!(sent.get("first_page"), None);
+        assert_eq!(sent.get("last_page"), None);
     }
 
     #[test]
