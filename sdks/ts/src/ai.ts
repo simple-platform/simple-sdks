@@ -87,6 +87,40 @@ export type JSONSchema
     | JSONSchemaString
 
 /**
+ * A stored file handed to an AI operation, together with what should be done
+ * with it.
+ *
+ * A PDF travels to the model as a PDF, because the model reads one: its tables,
+ * its layout and its figures survive the trip, and none of them survive being
+ * turned into text. Asking for text is therefore opt-in.
+ *
+ * Refused, before the file is read or anything is spent:
+ * - `first_page` or `last_page` on anything that is not a PDF;
+ * - one of the pair without the other, a `first_page` below 1, a `last_page`
+ *   before `first_page`, or either one not a whole number;
+ * - a range that runs past the end of the document;
+ * - `send_as: 'text'` on an image, which is not read as text;
+ * - `send_as: 'file'` on a Word, Excel, PowerPoint, CSV, RTF or text file,
+ *   which only ever travels as text.
+ *
+ * A page the platform cannot read as text sends the pages asked for as a PDF
+ * instead, so an answer is never built on text with a hole in it.
+ */
+export type AIDocumentInput = DocumentHandle & {
+  /** The first page to send, counted from 1. Named with `last_page`. PDF only. */
+  first_page?: number
+
+  /** The last page to send, included. Named with `first_page`. PDF only. */
+  last_page?: number
+
+  /**
+   * How the file reaches the model: `'file'`, the default, sends the document
+   * itself; `'text'` sends the text the platform reads out of it.
+   */
+  send_as?: 'file' | 'text'
+}
+
+/**
  * A set of common configuration options shared across all AI operations.
  * This adheres to the DRY principle, ensuring a consistent API surface.
  */
@@ -298,7 +332,7 @@ async function _uploadPendingFiles(obj: any, context: Context): Promise<any> {
  */
 async function _executeAIOperation(
   operation: 'extract' | 'summarize',
-  input: DocumentHandle | object | string,
+  input: AIDocumentInput | DocumentHandle | object | string,
   options: AIExtractOptions | AISummarizeOptions,
   context: Context,
 ): Promise<AIExecutionResult> {
@@ -368,13 +402,15 @@ async function _executeAIOperation(
  * Extracts structured data from a given input using the Simple AI engine.
  *
  * @param input The source data for the extraction (string, document handle, or object).
+ *   A document handle may carry `send_as`, `first_page` and `last_page`; see
+ *   `AIDocumentInput`.
  * @param options The configuration for the extraction operation.
  * @param context The execution context provided by the host.
  * @returns A promise that resolves to an `AIExecutionResult` object.
  * @throws Will throw an error if the operation fails or inputs are invalid.
  */
 export async function extract(
-  input: DocumentHandle | object | string,
+  input: AIDocumentInput | DocumentHandle | object | string,
   options: AIExtractOptions,
   context: Context,
 ): Promise<AIExecutionResult> {
@@ -399,13 +435,15 @@ export async function extract(
  * Generates a summary for a given input using the Simple AI engine.
  *
  * @param input The source data for the summarization (string, document handle, or object).
+ *   A document handle may carry `send_as`, `first_page` and `last_page`; see
+ *   `AIDocumentInput`.
  * @param options The configuration for the summarization operation.
  * @param context The execution context provided by the host.
  * @returns A promise that resolves to an `AIExecutionResult` object containing the summary.
  * @throws Will throw an error if the operation fails or inputs are invalid.
  */
 export async function summarize(
-  input: DocumentHandle | object | string,
+  input: AIDocumentInput | DocumentHandle | object | string,
   options: AISummarizeOptions,
   context: Context,
 ): Promise<AIExecutionResult> {
