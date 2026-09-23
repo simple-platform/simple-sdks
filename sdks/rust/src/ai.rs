@@ -1181,7 +1181,11 @@ mod tests {
             json!("text"),
             "the caller said how the file was to be sent"
         );
-        assert_eq!(sent["first_page"], json!(12), "the caller asked for a range");
+        assert_eq!(
+            sent["first_page"],
+            json!(12),
+            "the caller asked for a range"
+        );
         assert_eq!(sent["last_page"], json!(30), "the caller asked for a range");
         assert_eq!(
             sent["file_hash"],
