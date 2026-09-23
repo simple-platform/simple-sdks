@@ -79,7 +79,7 @@
 //!
 //! A file reference may say how the file should travel and which of its pages
 //! should. [`DocumentInput`] is that reference with those two beside it, and
-//! [`SendAs`] and [`Pages`] are what they say. A plain handle asks for nothing
+//! [`Delivery`] and [`Pages`] are what they say. A plain handle asks for nothing
 //! and sends the whole file the way its type is sent by default.
 //!
 //! # Files that have not been uploaded yet
@@ -152,22 +152,25 @@ impl fmt::Display for Model {
     }
 }
 
-/// How a file reaches the model.
+/// How a document reaches the model.
+///
+/// Both answers are sayable, so a call can write the default down rather than
+/// leaving it to the absence of a value.
 ///
 /// It is `#[non_exhaustive]`: a `match` on it needs a `_` arm, so a way added
 /// later does not break an action that was already written.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum SendAs {
+pub enum Delivery {
     /// The document itself, which is how a PDF travels unless you say
     /// otherwise.
-    File,
+    Document,
     /// The text the platform reads out of the document.
     Text,
 }
 
-/// The pages of a PDF to send, counted from 1 with both ends included.
+/// The pages of a PDF to use, counted from 1 with both ends included.
 ///
 /// The two ends are one value here because the engine refuses one without the
 /// other. A half-written range cannot be expressed, so it cannot be sent.
@@ -177,9 +180,9 @@ pub enum SendAs {
 /// refused there, before the file is read or anything is spent.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Pages {
-    /// The first page to send, counted from 1.
+    /// The first page to use, counted from 1.
     pub first_page: u32,
-    /// The last page to send, included.
+    /// The last page to use, included.
     pub last_page: u32,
 }
 
@@ -202,7 +205,7 @@ impl Pages {
 ///
 /// ```
 /// # use simpleplatform_sdk::prelude::*;
-/// # use simpleplatform_sdk::ai::{self, DocumentInput, Execution, Pages, SendAs};
+/// # use simpleplatform_sdk::ai::{self, Delivery, DocumentInput, Execution, Pages};
 /// # use simpleplatform_sdk::testing;
 /// # let _session = testing::install(|_name, _params| {
 /// #     Ok(json!({ "data": "The first three pages sign the contract off." }))
@@ -216,7 +219,7 @@ impl Pages {
 ///         storage_path: "acme/documents/9f/2c/9f2c….pdf".into(),
 ///     },
 ///     pages: Some(Pages::new(1, 3)),
-///     send_as: Some(SendAs::Text),
+///     deliver_as: Some(Delivery::Text),
 /// };
 ///
 /// let read: Execution<String> =
@@ -224,17 +227,28 @@ impl Pages {
 /// # Ok::<(), Error>(())
 /// ```
 ///
+/// The pages and the delivery are two questions, asked in that order. The pages
+/// say WHICH DOCUMENT the call is about: they are taken out of the PDF first,
+/// and everything after that is about them and nothing else. The delivery then
+/// says how that document should reach the model.
+///
 /// Refused by the engine, before the file is read or anything is spent:
 ///
 /// * [`pages`](DocumentInput::pages) on anything that is not a PDF;
 /// * a range that runs past the end of the document, or one whose last page
 ///   precedes its first;
-/// * [`SendAs::Text`] on an image, which is not read as text;
-/// * [`SendAs::File`] on a Word, Excel, PowerPoint, CSV, RTF or text file,
-///   which only ever travels as text.
+/// * [`Delivery::Text`] on an image, which is not read as text;
+/// * [`Delivery::Document`] on a Word, Excel, PowerPoint, CSV, RTF or text
+///   file, which only ever travels as text.
 ///
 /// A page the platform cannot read as text sends the pages asked for as a PDF
 /// instead, so an answer is never built on text with a hole in it.
+///
+/// Pages asked for as text arrive numbered from 1, because by then they are a
+/// document of their own. A line above them says which pages of which document
+/// they were, rather than the numbers being rewritten inside the text: a page
+/// number printed in a header or a cross-reference cannot be told apart from a
+/// page label, so editing them would corrupt the document's own words.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DocumentInput {
     /// The stored file, as the upload or the record that holds it answered
@@ -246,10 +260,11 @@ pub struct DocumentInput {
     #[serde(default, flatten)]
     pub pages: Option<Pages>,
 
-    /// How the file reaches the model. Unset sends it the way its type is
+    /// How the document reaches the model. Unset sends it the way its type is
     /// sent by default.
+    ///
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub send_as: Option<SendAs>,
+    pub deliver_as: Option<Delivery>,
 }
 
 /// What any operation may be told, beyond the inputs that define it.
@@ -1125,7 +1140,7 @@ mod tests {
         let sent = json!(DocumentInput {
             file: stored(),
             pages: Some(Pages::new(12, 30)),
-            send_as: Some(SendAs::Text),
+            deliver_as: Some(Delivery::Text),
         });
 
         assert_eq!(sent["storage_path"], json!("acme/documents/ffce20f1"));
@@ -1137,7 +1152,7 @@ mod tests {
             "a range travels as the two keys the engine reads, not as a nested one"
         );
         assert_eq!(sent["last_page"], json!(30));
-        assert_eq!(sent["send_as"], json!("text"));
+        assert_eq!(sent["deliver_as"], json!("text"));
     }
 
     #[test]
@@ -1149,7 +1164,7 @@ mod tests {
 
         assert_eq!(sent["filename"], json!("contract.pdf"));
         assert_eq!(
-            sent.get("send_as"),
+            sent.get("deliver_as"),
             None,
             "asking for nothing says nothing, so the default stays the engine's"
         );
@@ -1320,7 +1335,7 @@ mod tests {
                 "first_page": 12,
                 "last_page": 30,
                 "pending": true,
-                "send_as": "text",
+                "deliver_as": "text",
                 "storage_path": "acme/staged/staged"
             }),
             "Read it.",
@@ -1333,7 +1348,7 @@ mod tests {
         let sent = calls[1].params["input"].clone();
 
         assert_eq!(
-            sent["send_as"],
+            sent["deliver_as"],
             json!("text"),
             "the caller said how the file was to be sent"
         );
