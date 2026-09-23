@@ -85,13 +85,13 @@ function pending(overrides = {}) {
 test('a pending file is read the way it was asked for, from where it was stored', async () => {
   const calls = install()
 
-  await ai.extract(pending({ first_page: 12, last_page: 30, send_as: 'text' }), options, context)
+  await ai.extract(pending({ deliver_as: 'text', first_page: 12, last_page: 30 }), options, context)
 
   assert.deepEqual(input(calls), {
     ...uploaded,
+    deliver_as: 'text',
     first_page: 12,
     last_page: 30,
-    send_as: 'text',
   })
 })
 
@@ -107,7 +107,7 @@ test('the stored file is the one the upload named, not the one the handle came i
   const calls = install()
 
   await ai.extract(
-    pending({ file_hash: 'stale', send_as: 'text', storage_path: 'acme/staged/stale' }),
+    pending({ deliver_as: 'text', file_hash: 'stale', storage_path: 'acme/staged/stale' }),
     options,
     context,
   )
@@ -116,19 +116,19 @@ test('the stored file is the one the upload named, not the one the handle came i
 
   assert.equal(sent.file_hash, uploaded.file_hash)
   assert.equal(sent.storage_path, uploaded.storage_path)
-  assert.equal(sent.send_as, 'text')
+  assert.equal(sent.deliver_as, 'text')
   assert.ok(!('pending' in sent), 'the file was stored, so the reference may not still call itself pending')
 })
 
 test('a stored file is handed over as it came in', async () => {
   const calls = install()
   const stored = {
+    deliver_as: 'text',
     file_hash: 'ffce20f1c7f5',
     filename: 'contract.pdf',
     first_page: 12,
     last_page: 30,
     mime_type: 'application/pdf',
-    send_as: 'text',
     size: 1234,
     storage_path: 'acme/files/ffce20f1c7f5',
   }
@@ -146,13 +146,13 @@ test('every file in a list is stored and read the way it was asked for', async (
   const calls = install()
 
   await ai.extract(
-    [pending({ send_as: 'text' }), pending({ first_page: 2, last_page: 3 })],
+    [pending({ deliver_as: 'text' }), pending({ first_page: 2, last_page: 3 })],
     options,
     context,
   )
 
   assert.deepEqual(input(calls), [
-    { ...uploaded, send_as: 'text' },
+    { ...uploaded, deliver_as: 'text' },
     { ...uploaded, first_page: 2, last_page: 3 },
   ])
 })
