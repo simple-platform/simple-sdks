@@ -244,8 +244,9 @@ export interface AIExecutionResult {
 /**
  * Recursively processes an object to detect and upload pending files.
  * When a pending DocumentHandle is detected (has `pending: true` and `file_hash`),
- * it calls the ephemeral upload host function and replaces the pending handle
- * with the ephemeral handle returned from the upload.
+ * it calls the ephemeral upload host function and hands the operation the
+ * stored handle the upload answered with, carrying over the keys the caller
+ * put on the handle.
  *
  * @internal
  */
@@ -261,7 +262,24 @@ async function _uploadPendingFiles(obj: any, context: Context): Promise<any> {
       throw new Error(response.error?.message || 'Failed to upload pending file')
     }
 
-    return response.data
+    // The upload answers with the stored file's own reference: where it is,
+    // what it hashes to, its name, its type and its size. Every one of those
+    // keys describes the file, so every one of them is taken from the upload
+    // and none is carried over — a value from before the upload would name a
+    // file that is no longer the one being read.
+    //
+    // Everything else on the handle is the caller's: how the file is to be
+    // sent, which of its pages, and any key added to a file reference later.
+    // Those describe the request, not the file, and the upload knows nothing
+    // about them, so they are carried over. A caller reads a pending file and
+    // a stored one the same way.
+    //
+    // `pending` is the one key that is neither: it said the bytes had not been
+    // stored yet. They have been now, so it is dropped. A handle that still
+    // called itself pending would be uploaded a second time on the next pass.
+    const { pending: _pending, ...caller } = obj
+
+    return { ...caller, ...response.data }
   }
 
   if (Array.isArray(obj)) {
