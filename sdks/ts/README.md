@@ -173,8 +173,8 @@ A request the SDK can tell is incomplete is refused before it is sent, with
 `SpaceProtocolError` code `invalid_request`.
 
 When the task service refuses a create or a reply, the call rejects with
-`SpaceProtocolError` code `task_rejected`. Its `message` is the service's
-message, and its `details` is the service's error exactly as sent:
+`SpaceProtocolError` code `task_rejected`, whatever the reason. Its `message` is
+the service's message, and its `details` is the service's error exactly as sent:
 `{ code, category, message, pointers, details }`. Neither the host nor the SDK
 adds, drops, or renames anything in it. The reason is `details.code`, not
 `error.code`:
@@ -189,15 +189,26 @@ catch (error) {
   if (!(error instanceof SpaceProtocolError) || error.code !== 'task_rejected')
     throw error
 
-  const refusal = error.details as { code: string, details: unknown, pointers: string[] }
-  // refusal.code says what to correct, and refusal.pointers says where.
-  console.warn(refusal.code, refusal.pointers)
+  const refusal = error.details as { category: string, code: string, details: unknown, pointers: string[] }
+  // refusal.category says whether to correct the request or send it again,
+  // refusal.code says why, and refusal.pointers says where.
+  console.warn(refusal.category, refusal.code, refusal.pointers)
 }
 ```
 
-A refused create carries one of these codes. `category` is `validation` for
-all of them, and each is final: the host keeps nothing of the refused create,
-so correct the request before sending it again.
+`details.category` says whether to correct the request or send it again:
+
+- `validation` is final. The request is wrong, and the host keeps nothing of
+  the refused create, so correct the request before sending it again.
+- `runtime` means the task service did not answer, not that the request is
+  wrong. Its codes are `TASK_RUNTIME_UNAVAILABLE`, `TASK_RUNTIME_TIMEOUT`,
+  `TASK_RUNTIME_BUSY`, and `TASK_RUNTIME_REMOTE_FAILURE`. The host keeps the
+  pending create, so calling `create()` again with the same arguments resends
+  that create under the same task id, and a create that did land is not made
+  twice.
+
+A create's title, input, and assignee are refused with these `validation`
+codes:
 
 | `details.code`          | When                                                                                  | `details.pointers`                                        | `details.details`                   |
 | ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------- |
@@ -266,7 +277,9 @@ An assignee who is not a user in the tenant is refused with:
 Pointers name the members of the task service's command, not the SDK's
 arguments, so the assignee is `/assigned_to_id` rather than `assignedToId`. A
 refused `reply()` arrives the same way, with the service's own code in
-`details.code`.
+`details.code` and the same categories: after a `runtime` refusal, calling
+`reply()` again with the same arguments resends the kept message rather than
+posting it twice.
 
 ### Space documents
 
