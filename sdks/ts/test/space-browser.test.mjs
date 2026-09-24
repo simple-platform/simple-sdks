@@ -152,7 +152,7 @@ test('maps GraphQL bridge failures to a structured Space data error', async () =
   )
 })
 
-test('negotiates record protocol v1 during the existing Space handshake', async () => {
+test('offers every protocol capability at version 1 during the existing Space handshake', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const port = new FakePort()
   const connection = connectSpace({
@@ -161,7 +161,7 @@ test('negotiates record protocol v1 during the existing Space handshake', async 
   })
 
   assert.deepEqual(spaceWindow.parentMessages, [{
-    message: { protocols: { record: [1] }, type: 'SPACE_READY' },
+    message: { protocols: { record: [1], task: [1] }, type: 'SPACE_READY' },
     targetOrigin: 'https://acme.simple.lcl',
   }])
 
@@ -236,4 +236,45 @@ test('rejects a host handshake that does not explicitly provide Space context', 
       && error.code === 'invalid_response'
       && error.message === 'The Space host did not provide valid context.',
   )
+})
+
+test('sends task operations over the MessagePort when the host negotiates the task protocol', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, { kind: 'standalone' }, { task: 1 })
+
+  const created = simple.tasks.create({ input: { packet: 'DOC000001' }, taskTypeId: 'TTY000003', title: 'Review' })
+
+  assert.deepEqual(port.sent, [{
+    request: {
+      operation: 'task.create',
+      payload: { input: { packet: 'DOC000001' }, taskTypeId: 'TTY000003', title: 'Review' },
+      protocol: 1,
+      requestId: port.sent[0].request.requestId,
+    },
+    type: 'SPACE_PROTOCOL_REQUEST',
+  }])
+
+  port.emit({
+    response: {
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: port.sent[0].request.requestId,
+      result: { task: { id: 'TASK000042', revision: 0, status: 'queued' } },
+    },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  })
+
+  assert.deepEqual(await created, { task: { id: 'TASK000042', revision: 0, status: 'queued' } })
+  await assert.rejects(() => simple.records.current(), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
+})
+
+test('keeps tasks unavailable, and sends nothing, when the host negotiates only the record protocol', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, recordContext, { record: 1 })
+
+  await assert.rejects(
+    () => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }),
+    error => error instanceof SpaceProtocolError && error.code === 'unavailable',
+  )
+  assert.deepEqual(port.sent, [])
 })

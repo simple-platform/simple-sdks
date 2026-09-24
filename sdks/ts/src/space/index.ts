@@ -21,6 +21,7 @@ export {
 }
 export type {
   GraphQLVariables,
+  JsonValue,
   RecordErrorSnapshot,
   RecordFieldSnapshot,
   RecordFormError,
@@ -30,9 +31,15 @@ export type {
   RecordUpdateResult,
   SimpleClient,
   SimpleDataClient,
+  SimpleTasksClient,
   SpaceContext,
   SpaceDataErrorPayload,
   SpaceProtocolErrorPayload,
+  TaskCreateInput,
+  TaskCreateResult,
+  TaskReplyInput,
+  TaskReplyResult,
+  TaskStatus,
 } from './core.js'
 
 interface MessagePortLike {
@@ -64,8 +71,9 @@ export interface ConnectSpaceOptions {
 
 /**
  * Connects any embedded Space to its parent through the dedicated MessagePort
- * handshake. Record operations become available only when the host negotiates
- * record protocol v1 for a configured record view.
+ * handshake. Each protocol capability is offered in `SPACE_READY` and becomes
+ * available only when the host negotiates it in `INIT_RPC`: record operations
+ * for a configured record view, and task operations in any Space.
  */
 export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
   if (!window) {
@@ -99,19 +107,21 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
       }
 
       const transport = createMessagePortTransport(port)
-      const recordTransport = event.data.protocols?.record === PROTOCOL_VERSION
-        ? transport
-        : undefined
+      const protocols = event.data.protocols
       resolve(createSimpleClient({
         context: event.data.context,
         dataTransport: transport,
-        transport: recordTransport,
+        taskTransport: protocols?.task === PROTOCOL_VERSION ? transport : undefined,
+        transport: protocols?.record === PROTOCOL_VERSION ? transport : undefined,
       }))
     }
 
     window.addEventListener('message', onMessage)
     window.parent.postMessage({
-      protocols: { record: [PROTOCOL_VERSION] },
+      protocols: {
+        record: [PROTOCOL_VERSION],
+        task: [PROTOCOL_VERSION],
+      },
       type: 'SPACE_READY',
     }, targetOrigin)
   })
@@ -226,7 +236,7 @@ function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
 
 function isInitializationMessage(value: unknown): value is {
   context?: unknown
-  protocols?: { record?: unknown }
+  protocols?: { record?: unknown, task?: unknown }
   type: 'INIT_RPC'
 } {
   if (!value || typeof value !== 'object')

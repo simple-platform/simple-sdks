@@ -38,6 +38,54 @@ export interface RecordSnapshot {
 
 export type GraphQLVariables = Readonly<Record<string, unknown>>
 
+/** A value that survives a JSON round trip unchanged. */
+export type JsonValue
+  = | boolean
+    | null
+    | number
+    | string
+    | readonly JsonValue[]
+    | { readonly [key: string]: JsonValue }
+
+/** The platform-standard status of a task. */
+export type TaskStatus = 'cancelled' | 'completed' | 'failed' | 'in_progress' | 'queued' | 'waiting'
+
+export interface TaskCreateInput {
+  /** The user the task is assigned to. Omit it to leave the choice to the host. */
+  assignedToId?: string
+  /** The typed input the task type declares for its tasks. */
+  input: JsonValue
+  /** The ID of the task type the task is created from. */
+  taskTypeId: string
+  title: string
+}
+
+export interface TaskCreateResult {
+  task: {
+    id: string
+    revision: number
+    status: TaskStatus
+  }
+}
+
+export interface TaskReplyInput {
+  content: string
+  /** The message this reply answers, when it answers one. */
+  inReplyToMessageId?: string
+  taskId: string
+}
+
+export interface TaskReplyResult {
+  messageId: string
+  /** The task's revision after the reply was recorded. */
+  taskRevision: number
+}
+
+export interface SimpleTasksClient {
+  create: (task: TaskCreateInput) => Promise<TaskCreateResult>
+  reply: (reply: TaskReplyInput) => Promise<TaskReplyResult>
+}
+
 export interface SpaceDataTransport {
   execute: <TResult = unknown>(document: string, variables?: GraphQLVariables) => Promise<TResult>
 }
@@ -60,6 +108,7 @@ export interface SimpleClient {
   records: {
     current: () => Promise<RecordHandle>
   }
+  tasks: SimpleTasksClient
 }
 
 export interface SpaceProtocolErrorPayload {
@@ -139,7 +188,26 @@ export interface RecordSubmitResult {
   snapshot: RecordSnapshot
 }
 
-export type ProtocolRequest = CurrentRecordRequest | RecordSubmitRequest | RecordUpdateRequest
+export interface TaskCreateRequest {
+  operation: 'task.create'
+  payload: TaskCreateInput
+  protocol: typeof PROTOCOL_VERSION
+  requestId: string
+}
+
+export interface TaskReplyRequest {
+  operation: 'task.reply'
+  payload: TaskReplyInput
+  protocol: typeof PROTOCOL_VERSION
+  requestId: string
+}
+
+export type ProtocolRequest
+  = | CurrentRecordRequest
+    | RecordSubmitRequest
+    | RecordUpdateRequest
+    | TaskCreateRequest
+    | TaskReplyRequest
 
 export interface ProtocolSuccessResponse<TResult> {
   ok: true
@@ -167,6 +235,9 @@ export interface SimpleClientOptions {
   context?: SpaceContext
   dataTransport?: SpaceDataTransport
   nextRequestId?: () => string
+  /** Present only when the host negotiated the task protocol. */
+  taskTransport?: SpaceTransport
+  /** Present only when the host negotiated the record protocol. */
   transport?: SpaceTransport
 }
 
@@ -181,6 +252,7 @@ export function createSimpleClient({
   context = { kind: 'standalone' },
   dataTransport,
   nextRequestId = createRequestId,
+  taskTransport,
   transport,
 }: SimpleClientOptions): SimpleClient {
   const immutableContext = immutableSpaceContext(context)
@@ -223,6 +295,7 @@ export function createSimpleClient({
         return new ProtocolRecordHandle(result, nextRequestId, transport)
       },
     },
+    tasks: createTasksClient(taskTransport, nextRequestId),
   }
 }
 
@@ -258,6 +331,63 @@ function executeData<TResult>(
   }
 
   return dataTransport.execute<TResult>(document, variables)
+}
+
+/**
+ * Tasks are not tied to a page record, so they are available in any Space
+ * whose host negotiated the task protocol, standalone or record.
+ */
+function createTasksClient(
+  transport: SpaceTransport | undefined,
+  nextRequestId: () => string,
+): SimpleTasksClient {
+  const requireTransport = (): SpaceTransport => {
+    if (!transport) {
+      throw new SpaceProtocolError({
+        code: 'unavailable',
+        message: 'Tasks are unavailable because the Space host did not negotiate the task protocol.',
+      })
+    }
+
+    return transport
+  }
+
+  return {
+    async create(task) {
+      const taskTransport = requireTransport()
+      const request: TaskCreateRequest = {
+        operation: 'task.create',
+        payload: readTaskCreatePayload(task),
+        protocol: PROTOCOL_VERSION,
+        requestId: nextRequestId(),
+      }
+      const response = await taskTransport.request<TaskCreateResult>(request)
+      const result = readResponse(response, request)
+
+      if (!isTaskCreateResult(result))
+        throw invalidResponse('The task-create response is malformed.')
+
+      const { id, revision, status } = result.task
+      return { task: { id, revision, status } }
+    },
+
+    async reply(reply) {
+      const taskTransport = requireTransport()
+      const request: TaskReplyRequest = {
+        operation: 'task.reply',
+        payload: readTaskReplyPayload(reply),
+        protocol: PROTOCOL_VERSION,
+        requestId: nextRequestId(),
+      }
+      const response = await taskTransport.request<TaskReplyResult>(request)
+      const result = readResponse(response, request)
+
+      if (!isTaskReplyResult(result))
+        throw invalidResponse('The task-reply response is malformed.')
+
+      return { messageId: result.messageId, taskRevision: result.taskRevision }
+    },
+  }
 }
 
 class ProtocolRecordHandle implements RecordHandle {
@@ -351,6 +481,104 @@ function deepFreeze<T>(value: T): T {
 
 function invalidResponse(message: string): SpaceProtocolError {
   return new SpaceProtocolError({ code: 'invalid_response', message })
+}
+
+function invalidRequest(message: string): SpaceProtocolError {
+  return new SpaceProtocolError({ code: 'invalid_request', message })
+}
+
+/**
+ * Checks a task before it is sent, so a plain-JavaScript caller learns what is
+ * wrong without a host round trip. The payload names only the members the
+ * operation defines; an optional member left out is not sent at all.
+ */
+function readTaskCreatePayload(task: TaskCreateInput): TaskCreateInput {
+  if (!isObjectRecord(task))
+    throw invalidRequest('A task needs a title, a task type, and its input.')
+  if (!isNonBlankString(task.title))
+    throw invalidRequest('A task needs a title.')
+  if (!isNonBlankString(task.taskTypeId))
+    throw invalidRequest('A task needs the ID of its task type.')
+  if (!isJsonValue(task.input))
+    throw invalidRequest('A task input must be a JSON value.')
+  if (task.assignedToId !== undefined && !isNonBlankString(task.assignedToId))
+    throw invalidRequest('A task assignee must be a user ID.')
+
+  return {
+    ...(task.assignedToId === undefined ? {} : { assignedToId: task.assignedToId }),
+    input: task.input,
+    taskTypeId: task.taskTypeId,
+    title: task.title,
+  }
+}
+
+function readTaskReplyPayload(reply: TaskReplyInput): TaskReplyInput {
+  if (!isObjectRecord(reply))
+    throw invalidRequest('A task reply needs a task ID and its content.')
+  if (!isNonBlankString(reply.taskId))
+    throw invalidRequest('A task reply needs the ID of its task.')
+  if (!isNonBlankString(reply.content))
+    throw invalidRequest('A task reply needs content.')
+  if (reply.inReplyToMessageId !== undefined && !isNonBlankString(reply.inReplyToMessageId))
+    throw invalidRequest('A task reply can answer only a message ID.')
+
+  return {
+    content: reply.content,
+    ...(reply.inReplyToMessageId === undefined ? {} : { inReplyToMessageId: reply.inReplyToMessageId }),
+    taskId: reply.taskId,
+  }
+}
+
+/**
+ * Accepts only what JSON carries unchanged. A structured clone would pass a
+ * Date, Map, or class instance through a MessagePort and a JSON transport
+ * would not, so the task input is held to JSON on every transport.
+ */
+function isJsonValue(value: unknown, ancestors = new Set<object>()): value is JsonValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string')
+    return true
+  if (typeof value === 'number')
+    return Number.isFinite(value)
+  if (!value || typeof value !== 'object' || ancestors.has(value))
+    return false
+
+  const prototype = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null)
+    return false
+
+  ancestors.add(value)
+  const valid = Object.values(value).every(child => isJsonValue(child, ancestors))
+  ancestors.delete(value)
+  return valid
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isRevision(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>([
+  'cancelled',
+  'completed',
+  'failed',
+  'in_progress',
+  'queued',
+  'waiting',
+])
+
+function isTaskCreateResult(value: unknown): value is TaskCreateResult {
+  if (!isObjectRecord(value) || !isObjectRecord(value.task))
+    return false
+
+  const { id, revision, status } = value.task
+  return isNonBlankString(id) && isRevision(revision) && TASK_STATUSES.has(status)
+}
+
+function isTaskReplyResult(value: unknown): value is TaskReplyResult {
+  return isObjectRecord(value) && isNonBlankString(value.messageId) && isRevision(value.taskRevision)
 }
 
 function isCurrentRecordResult(value: unknown): value is CurrentRecordResult {

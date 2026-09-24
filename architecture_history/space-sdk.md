@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. List context and public secondary-record APIs are deferred from this release.
-- **Last updated:** 2026-08-10
+- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. `simple.tasks.create()` / `simple.tasks.reply()` are implemented in the SDK and wait on the host to negotiate and answer the task protocol. List context and public secondary-record APIs are deferred from this release.
+- **Last updated:** 2026-09-23
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces and its future portal-compatible transport boundary.
 - **Out of scope:** The host record runtime, record-page layout, Space selection, customer-Space migration, React presentation components, and public-portal server implementation.
 
@@ -35,8 +35,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 ### KISS
 
-- Keep the first Space surface to `simple.records` and `simple.data`.
-- Use obvious method names: `records.current`, `data.query`, `data.mutate`, `record.update`, and `record.submit`.
+- Keep the Space surface to namespaces a concrete capability requires: `simple.records`, `simple.data`, and `simple.tasks`.
+- Use obvious method names: `records.current`, `data.query`, `data.mutate`, `record.update`, `record.submit`, `tasks.create`, and `tasks.reply`.
 - Do not add aliases, subscriptions, lifecycle methods, or generic record abstractions until a concrete capability requires them.
 
 ### DRY
@@ -58,6 +58,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
+- Each protocol capability has its own key in that handshake. The Space offers `protocols: { record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants, such as `protocols: { task: 1 }`, in `INIT_RPC`. The host negotiates `record` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository), and a host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connectSpace()` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.records.current()` rejects with a structured `unavailable` error only when invoked.
@@ -70,12 +71,13 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 ├── package root                 Action/WASM API only
 ├── /space                      framework-neutral Space client
 │   ├── simple.records           behavior-aware form records
-│   └── simple.data              flexible authorized application data
+│   ├── simple.data              flexible authorized application data
+│   └── simple.tasks             tasks created from a task type, and replies
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
 
 Embedded Space
 └── BrowserSpaceTransport
-    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession commands
+    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession and task commands
     └── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
 
 Future public portal
@@ -150,6 +152,25 @@ await simple.data.mutate(
 
 `simple.data` is a supported, first-class capability for separately authorized application data. A write to the record managed by a form must use `record.update()` and `record.submit()` so behavior, validation, documents, and shared header state remain intact.
 
+### Tasks
+
+```ts
+const { task } = await simple.tasks.create({
+  assignedToId: 'USR000005', // optional
+  input: { packet: 'DOC000001' }, // JSON value typed by the task type
+  taskTypeId: 'TTY000003',
+  title: 'Review the contract packet',
+})
+
+const { messageId, taskRevision } = await simple.tasks.reply({
+  content: 'Approved.',
+  inReplyToMessageId: 'MSG000006', // optional
+  taskId: task.id,
+})
+```
+
+The wire operations are `task.create` (payload `{ title, taskTypeId, input, assignedToId? }`, result `{ task: { id, status, revision } }`) and `task.reply` (payload `{ taskId, content, inReplyToMessageId? }`, result `{ messageId, taskRevision }`). `status` is the platform task status: `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
+
 ### Errors and lifecycle
 
 - `SpaceProtocolError` represents malformed, unsupported, denied, or closed record-protocol operations.
@@ -167,6 +188,7 @@ simple-sdks/
     ├── src/space/core.ts        public transport-neutral client and contracts
     ├── src/space/index.ts       browser MessagePort adapter and public entry
     ├── test/space-record.test.mjs
+    ├── test/space-task.test.mjs
     ├── test/space-browser.test.mjs
     ├── package.json             explicit ./space export
     └── README.md                public usage guidance
@@ -177,9 +199,10 @@ simple-sdks/
 1. **Primary record read bridge — complete.** Negotiate protocol v1, open the current record, validate opaque handles, and expose immutable snapshots.
 2. **Primary record update and submit — complete.** Use host-owned behavior and persistence sequencing; validate field/form feedback and header parity.
 3. **Unify package and flexible data access — complete.** Publish the `@simpleplatform/sdk/space` subpaths, provide `simple.data`, and prove the deployed fixture can make a safe read without regressing the record API.
-4. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
-5. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
-6. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
+4. **Tasks — SDK side complete.** Negotiate `protocols.task`, send `task.create` / `task.reply`, and contract-test envelopes, input checks, and result validation. The host side is a separate platform change.
+5. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
+6. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
+7. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -306,3 +329,9 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 - **Decision:** Remove `RecordSnapshot.capabilities.canUpdate` from the foundation SDK.
 - **Reason:** The host route does not yet supply authoritative permission state, so the field always reported `true`. Omitting it is more accurate than exposing guessed security metadata.
 - **Boundary:** Host and server authorization continue to reject unauthorized writes. A future capability field requires a real shared permission source and contract tests for both allowed and denied states.
+
+### 2026-09-23 — Negotiate tasks as their own Space capability
+
+- **Decision:** Add `simple.tasks.create()` and `simple.tasks.reply()` as the `task.create` and `task.reply` operations of the existing `SPACE_PROTOCOL_REQUEST` envelope at protocol version 1. The Space offers `protocols.task: [1]` in `SPACE_READY` beside `record`. The SDK sends task operations only when the host answers `protocols.task: 1` in `INIT_RPC`; otherwise both methods reject with `SpaceProtocolError` code `unavailable` and post nothing.
+- **Reason:** A task is not the page's record, so tasks must work in standalone Spaces, where the host negotiates no record protocol. A key of its own lets a host, or a future portal transport, grant tasks independently of records. Gating on the negotiated key also keeps a call from waiting forever on a host that has no handler for the request.
+- **Boundary:** The change is additive: the envelope version stays 1 and record behavior is unchanged, and a host that reads only `protocols.record` ignores the new key. Task `input` is held to JSON values so it means the same on the MessagePort and on a JSON portal transport. The SDK refuses an incomplete request before sending it (`invalid_request`) and validates results (`invalid_response`); the host stays authoritative for task-type input validation, assignment, and authorization.

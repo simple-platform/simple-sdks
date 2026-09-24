@@ -40,7 +40,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
 | **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes |
-| **Space**    | `@simpleplatform/sdk/space`    | Behavior-aware record workflows in a Space     |
+| **Space**    | `@simpleplatform/sdk/space`    | Records, data, and tasks in an embedded Space  |
 
 ## Embedded Spaces
 
@@ -100,6 +100,10 @@ and tools. In a non-record Space, `simple.data` remains available while
 `simple.records.current()` rejects with `SpaceProtocolError` code `unavailable`
 and explains that the Space must be configured as a record view.
 
+Each capability beyond `simple.data` is negotiated with the host when the Space
+connects. A capability the host did not negotiate rejects with
+`SpaceProtocolError` code `unavailable` when it is called, and sends nothing.
+
 ### Space data access
 
 Use `simple.data` for application data that is not the record form currently
@@ -130,6 +134,36 @@ Use `record.update()` and `record.submit()` for writes to the current record.
 Those commands preserve Record Behaviors, validation, documents, and the shared
 record state used by the platform header. `simple.data.mutate()` is for other
 authorized application data; it must not be used to bypass a record workflow.
+
+### Space tasks
+
+`simple.tasks` creates a task from a task type and replies on a task. Tasks are
+not the page's record, so they work in standalone and record Spaces alike.
+
+```typescript
+const { task } = await simple.tasks.create({
+  assignedToId: 'USR000005', // Optional.
+  input: { packet: 'DOC000001' }, // The typed input the task type declares.
+  taskTypeId: 'TTY000003',
+  title: 'Review the contract packet',
+})
+
+const { messageId, taskRevision } = await simple.tasks.reply({
+  content: 'The revised drawing is attached.',
+  inReplyToMessageId: 'MSG000006', // Optional: the message this reply answers.
+  taskId: task.id,
+})
+```
+
+`create()` returns `{ task: { id, status, revision } }`, where `status` is one
+of `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
+`reply()` returns the new message's ID and the task's revision after the reply.
+
+`input` must be a JSON value (plain objects, arrays, strings, finite numbers,
+booleans, and `null`) so it means the same thing on every transport. A request
+the SDK can tell is incomplete is refused before it is sent, with
+`SpaceProtocolError` code `invalid_request`; a refusal from the host keeps the
+host's code and message.
 
 ---
 
