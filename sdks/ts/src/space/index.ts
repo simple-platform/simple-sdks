@@ -23,6 +23,7 @@ export type {
   DocumentStageInput,
   DocumentStageResult,
   GraphQLVariables,
+  JsonObject,
   JsonValue,
   RecordErrorSnapshot,
   RecordFieldSnapshot,

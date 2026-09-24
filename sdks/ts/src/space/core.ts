@@ -43,20 +43,28 @@ export type GraphQLVariables = Readonly<Record<string, unknown>>
 /** A value that survives a JSON round trip unchanged. */
 export type JsonValue
   = | boolean
+    | JsonObject
     | null
     | number
     | string
     | readonly JsonValue[]
-    | { readonly [key: string]: JsonValue }
+
+/** A JSON object: not `null`, not an array, and not a single value. */
+export interface JsonObject {
+  readonly [key: string]: JsonValue
+}
 
 /** The platform-standard status of a task. */
 export type TaskStatus = 'cancelled' | 'completed' | 'failed' | 'in_progress' | 'queued' | 'waiting'
 
 export interface TaskCreateInput {
-  /** The user the task is assigned to. Omit it to leave the choice to the host. */
+  /** The user the task is assigned to. Omit it to assign the task to its creator. */
   assignedToId?: string
-  /** The typed input the task type declares for its tasks. */
-  input: JsonValue
+  /**
+   * The typed input the task type declares for its tasks. It is always a JSON
+   * object, even when the task type needs nothing: then it is `{}`.
+   */
+  input: JsonObject
   /** The ID of the task type the task is created from. */
   taskTypeId: string
   title: string
@@ -584,8 +592,8 @@ function readTaskCreatePayload(task: TaskCreateInput): TaskCreateInput {
     throw invalidRequest('A task needs a title.')
   if (!isNonBlankString(task.taskTypeId))
     throw invalidRequest('A task needs the ID of its task type.')
-  if (!isJsonValue(task.input))
-    throw invalidRequest('A task input must be a JSON value.')
+  if (!isJsonObject(task.input))
+    throw invalidRequest('A task input must be a JSON object, and everything in it a JSON value.')
   if (task.assignedToId !== undefined && !isNonBlankString(task.assignedToId))
     throw invalidRequest('A task assignee must be a user ID.')
 
@@ -612,6 +620,14 @@ function readTaskReplyPayload(reply: TaskReplyInput): TaskReplyInput {
     ...(reply.inReplyToMessageId === undefined ? {} : { inReplyToMessageId: reply.inReplyToMessageId }),
     taskId: reply.taskId,
   }
+}
+
+/**
+ * The task.create contract takes an object for input, never null, an array, or
+ * a single value, so a caller learns that here instead of from the host.
+ */
+function isJsonObject(value: unknown): value is JsonObject {
+  return isObjectRecord(value) && isJsonValue(value)
 }
 
 /**

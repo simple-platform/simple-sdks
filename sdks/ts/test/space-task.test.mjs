@@ -66,14 +66,14 @@ test('sends the assignee only when the caller names one', async () => {
 
   await simple.tasks.create({
     assignedToId: 'USR000005',
-    input: null,
+    input: {},
     taskTypeId: 'TTY000003',
     title: 'Call the supplier',
   })
 
   assert.deepEqual(transport.requests[0].payload, {
     assignedToId: 'USR000005',
-    input: null,
+    input: {},
     taskTypeId: 'TTY000003',
     title: 'Call the supplier',
   })
@@ -179,6 +179,21 @@ test('refuses a task that cannot be created before anything is sent', async () =
   assert.deepEqual(transport.requests, [])
 })
 
+test('refuses a task input that is not a JSON object before anything is sent', async () => {
+  const transport = createTransport(succeed(createdTask))
+  const simple = createSimpleClient({ taskTransport: transport })
+  const message = 'A task input must be a JSON object, and everything in it a JSON value.'
+
+  for (const input of [null, [], [{ packet: 'DOC000001' }], 'DOC000001', 0, 42, true, false]) {
+    await assert.rejects(
+      () => simple.tasks.create({ input, taskTypeId: 'TTY000003', title: 'Plan' }),
+      error => isProtocolError('invalid_request')(error) && error.message === message,
+    )
+  }
+
+  assert.deepEqual(transport.requests, [])
+})
+
 test('accepts a task input that repeats a value without being cyclic', async () => {
   const transport = createTransport(succeed(createdTask))
   const simple = createSimpleClient({ taskTransport: transport })
@@ -221,6 +236,26 @@ test('translates a task refusal from the host into a structured protocol error',
     () => simple.tasks.create({ input: {}, taskTypeId: 'TTY999999', title: 'Plan' }),
     error => isProtocolError('not_found')(error) && error.message === 'The task type does not exist.',
   )
+})
+
+test('keeps the details of a host refusal as the host sent them', async () => {
+  const details = {
+    issues: [{ pointer: '/lines/0/quantity' }, { pointer: '/lines/1/quantity' }],
+    truncated: true,
+  }
+  const transport = createTransport(request => ({
+    error: { code: 'invalid_request', details, message: 'The task input does not match its task type.' },
+    ok: false,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+  }))
+  const simple = createSimpleClient({ taskTransport: transport })
+
+  const error = await simple.tasks.create({ input: { lines: [{}, {}] }, taskTypeId: 'TTY000003', title: 'Plan' })
+    .catch(caught => caught)
+
+  assert.ok(isProtocolError('invalid_request')(error))
+  assert.deepEqual(error.details, details)
 })
 
 test('rejects a task response that does not match the request envelope', async () => {

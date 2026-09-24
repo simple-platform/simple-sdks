@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
 - **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. `simple.tasks.create()` / `simple.tasks.reply()` and `simple.documents.stage()` are implemented in the SDK and wait on the host to negotiate and answer the task and document protocols. List context and public secondary-record APIs are deferred from this release.
-- **Last updated:** 2026-09-23
+- **Last updated:** 2026-09-24
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces and its future portal-compatible transport boundary.
 - **Out of scope:** The host record runtime, record-page layout, Space selection, customer-Space migration, React presentation components, and public-portal server implementation.
 
@@ -58,7 +58,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
-- Each protocol capability has its own key in that handshake. The Space offers `protocols: { document: [1], record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants, such as `protocols: { task: 1 }`, in `INIT_RPC`. The host negotiates `record` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository), and a host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key.
+- Each protocol capability has its own key in that handshake. The Space offers `protocols: { document: [1], record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants in `INIT_RPC`. As agreed with the host, it grants `task: 1` and `document: 1` to every Space, record or standalone, and adds `record: 1` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository). A host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key.
 - Before `document.stage`, Spaces uploaded files through an ad hoc `DOCUMENT_CREATE_HANDLE_REQUEST` message that the host answers outside the protocol (`apps/platform_web/components/space-iframe.tsx`), and each Space carried its own client for it.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
@@ -158,8 +158,8 @@ await simple.data.mutate(
 
 ```ts
 const { task } = await simple.tasks.create({
-  assignedToId: 'USR000005', // optional
-  input: { packet: 'DOC000001' }, // JSON value typed by the task type
+  assignedToId: 'USR000005', // optional; defaults to the creator
+  input: { packet: 'DOC000001' }, // JSON object typed by the task type
   taskTypeId: 'TTY000003',
   title: 'Review the contract packet',
 })
@@ -172,6 +172,14 @@ const { messageId, taskRevision } = await simple.tasks.reply({
 ```
 
 The wire operations are `task.create` (payload `{ title, taskTypeId, input, assignedToId? }`, result `{ task: { id, status, revision } }`) and `task.reply` (payload `{ taskId, content, inReplyToMessageId? }`, result `{ messageId, taskRevision }`). `status` is the platform task status: `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
+
+The task contract agreed with the host and server:
+
+- `input` is a JSON object (`JsonObject`), never `null`, an array, or a scalar. The SDK refuses anything else before sending, with `invalid_request`.
+- `assignedToId` is optional. The host passes it to the task service as `assigned_to_id`, which assigns the task to that user; it must be an existing user in the tenant, or the server refuses it with `TASK_ASSIGNEE_INVALID` at pointer `/assigned_to_id`. Left out, the task is assigned to its creator.
+- Typed input is limited to 32,768 encoded bytes and depth 64 (data-model §4.1, TASK-D27) for every input other than the Ally `{ request }` shape, which keeps its existing limit. A task type with no input schema (`null`, absent, `{}`, or `true`) skips schema validation, but the limits still apply. The server enforces these limits; the SDK does not duplicate them.
+- A validation refusal carries at most 50 issues, sorted by instance pointer, with `details.truncated: true` when more exist. The SDK passes the host's `code`, `message`, and `details` through on `SpaceProtocolError` unchanged.
+- A `task.reply` retry reuses the pending message the host retained for the same task and intent instead of posting twice.
 
 ### Documents
 
@@ -352,3 +360,10 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 - **Decision:** Add `simple.documents.stage()` as the `document.stage` operation at protocol version 1, negotiated by its own `protocols.document` key. The payload is `{ bytes, name, mimeType }`: `bytes` is an `ArrayBuffer` read once from the caller's `File` or `Blob` and named in the MessagePort transfer list, so the bytes move to the host instead of being copied. The result is `{ handle }`, the staged `DocumentHandle` with its optional `scope`.
 - **Reason:** Spaces uploaded through the ad hoc `DOCUMENT_CREATE_HANDLE_REQUEST` message, answered outside the protocol and re-implemented by each Space. As a protocol operation it gains request correlation, structured errors, and validated results, while large files stay out of action request bodies.
 - **Boundary:** Only the staged lifecycle is covered. Attaching to a record, pending AI handles, promotion, and deletion stay on their existing paths until each has a concrete consumer. `SpaceTransport.request()` gains an optional transfer list; a transport that cannot transfer sends the buffer by value. This change does not remove the legacy host message; retiring it belongs to the bridge-migration step.
+
+### 2026-09-24 — Hold task input to a JSON object
+
+- **Decision:** `TaskCreateInput.input` is typed `JsonObject`, exported from `@simpleplatform/sdk/space`, and `simple.tasks.create()` refuses `null`, an array, or a scalar input before sending, with `SpaceProtocolError` code `invalid_request`. `assignedToId` stays in the payload: the host forwards it as `assigned_to_id`, and the task is assigned to its creator when it is left out. `document.stage` keeps its `bytes` field, and `SPACE_READY` keeps offering `document`, `record`, and `task` at version 1.
+- **Reason:** The agreed wire contract with the host and server takes an object for task input. A `JsonValue` type let a caller compile a call the server refuses, so the type and the client-side check now match the contract, and the caller learns it without a round trip. The assignee is kept because callers need to name one: the first consumer assigns its task to the user who created the record the task concerns.
+- **Boundary:** The typed-input limits (32,768 encoded bytes, depth 64) and the 50-issue cap are enforced by the server alone; the SDK documents them and passes the refusal's `details` through, rather than keeping a second copy of the limits that could drift. No authorization check is added; Aegis owns that later.
+- **Supersedes:** The 2026-09-23 boundary that held task `input` to any JSON value.

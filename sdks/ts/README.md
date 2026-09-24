@@ -142,7 +142,7 @@ not the page's record, so they work in standalone and record Spaces alike.
 
 ```typescript
 const { task } = await simple.tasks.create({
-  assignedToId: 'USR000005', // Optional.
+  assignedToId: 'USR000005', // Optional: defaults to the user creating the task.
   input: { packet: 'DOC000001' }, // The typed input the task type declares.
   taskTypeId: 'TTY000003',
   title: 'Review the contract packet',
@@ -159,11 +159,21 @@ const { messageId, taskRevision } = await simple.tasks.reply({
 of `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
 `reply()` returns the new message's ID and the task's revision after the reply.
 
-`input` must be a JSON value (plain objects, arrays, strings, finite numbers,
-booleans, and `null`) so it means the same thing on every transport. A request
-the SDK can tell is incomplete is refused before it is sent, with
-`SpaceProtocolError` code `invalid_request`; a refusal from the host keeps the
-host's code and message.
+`input` is always a JSON object; pass `{}` when the task type needs no input.
+Everything inside it must be a JSON value (plain objects, arrays, strings,
+finite numbers, booleans, and `null`) so it means the same thing on every
+transport. `null`, an array, or a single value as the input itself is refused.
+The host holds a task type's typed input to 32,768 encoded bytes and 64 levels
+of nesting.
+
+`assignedToId`, when given, must name an existing user in the tenant; left out,
+the task is assigned to the user creating it.
+
+A request the SDK can tell is incomplete is refused before it is sent, with
+`SpaceProtocolError` code `invalid_request`. A refusal from the host keeps the
+host's code, message, and `details`. When the host rejects the input against
+the task type, it reports at most 50 issues, ordered by where each is in the
+input, and sets `details.truncated` when there were more.
 
 ### Space documents
 
