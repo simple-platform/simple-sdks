@@ -40,7 +40,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
 | **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes |
-| **Space**    | `@simpleplatform/sdk/space`    | Behavior-aware record workflows in a Space     |
+| **Space**    | `@simpleplatform/sdk/space`    | Records, data, tasks, and documents in a Space |
 
 ## Embedded Spaces
 
@@ -100,6 +100,10 @@ and tools. In a non-record Space, `simple.data` remains available while
 `simple.records.current()` rejects with `SpaceProtocolError` code `unavailable`
 and explains that the Space must be configured as a record view.
 
+Each capability beyond `simple.data` is negotiated with the host when the Space
+connects. A capability the host did not negotiate rejects with
+`SpaceProtocolError` code `unavailable` when it is called, and sends nothing.
+
 ### Space data access
 
 Use `simple.data` for application data that is not the record form currently
@@ -130,6 +134,175 @@ Use `record.update()` and `record.submit()` for writes to the current record.
 Those commands preserve Record Behaviors, validation, documents, and the shared
 record state used by the platform header. `simple.data.mutate()` is for other
 authorized application data; it must not be used to bypass a record workflow.
+
+### Space tasks
+
+`simple.tasks` creates a task from a task type and replies on a task. Tasks are
+not the page's record, so they work in standalone and record Spaces alike.
+
+```typescript
+const { task } = await simple.tasks.create({
+  assignedToId: 'USR000005', // Optional: defaults to the user creating the task.
+  input: { packet: 'DOC000001' }, // The typed input the task type declares.
+  taskTypeId: 'TTY000003',
+  title: 'Review the contract packet',
+})
+
+const { messageId, taskRevision } = await simple.tasks.reply({
+  content: 'The revised drawing is attached.',
+  inReplyToMessageId: 'MSG000006', // Optional: the message this reply answers.
+  taskId: task.id,
+})
+```
+
+`create()` returns `{ task: { id, status, revision } }`, where `status` is one
+of `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
+`reply()` returns the new message's ID and the task's revision after the reply.
+
+`input` is always a JSON object; pass `{}` when the task type needs no input.
+Everything inside it must be a JSON value (plain objects, arrays, strings,
+finite numbers, booleans, and `null`) so it means the same thing on every
+transport. `null`, an array, or a single value as the input itself is refused.
+The host holds a task type's typed input to 32,768 encoded bytes and 64 levels
+of nesting.
+
+`assignedToId`, when given, must name an existing user in the tenant; left out,
+the task is assigned to the user creating it.
+
+A request the SDK can tell is incomplete is refused before it is sent, with
+`SpaceProtocolError` code `invalid_request`.
+
+When the task service refuses a create or a reply, the call rejects with
+`SpaceProtocolError` code `task_rejected`, whatever the reason. Its `message` is
+the service's message, and its `details` is the service's error exactly as sent:
+`{ code, category, message, pointers, details }`. Neither the host nor the SDK
+adds, drops, or renames anything in it. The reason is `details.code`, not
+`error.code`:
+
+```typescript
+import { SpaceProtocolError } from '@simpleplatform/sdk/space'
+
+try {
+  await simple.tasks.create({ input: { amount: 700 }, taskTypeId: 'TTY000003', title: 'Open the job' })
+}
+catch (error) {
+  if (!(error instanceof SpaceProtocolError) || error.code !== 'task_rejected')
+    throw error
+
+  const refusal = error.details as { category: string, code: string, details: unknown, pointers: string[] }
+  // refusal.category says whether to correct the request or send it again,
+  // refusal.code says why, and refusal.pointers says where.
+  console.warn(refusal.category, refusal.code, refusal.pointers)
+}
+```
+
+`details.category` says whether to correct the request or send it again:
+
+- `validation` is final. The request is wrong, and the host keeps nothing of
+  the refused create, so correct the request before sending it again.
+- `runtime` means the task service did not answer, not that the request is
+  wrong. Its codes are `TASK_RUNTIME_UNAVAILABLE`, `TASK_RUNTIME_TIMEOUT`,
+  `TASK_RUNTIME_BUSY`, and `TASK_RUNTIME_REMOTE_FAILURE`. The host keeps the
+  pending create, so calling `create()` again with the same arguments resends
+  that create under the same task id, and a create that did land is not made
+  twice.
+
+A create's title, input, and assignee are refused with these `validation`
+codes:
+
+| `details.code`          | When                                                                                  | `details.pointers`                                        | `details.details`                   |
+| ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------- |
+| `TASK_INPUT_INVALID`    | The input fails its task type's input schema                                          | Each issue's `instance_pointer` under `/input`, once each | `{ errors, truncated }`             |
+| `TASK_INPUT_INVALID`    | The title is longer than 255 characters, or the input is nested deeper than 64 levels | `/title` or `/input`                                      | `{}`                                |
+| `TASK_INPUT_TOO_LARGE`  | The input encodes to more than 32,768 bytes                                           | `/input`                                                  | `{ measured_bytes, allowed_bytes }` |
+| `TASK_ASSIGNEE_INVALID` | `assignedToId` is not a user in the tenant                                            | `/assigned_to_id`                                         | `{}`                                |
+
+For a schema failure, `errors` holds at most 50 issues sorted by
+`instance_pointer`, and `truncated` is `true` when there were more. Each issue
+is exactly `{ code, instance_pointer, schema_pointer }` and never carries the
+value that failed. `instance_pointer` is relative to the input, while
+`pointers` carries the `/input` prefix. `schema_pointer` is the location in the
+task type's input schema of the object holding the keyword that failed.
+
+For example, a task type whose input schema is
+`{ type: 'object', properties: { amount: { type: 'integer' } }, required: ['job_id'], additionalProperties: false }`
+refuses the input `{ amount: 'seven hundred', note: 'a private note' }` with
+this `error.details`:
+
+```json
+{
+  "code": "TASK_INPUT_INVALID",
+  "category": "validation",
+  "message": "The task input is invalid.",
+  "pointers": ["/input", "/input/amount", "/input/note"],
+  "details": {
+    "errors": [
+      { "code": "required", "instance_pointer": "", "schema_pointer": "" },
+      { "code": "type", "instance_pointer": "/amount", "schema_pointer": "/properties/amount" },
+      { "code": "boolean_schema", "instance_pointer": "/note", "schema_pointer": "/additionalProperties" }
+    ],
+    "truncated": false
+  }
+}
+```
+
+A `required` issue points at the object that lacks the member, not at the
+member: above it sits at `/input` and does not name `job_id`.
+
+The input `{ notes }`, where `notes` holds 32,769 characters and the input
+encodes to 32,781 bytes, is refused with:
+
+```json
+{
+  "code": "TASK_INPUT_TOO_LARGE",
+  "category": "validation",
+  "message": "The task input is too large. Shorten the request or split the work into more than one task.",
+  "pointers": ["/input"],
+  "details": { "measured_bytes": 32781, "allowed_bytes": 32768 }
+}
+```
+
+An assignee who is not a user in the tenant is refused with:
+
+```json
+{
+  "code": "TASK_ASSIGNEE_INVALID",
+  "category": "validation",
+  "message": "The task assignee is invalid.",
+  "pointers": ["/assigned_to_id"],
+  "details": {}
+}
+```
+
+Pointers name the members of the task service's command, not the SDK's
+arguments, so the assignee is `/assigned_to_id` rather than `assignedToId`. A
+refused `reply()` arrives the same way, with the service's own code in
+`details.code` and the same categories: after a `runtime` refusal, calling
+`reply()` again with the same arguments resends the kept message rather than
+posting it twice.
+
+### Space documents
+
+`simple.documents.stage()` stores a file without attaching it to any record and
+returns its handle. The host uploads it, so a large file never travels inside
+an action request. The file's bytes are transferred to the host, not copied.
+
+```typescript
+const picker = document.querySelector<HTMLInputElement>('#packet')!
+const { handle } = await simple.documents.stage({ file: picker.files![0] })
+
+// A plain Blob has no name of its own, so it needs one.
+await simple.documents.stage({
+  file: new Blob([csv]),
+  mimeType: 'text/csv',
+  name: 'quantities.csv',
+})
+```
+
+The handle is `{ file_hash, filename, mime_type, size, storage_path, scope? }`.
+`name` defaults to a `File`'s own name, and `mimeType` to the file's type, then
+to `application/octet-stream`. A staged document is not attached to anything
+yet; attach its handle through the workflow that owns the record.
 
 ---
 

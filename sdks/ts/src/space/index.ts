@@ -20,7 +20,11 @@ export {
   SpaceProtocolError,
 }
 export type {
+  DocumentStageInput,
+  DocumentStageResult,
   GraphQLVariables,
+  JsonObject,
+  JsonValue,
   RecordErrorSnapshot,
   RecordFieldSnapshot,
   RecordFormError,
@@ -30,14 +34,22 @@ export type {
   RecordUpdateResult,
   SimpleClient,
   SimpleDataClient,
+  SimpleDocumentsClient,
+  SimpleTasksClient,
   SpaceContext,
   SpaceDataErrorPayload,
   SpaceProtocolErrorPayload,
+  StagedDocumentHandle,
+  TaskCreateInput,
+  TaskCreateResult,
+  TaskReplyInput,
+  TaskReplyResult,
+  TaskStatus,
 } from './core.js'
 
 interface MessagePortLike {
   onmessage: null | ((event: { data: unknown }) => void)
-  postMessage: (message: unknown) => void
+  postMessage: (message: unknown, transfer?: ArrayBuffer[]) => void
   start?: () => void
 }
 
@@ -64,8 +76,9 @@ export interface ConnectSpaceOptions {
 
 /**
  * Connects any embedded Space to its parent through the dedicated MessagePort
- * handshake. Record operations become available only when the host negotiates
- * record protocol v1 for a configured record view.
+ * handshake. Each protocol capability is offered in `SPACE_READY` and becomes
+ * available only when the host negotiates it in `INIT_RPC`: record operations
+ * for a configured record view, and task and document operations in any Space.
  */
 export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
   if (!window) {
@@ -99,19 +112,23 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
       }
 
       const transport = createMessagePortTransport(port)
-      const recordTransport = event.data.protocols?.record === PROTOCOL_VERSION
-        ? transport
-        : undefined
+      const protocols = event.data.protocols
       resolve(createSimpleClient({
         context: event.data.context,
         dataTransport: transport,
-        transport: recordTransport,
+        documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
+        taskTransport: protocols?.task === PROTOCOL_VERSION ? transport : undefined,
+        transport: protocols?.record === PROTOCOL_VERSION ? transport : undefined,
       }))
     }
 
     window.addEventListener('message', onMessage)
     window.parent.postMessage({
-      protocols: { record: [PROTOCOL_VERSION] },
+      protocols: {
+        document: [PROTOCOL_VERSION],
+        record: [PROTOCOL_VERSION],
+        task: [PROTOCOL_VERSION],
+      },
       type: 'SPACE_READY',
     }, targetOrigin)
   })
@@ -181,12 +198,12 @@ function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTranspor
         })
       })
     },
-    request: <TResult>(request: ProtocolRequest) => {
+    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = []) => {
       return new Promise<ProtocolResponse<TResult>>((resolve) => {
         pending.set(request.requestId, {
           resolve: response => resolve(response as ProtocolResponse<TResult>),
         })
-        port.postMessage({ request, type: 'SPACE_PROTOCOL_REQUEST' })
+        port.postMessage({ request, type: 'SPACE_PROTOCOL_REQUEST' }, transfer)
       })
     },
   }
@@ -226,7 +243,7 @@ function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
 
 function isInitializationMessage(value: unknown): value is {
   context?: unknown
-  protocols?: { record?: unknown }
+  protocols?: { document?: unknown, record?: unknown, task?: unknown }
   type: 'INIT_RPC'
 } {
   if (!value || typeof value !== 'object')

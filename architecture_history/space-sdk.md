@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. List context and public secondary-record APIs are deferred from this release.
-- **Last updated:** 2026-08-10
+- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. `simple.tasks.create()` / `simple.tasks.reply()` and `simple.documents.stage()` are implemented in the SDK and wait on the host to negotiate and answer the task and document protocols. List context and public secondary-record APIs are deferred from this release.
+- **Last updated:** 2026-09-24
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces and its future portal-compatible transport boundary.
 - **Out of scope:** The host record runtime, record-page layout, Space selection, customer-Space migration, React presentation components, and public-portal server implementation.
 
@@ -35,8 +35,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 ### KISS
 
-- Keep the first Space surface to `simple.records` and `simple.data`.
-- Use obvious method names: `records.current`, `data.query`, `data.mutate`, `record.update`, and `record.submit`.
+- Keep the Space surface to namespaces a concrete capability requires: `simple.records`, `simple.data`, `simple.tasks`, and `simple.documents`.
+- Use obvious method names: `records.current`, `data.query`, `data.mutate`, `record.update`, `record.submit`, `tasks.create`, `tasks.reply`, and `documents.stage`.
 - Do not add aliases, subscriptions, lifecycle methods, or generic record abstractions until a concrete capability requires them.
 
 ### DRY
@@ -58,6 +58,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
+- Each protocol capability has its own key in that handshake. The Space offers `protocols: { document: [1], record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants in `INIT_RPC`. As agreed with the host, it grants `task: 1` and `document: 1` to every Space, record or standalone, and adds `record: 1` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository). A host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key.
+- Before `document.stage`, Spaces uploaded files through an ad hoc `DOCUMENT_CREATE_HANDLE_REQUEST` message that the host answers outside the protocol (`apps/platform_web/components/space-iframe.tsx`), and each Space carried its own client for it.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connectSpace()` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.records.current()` rejects with a structured `unavailable` error only when invoked.
@@ -70,12 +72,14 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 ├── package root                 Action/WASM API only
 ├── /space                      framework-neutral Space client
 │   ├── simple.records           behavior-aware form records
-│   └── simple.data              flexible authorized application data
+│   ├── simple.data              flexible authorized application data
+│   ├── simple.tasks             tasks created from a task type, and replies
+│   └── simple.documents         staged documents, bytes transferred to the host
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
 
 Embedded Space
 └── BrowserSpaceTransport
-    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession commands
+    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, task, and document commands
     └── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
 
 Future public portal
@@ -150,9 +154,97 @@ await simple.data.mutate(
 
 `simple.data` is a supported, first-class capability for separately authorized application data. A write to the record managed by a form must use `record.update()` and `record.submit()` so behavior, validation, documents, and shared header state remain intact.
 
+### Tasks
+
+```ts
+const { task } = await simple.tasks.create({
+  assignedToId: 'USR000005', // optional; defaults to the creator
+  input: { packet: 'DOC000001' }, // JSON object typed by the task type
+  taskTypeId: 'TTY000003',
+  title: 'Review the contract packet',
+})
+
+const { messageId, taskRevision } = await simple.tasks.reply({
+  content: 'Approved.',
+  inReplyToMessageId: 'MSG000006', // optional
+  taskId: task.id,
+})
+```
+
+The wire operations are `task.create` (payload `{ title, taskTypeId, input, assignedToId? }`, result `{ task: { id, status, revision } }`) and `task.reply` (payload `{ taskId, content, inReplyToMessageId? }`, result `{ messageId, taskRevision }`). `status` is the platform task status: `queued`, `in_progress`, `waiting`, `completed`, `cancelled`, or `failed`.
+
+The task contract agreed with the host and server:
+
+- `input` is a JSON object (`JsonObject`), never `null`, an array, or a scalar. The SDK refuses anything else before sending, with `invalid_request`.
+- `assignedToId` is optional. The host passes it to the task service as `assigned_to_id`, which assigns the task to that user; it must be an existing user in the tenant, or the create is refused with `TASK_ASSIGNEE_INVALID` (see _Task refusals_ below). Left out, the task is assigned to its creator.
+- Typed input is limited to 32,768 encoded bytes and depth 64 (data-model §4.1, TASK-D27) for every input other than the Ally `{ request }` shape, which keeps its existing limit. A task type with no input schema (`null`, absent, `{}`, or `true`) skips schema validation, but the limits still apply. The server enforces these limits; the SDK does not duplicate them.
+- A refusal from the task service reaches the Space as `SpaceProtocolError` code `task_rejected`, with the service's error unchanged in `details` (see _Task refusals_ below).
+- A `task.reply` retry reuses the pending message the host retained for the same task and intent instead of posting twice.
+
+#### Task refusals
+
+When the task channel refuses a `task.create` or a `task.reply`, the host answers a `SPACE_PROTOCOL_RESPONSE` whose `error` is `{ code: 'task_rejected', message, details }`. `message` is the channel's message and `details` is the channel error exactly as the channel sent it: `{ code, category, message, pointers, details }`. The host adds, drops, and renames nothing, and neither does the SDK: `readResponse()` in `sdks/ts/src/space/core.ts` constructs `SpaceProtocolError` from the response's `error` as received, so `error.code` is `task_rejected` and the channel's reason is `error.details.code`. The host side is `respondTaskError()` in `apps/platform_web/lib/space-runtime/service-protocol-handler.ts` of the platform repository; the platform documents the same payload in `architecture_history/record-space.md` §6.5 there, and the channel contract in `apps/simple_ai/docs/contracts/task-channel-api.md` section 10 (decision D-304, amending D-131).
+
+Every channel refusal arrives this way, whatever its code, and `details.category` says whether the Space may send the request again. A `validation` refusal is final: `createTask()` in `apps/platform_web/lib/tasks/task-client.ts` drops the create it had retained for a retry when `isDefinitive()` in `channel-commands.ts` classifies the code as definitive, so the Space must correct the request before sending it again. A `runtime` refusal (`TASK_RUNTIME_UNAVAILABLE`, `TASK_RUNTIME_TIMEOUT`, `TASK_RUNTIME_BUSY`, `TASK_RUNTIME_REMOTE_FAILURE`) says the task service did not answer, not that the request was wrong. The host keeps the pending create, so a `task.create` with the same arguments resends it under the same task id instead of creating a second task. A create's title, input, and assignee are refused with these `validation` codes:
+
+| `details.code`          | When                                                                                  | `details.pointers`                                 | `details.details`                   |
+| ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- |
+| `TASK_INPUT_INVALID`    | The input fails its task type's input schema                                          | Each issue's instance pointer under `/input`, once | `{ errors, truncated }`             |
+| `TASK_INPUT_INVALID`    | The title is longer than 255 characters, or the input is nested deeper than 64 levels | `/title` or `/input`                               | `{}`                                |
+| `TASK_INPUT_TOO_LARGE`  | The input encodes to more than 32,768 bytes                                           | `/input`                                           | `{ measured_bytes, allowed_bytes }` |
+| `TASK_ASSIGNEE_INVALID` | `assignedToId` is not an existing user in the tenant                                  | `/assigned_to_id`                                  | `{}`                                |
+
+- `errors` holds at most 50 issues sorted by instance pointer, and `truncated` is `true` when more existed. Each issue is exactly `{ code, instance_pointer, schema_pointer }` and never carries the value.
+- `instance_pointer` is relative to the input; `pointers` carries the `/input` prefix. `schema_pointer` locates the schema object that holds the failed keyword, so a `required` issue sits at the object that lacks the member and does not name the member.
+- Pointers name the members of the channel command, so the assignee is `/assigned_to_id`, not the SDK's `assignedToId`.
+
+A task type whose input schema is `{ type: 'object', properties: { amount: { type: 'integer' } }, required: ['job_id'], additionalProperties: false }`, given the input `{ amount: 'seven hundred', note: 'a private note' }`, answers:
+
+```json
+{
+  "type": "SPACE_PROTOCOL_RESPONSE",
+  "response": {
+    "ok": false,
+    "protocol": 1,
+    "requestId": "request-1",
+    "error": {
+      "code": "task_rejected",
+      "message": "The task input is invalid.",
+      "details": {
+        "code": "TASK_INPUT_INVALID",
+        "category": "validation",
+        "message": "The task input is invalid.",
+        "pointers": ["/input", "/input/amount", "/input/note"],
+        "details": {
+          "errors": [
+            { "code": "required", "instance_pointer": "", "schema_pointer": "" },
+            { "code": "type", "instance_pointer": "/amount", "schema_pointer": "/properties/amount" },
+            { "code": "boolean_schema", "instance_pointer": "/note", "schema_pointer": "/additionalProperties" }
+          ],
+          "truncated": false
+        }
+      }
+    }
+  }
+}
+```
+
+The input `{ notes }` holding 32,769 characters, which encodes to 32,781 bytes, answers `details` of `{ "code": "TASK_INPUT_TOO_LARGE", "category": "validation", "message": "The task input is too large. Shorten the request or split the work into more than one task.", "pointers": ["/input"], "details": { "measured_bytes": 32781, "allowed_bytes": 32768 } }`. An assignee who is not a user answers `details` of `{ "code": "TASK_ASSIGNEE_INVALID", "category": "validation", "message": "The task assignee is invalid.", "pointers": ["/assigned_to_id"], "details": {} }`.
+
+`test/space-task.test.mjs` checks that each of these refusals, and a 50-issue refusal with `truncated: true`, reaches `SpaceProtocolError.details` deep-equal to what the host sent. `test/space-browser.test.mjs` sends the response above verbatim over a real `MessageChannel`.
+
+### Documents
+
+```ts
+const { handle } = await simple.documents.stage({ file }) // File or Blob; name and mimeType optional
+```
+
+The wire operation is `document.stage`, with payload `{ bytes, name, mimeType }` and result `{ handle: { file_hash, filename, mime_type, size, storage_path, scope? } }`. `bytes` is an `ArrayBuffer` named in the request's transfer list, so it is detached in the Space once sent.
+
 ### Errors and lifecycle
 
-- `SpaceProtocolError` represents malformed, unsupported, denied, or closed record-protocol operations.
+- `SpaceProtocolError` represents malformed, invalid, unsupported, unavailable, denied, or closed record, task, and document protocol operations.
+- `SpaceProtocolError.details` is whatever the host sent, unchanged. For `task_rejected` it is the task channel's error, `{ code, category, message, pointers, details }` (see _Task refusals_).
 - `SpaceDataError` represents unavailable/closed data transport or a host GraphQL failure.
 - The primary record belongs to the route and has no public close method.
 - Internal MessagePort teardown is implementation cleanup. Public `record.close()` begins only with secondary-record support.
@@ -167,6 +259,8 @@ simple-sdks/
     ├── src/space/core.ts        public transport-neutral client and contracts
     ├── src/space/index.ts       browser MessagePort adapter and public entry
     ├── test/space-record.test.mjs
+    ├── test/space-task.test.mjs
+    ├── test/space-document.test.mjs
     ├── test/space-browser.test.mjs
     ├── package.json             explicit ./space export
     └── README.md                public usage guidance
@@ -177,9 +271,10 @@ simple-sdks/
 1. **Primary record read bridge — complete.** Negotiate protocol v1, open the current record, validate opaque handles, and expose immutable snapshots.
 2. **Primary record update and submit — complete.** Use host-owned behavior and persistence sequencing; validate field/form feedback and header parity.
 3. **Unify package and flexible data access — complete.** Publish the `@simpleplatform/sdk/space` subpaths, provide `simple.data`, and prove the deployed fixture can make a safe read without regressing the record API.
-4. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
-5. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
-6. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
+4. **Tasks and staged documents — SDK side complete.** Negotiate `protocols.task` and `protocols.document`, send `task.create` / `task.reply` / `document.stage`, and contract-test envelopes, input checks, byte transfer, and result validation. The host side is a separate platform change.
+5. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
+6. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
+7. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -208,6 +303,7 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 3. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
 4. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
 5. What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?
+6. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
 
@@ -306,3 +402,29 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 - **Decision:** Remove `RecordSnapshot.capabilities.canUpdate` from the foundation SDK.
 - **Reason:** The host route does not yet supply authoritative permission state, so the field always reported `true`. Omitting it is more accurate than exposing guessed security metadata.
 - **Boundary:** Host and server authorization continue to reject unauthorized writes. A future capability field requires a real shared permission source and contract tests for both allowed and denied states.
+
+### 2026-09-23 — Negotiate tasks as their own Space capability
+
+- **Decision:** Add `simple.tasks.create()` and `simple.tasks.reply()` as the `task.create` and `task.reply` operations of the existing `SPACE_PROTOCOL_REQUEST` envelope at protocol version 1. The Space offers `protocols.task: [1]` in `SPACE_READY` beside `record`. The SDK sends task operations only when the host answers `protocols.task: 1` in `INIT_RPC`; otherwise both methods reject with `SpaceProtocolError` code `unavailable` and post nothing.
+- **Reason:** A task is not the page's record, so tasks must work in standalone Spaces, where the host negotiates no record protocol. A key of its own lets a host, or a future portal transport, grant tasks independently of records. Gating on the negotiated key also keeps a call from waiting forever on a host that has no handler for the request.
+- **Boundary:** The change is additive: the envelope version stays 1 and record behavior is unchanged, and a host that reads only `protocols.record` ignores the new key. Task `input` is held to JSON values so it means the same on the MessagePort and on a JSON portal transport. The SDK refuses an incomplete request before sending it (`invalid_request`) and validates results (`invalid_response`); the host stays authoritative for task-type input validation, assignment, and authorization.
+
+### 2026-09-23 — Stage documents through the Space protocol and transfer their bytes
+
+- **Decision:** Add `simple.documents.stage()` as the `document.stage` operation at protocol version 1, negotiated by its own `protocols.document` key. The payload is `{ bytes, name, mimeType }`: `bytes` is an `ArrayBuffer` read once from the caller's `File` or `Blob` and named in the MessagePort transfer list, so the bytes move to the host instead of being copied. The result is `{ handle }`, the staged `DocumentHandle` with its optional `scope`.
+- **Reason:** Spaces uploaded through the ad hoc `DOCUMENT_CREATE_HANDLE_REQUEST` message, answered outside the protocol and re-implemented by each Space. As a protocol operation it gains request correlation, structured errors, and validated results, while large files stay out of action request bodies.
+- **Boundary:** Only the staged lifecycle is covered. Attaching to a record, pending AI handles, promotion, and deletion stay on their existing paths until each has a concrete consumer. `SpaceTransport.request()` gains an optional transfer list; a transport that cannot transfer sends the buffer by value. This change does not remove the legacy host message; retiring it belongs to the bridge-migration step.
+
+### 2026-09-24 — Hold task input to a JSON object
+
+- **Decision:** `TaskCreateInput.input` is typed `JsonObject`, exported from `@simpleplatform/sdk/space`, and `simple.tasks.create()` refuses `null`, an array, or a scalar input before sending, with `SpaceProtocolError` code `invalid_request`. `assignedToId` stays in the payload: the host forwards it as `assigned_to_id`, and the task is assigned to its creator when it is left out. `document.stage` keeps its `bytes` field, and `SPACE_READY` keeps offering `document`, `record`, and `task` at version 1.
+- **Reason:** The agreed wire contract with the host and server takes an object for task input. A `JsonValue` type let a caller compile a call the server refuses, so the type and the client-side check now match the contract, and the caller learns it without a round trip. The assignee is kept because callers need to name one: the first consumer assigns its task to the user who created the record the task concerns.
+- **Boundary:** The typed-input limits (32,768 encoded bytes, depth 64) and the 50-issue cap are enforced by the server alone; the SDK documents them and passes the refusal's `details` through, rather than keeping a second copy of the limits that could drift. No authorization check is added; Aegis owns that later.
+- **Supersedes:** The 2026-09-23 boundary that held task `input` to any JSON value.
+
+### 2026-09-24 — Keep a task refusal's channel error intact
+
+- **Decision:** A task refusal reaches the Space as `SpaceProtocolError` code `task_rejected`, the host's code, with the channel's message as `message` and the channel error `{ code, category, message, pointers, details }` as `details`, unchanged. The SDK does not lift `details.code` into `error.code`, rename pointers to the SDK's argument names, or type the details. The README and _Task refusals_ above say that every channel refusal arrives this way and that `details.category` decides whether the Space may send the request again: a `validation` refusal is final, and a `runtime` refusal (`TASK_RUNTIME_*`) can be retried with the same arguments because the host keeps the pending create. They document the create's `validation` codes (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`, `TASK_ASSIGNEE_INVALID`) with the payloads the platform's channel tests produce.
+- **Reason:** The platform now keeps these three codes on the channel instead of folding them into `TASK_COMMAND_INVALID` (platform decision D-304) and sends the schema issues with them, so a Space can tell its user what to correct. The payload is already the channel's published contract; passing it through leaves one definition of it, in the platform, rather than an SDK copy that could drift. `error.code` stays the transport-level answer, so `task_rejected`, `timeout`, and `runtime_error` remain distinguishable without reading `details`.
+- **Boundary:** No SDK code changes; `readResponse()` already passes the host's `error` through. Tests now pin the exact payloads, over the core client and over a real `MessageChannel`. The SDK still checks no input limits of its own and adds no authorization check. The `required` issue's missing member is an open platform question, not an SDK one.
+- **Supersedes:** The earlier contract lines, which placed `truncated` at `details.truncated` and did not say where a channel code arrives. `truncated` is at `details.details.truncated`, and the channel code is at `details.code` under `task_rejected`.
