@@ -176,10 +176,62 @@ The wire operations are `task.create` (payload `{ title, taskTypeId, input, assi
 The task contract agreed with the host and server:
 
 - `input` is a JSON object (`JsonObject`), never `null`, an array, or a scalar. The SDK refuses anything else before sending, with `invalid_request`.
-- `assignedToId` is optional. The host passes it to the task service as `assigned_to_id`, which assigns the task to that user; it must be an existing user in the tenant, or the server refuses it with `TASK_ASSIGNEE_INVALID` at pointer `/assigned_to_id`. Left out, the task is assigned to its creator.
+- `assignedToId` is optional. The host passes it to the task service as `assigned_to_id`, which assigns the task to that user; it must be an existing user in the tenant, or the create is refused with `TASK_ASSIGNEE_INVALID` (see _Task refusals_ below). Left out, the task is assigned to its creator.
 - Typed input is limited to 32,768 encoded bytes and depth 64 (data-model §4.1, TASK-D27) for every input other than the Ally `{ request }` shape, which keeps its existing limit. A task type with no input schema (`null`, absent, `{}`, or `true`) skips schema validation, but the limits still apply. The server enforces these limits; the SDK does not duplicate them.
-- A validation refusal carries at most 50 issues, sorted by instance pointer, with `details.truncated: true` when more exist. The SDK passes the host's `code`, `message`, and `details` through on `SpaceProtocolError` unchanged.
+- A refusal from the task service reaches the Space as `SpaceProtocolError` code `task_rejected`, with the service's error unchanged in `details` (see _Task refusals_ below).
 - A `task.reply` retry reuses the pending message the host retained for the same task and intent instead of posting twice.
+
+#### Task refusals
+
+When the task channel refuses a `task.create` or a `task.reply`, the host answers a `SPACE_PROTOCOL_RESPONSE` whose `error` is `{ code: 'task_rejected', message, details }`. `message` is the channel's message and `details` is the channel error exactly as the channel sent it: `{ code, category, message, pointers, details }`. The host adds, drops, and renames nothing, and neither does the SDK: `readResponse()` in `sdks/ts/src/space/core.ts` constructs `SpaceProtocolError` from the response's `error` as received, so `error.code` is `task_rejected` and the channel's reason is `error.details.code`. The host side is `respondTaskError()` in `apps/platform_web/lib/space-runtime/service-protocol-handler.ts` of the platform repository; the platform documents the same payload in `architecture_history/record-space.md` §6.5 there, and the channel contract in `apps/simple_ai/docs/contracts/task-channel-api.md` section 10 (decision D-304, amending D-131).
+
+A refused create carries one of three codes. `category` is `validation` for all three, and each refusal is final: the host drops the create it had retained for a retry, so the Space must correct the request before sending it again.
+
+| `details.code`          | When                                                                                  | `details.pointers`                                 | `details.details`                   |
+| ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- |
+| `TASK_INPUT_INVALID`    | The input fails its task type's input schema                                          | Each issue's instance pointer under `/input`, once | `{ errors, truncated }`             |
+| `TASK_INPUT_INVALID`    | The title is longer than 255 characters, or the input is nested deeper than 64 levels | `/title` or `/input`                               | `{}`                                |
+| `TASK_INPUT_TOO_LARGE`  | The input encodes to more than 32,768 bytes                                           | `/input`                                           | `{ measured_bytes, allowed_bytes }` |
+| `TASK_ASSIGNEE_INVALID` | `assignedToId` is not an existing user in the tenant                                  | `/assigned_to_id`                                  | `{}`                                |
+
+- `errors` holds at most 50 issues sorted by instance pointer, and `truncated` is `true` when more existed. Each issue is exactly `{ code, instance_pointer, schema_pointer }` and never carries the value.
+- `instance_pointer` is relative to the input; `pointers` carries the `/input` prefix. `schema_pointer` locates the schema object that holds the failed keyword, so a `required` issue sits at the object that lacks the member and does not name the member.
+- Pointers name the members of the channel command, so the assignee is `/assigned_to_id`, not the SDK's `assignedToId`.
+
+A task type whose input schema is `{ type: 'object', properties: { amount: { type: 'integer' } }, required: ['job_id'], additionalProperties: false }`, given the input `{ amount: 'seven hundred', note: 'a private note' }`, answers:
+
+```json
+{
+  "type": "SPACE_PROTOCOL_RESPONSE",
+  "response": {
+    "ok": false,
+    "protocol": 1,
+    "requestId": "request-1",
+    "error": {
+      "code": "task_rejected",
+      "message": "The task input is invalid.",
+      "details": {
+        "code": "TASK_INPUT_INVALID",
+        "category": "validation",
+        "message": "The task input is invalid.",
+        "pointers": ["/input", "/input/amount", "/input/note"],
+        "details": {
+          "errors": [
+            { "code": "required", "instance_pointer": "", "schema_pointer": "" },
+            { "code": "type", "instance_pointer": "/amount", "schema_pointer": "/properties/amount" },
+            { "code": "boolean_schema", "instance_pointer": "/note", "schema_pointer": "/additionalProperties" }
+          ],
+          "truncated": false
+        }
+      }
+    }
+  }
+}
+```
+
+The input `{ notes }` holding 32,769 characters, which encodes to 32,781 bytes, answers `details` of `{ "code": "TASK_INPUT_TOO_LARGE", "category": "validation", "message": "The task input is too large. Shorten the request or split the work into more than one task.", "pointers": ["/input"], "details": { "measured_bytes": 32781, "allowed_bytes": 32768 } }`. An assignee who is not a user answers `details` of `{ "code": "TASK_ASSIGNEE_INVALID", "category": "validation", "message": "The task assignee is invalid.", "pointers": ["/assigned_to_id"], "details": {} }`.
+
+`test/space-task.test.mjs` checks that each of these refusals, and a 50-issue refusal with `truncated: true`, reaches `SpaceProtocolError.details` deep-equal to what the host sent. `test/space-browser.test.mjs` sends the response above verbatim over a real `MessageChannel`.
 
 ### Documents
 
@@ -192,6 +244,7 @@ The wire operation is `document.stage`, with payload `{ bytes, name, mimeType }`
 ### Errors and lifecycle
 
 - `SpaceProtocolError` represents malformed, invalid, unsupported, unavailable, denied, or closed record, task, and document protocol operations.
+- `SpaceProtocolError.details` is whatever the host sent, unchanged. For `task_rejected` it is the task channel's error, `{ code, category, message, pointers, details }` (see _Task refusals_).
 - `SpaceDataError` represents unavailable/closed data transport or a host GraphQL failure.
 - The primary record belongs to the route and has no public close method.
 - Internal MessagePort teardown is implementation cleanup. Public `record.close()` begins only with secondary-record support.
@@ -250,6 +303,7 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 3. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
 4. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
 5. What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?
+6. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
 
@@ -367,3 +421,10 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 - **Reason:** The agreed wire contract with the host and server takes an object for task input. A `JsonValue` type let a caller compile a call the server refuses, so the type and the client-side check now match the contract, and the caller learns it without a round trip. The assignee is kept because callers need to name one: the first consumer assigns its task to the user who created the record the task concerns.
 - **Boundary:** The typed-input limits (32,768 encoded bytes, depth 64) and the 50-issue cap are enforced by the server alone; the SDK documents them and passes the refusal's `details` through, rather than keeping a second copy of the limits that could drift. No authorization check is added; Aegis owns that later.
 - **Supersedes:** The 2026-09-23 boundary that held task `input` to any JSON value.
+
+### 2026-09-24 — Keep a task refusal's channel error intact
+
+- **Decision:** A task refusal reaches the Space as `SpaceProtocolError` code `task_rejected`, the host's code, with the channel's message as `message` and the channel error `{ code, category, message, pointers, details }` as `details`, unchanged. The SDK does not lift `details.code` into `error.code`, rename pointers to the SDK's argument names, or type the details. The README and _Task refusals_ above document the three create refusals (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`, `TASK_ASSIGNEE_INVALID`) with the payloads the platform's channel tests produce.
+- **Reason:** The platform now keeps these three codes on the channel instead of folding them into `TASK_COMMAND_INVALID` (platform decision D-304) and sends the schema issues with them, so a Space can tell its user what to correct. The payload is already the channel's published contract; passing it through leaves one definition of it, in the platform, rather than an SDK copy that could drift. `error.code` stays the transport-level answer, so `task_rejected`, `timeout`, and `runtime_error` remain distinguishable without reading `details`.
+- **Boundary:** No SDK code changes; `readResponse()` already passes the host's `error` through. Tests now pin the exact payloads, over the core client and over a real `MessageChannel`. The SDK still checks no input limits of its own and adds no authorization check. The `required` issue's missing member is an open platform question, not an SDK one.
+- **Supersedes:** The earlier contract lines, which placed `truncated` at `details.truncated` and did not say where a channel code arrives. `truncated` is at `details.details.truncated`, and the channel code is at `details.code` under `task_rejected`.

@@ -170,10 +170,103 @@ of nesting.
 the task is assigned to the user creating it.
 
 A request the SDK can tell is incomplete is refused before it is sent, with
-`SpaceProtocolError` code `invalid_request`. A refusal from the host keeps the
-host's code, message, and `details`. When the host rejects the input against
-the task type, it reports at most 50 issues, ordered by where each is in the
-input, and sets `details.truncated` when there were more.
+`SpaceProtocolError` code `invalid_request`.
+
+When the task service refuses a create or a reply, the call rejects with
+`SpaceProtocolError` code `task_rejected`. Its `message` is the service's
+message, and its `details` is the service's error exactly as sent:
+`{ code, category, message, pointers, details }`. Neither the host nor the SDK
+adds, drops, or renames anything in it. The reason is `details.code`, not
+`error.code`:
+
+```typescript
+import { SpaceProtocolError } from '@simpleplatform/sdk/space'
+
+try {
+  await simple.tasks.create({ input: { amount: 700 }, taskTypeId: 'TTY000003', title: 'Open the job' })
+}
+catch (error) {
+  if (!(error instanceof SpaceProtocolError) || error.code !== 'task_rejected')
+    throw error
+
+  const refusal = error.details as { code: string, details: unknown, pointers: string[] }
+  // refusal.code says what to correct, and refusal.pointers says where.
+  console.warn(refusal.code, refusal.pointers)
+}
+```
+
+A refused create carries one of these codes. `category` is `validation` for
+all of them, and each is final: the host keeps nothing of the refused create,
+so correct the request before sending it again.
+
+| `details.code`          | When                                                                                  | `details.pointers`                                        | `details.details`                   |
+| ----------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------- |
+| `TASK_INPUT_INVALID`    | The input fails its task type's input schema                                          | Each issue's `instance_pointer` under `/input`, once each | `{ errors, truncated }`             |
+| `TASK_INPUT_INVALID`    | The title is longer than 255 characters, or the input is nested deeper than 64 levels | `/title` or `/input`                                      | `{}`                                |
+| `TASK_INPUT_TOO_LARGE`  | The input encodes to more than 32,768 bytes                                           | `/input`                                                  | `{ measured_bytes, allowed_bytes }` |
+| `TASK_ASSIGNEE_INVALID` | `assignedToId` is not a user in the tenant                                            | `/assigned_to_id`                                         | `{}`                                |
+
+For a schema failure, `errors` holds at most 50 issues sorted by
+`instance_pointer`, and `truncated` is `true` when there were more. Each issue
+is exactly `{ code, instance_pointer, schema_pointer }` and never carries the
+value that failed. `instance_pointer` is relative to the input, while
+`pointers` carries the `/input` prefix. `schema_pointer` is the location in the
+task type's input schema of the object holding the keyword that failed.
+
+For example, a task type whose input schema is
+`{ type: 'object', properties: { amount: { type: 'integer' } }, required: ['job_id'], additionalProperties: false }`
+refuses the input `{ amount: 'seven hundred', note: 'a private note' }` with
+this `error.details`:
+
+```json
+{
+  "code": "TASK_INPUT_INVALID",
+  "category": "validation",
+  "message": "The task input is invalid.",
+  "pointers": ["/input", "/input/amount", "/input/note"],
+  "details": {
+    "errors": [
+      { "code": "required", "instance_pointer": "", "schema_pointer": "" },
+      { "code": "type", "instance_pointer": "/amount", "schema_pointer": "/properties/amount" },
+      { "code": "boolean_schema", "instance_pointer": "/note", "schema_pointer": "/additionalProperties" }
+    ],
+    "truncated": false
+  }
+}
+```
+
+A `required` issue points at the object that lacks the member, not at the
+member: above it sits at `/input` and does not name `job_id`.
+
+The input `{ notes }`, where `notes` holds 32,769 characters and the input
+encodes to 32,781 bytes, is refused with:
+
+```json
+{
+  "code": "TASK_INPUT_TOO_LARGE",
+  "category": "validation",
+  "message": "The task input is too large. Shorten the request or split the work into more than one task.",
+  "pointers": ["/input"],
+  "details": { "measured_bytes": 32781, "allowed_bytes": 32768 }
+}
+```
+
+An assignee who is not a user in the tenant is refused with:
+
+```json
+{
+  "code": "TASK_ASSIGNEE_INVALID",
+  "category": "validation",
+  "message": "The task assignee is invalid.",
+  "pointers": ["/assigned_to_id"],
+  "details": {}
+}
+```
+
+Pointers name the members of the task service's command, not the SDK's
+arguments, so the assignee is `/assigned_to_id` rather than `assignedToId`. A
+refused `reply()` arrives the same way, with the service's own code in
+`details.code`.
 
 ### Space documents
 
