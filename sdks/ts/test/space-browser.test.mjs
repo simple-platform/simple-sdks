@@ -270,6 +270,38 @@ test('sends task operations over the MessagePort when the host negotiates the ta
   await assert.rejects(() => simple.records.current(), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
 })
 
+// A refused create exactly as the host posts it, from the platform's
+// end-to-end channel test; only its requestId is replaced below.
+const refusedCreateResponse = '{"type":"SPACE_PROTOCOL_RESPONSE","response":{"ok":false,"protocol":1,"requestId":"request-1","error":{"code":"task_rejected","message":"The task input is invalid.","details":{"code":"TASK_INPUT_INVALID","category":"validation","message":"The task input is invalid.","pointers":["/input","/input/amount","/input/note"],"details":{"errors":[{"code":"required","instance_pointer":"","schema_pointer":""},{"code":"type","instance_pointer":"/amount","schema_pointer":"/properties/amount"},{"code":"boolean_schema","instance_pointer":"/note","schema_pointer":"/additionalProperties"}],"truncated":false}}}}}'
+
+test('delivers a refused task create over a real MessagePort with its details unchanged', { timeout: 5000 }, async () => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+  hostPort.onmessage = ({ data }) => {
+    const message = JSON.parse(refusedCreateResponse)
+    message.response.requestId = data.request.requestId
+    hostPort.postMessage(message)
+  }
+
+  try {
+    const simple = await connectWithHost(spacePort, { kind: 'standalone' }, { task: 1 })
+    const error = await simple.tasks.create({
+      input: { amount: 'seven hundred', note: 'a synthetic note' },
+      taskTypeId: 'TTY000003',
+      title: 'Open the job',
+    }).catch(caught => caught)
+
+    const { error: sent } = JSON.parse(refusedCreateResponse).response
+    assert.ok(error instanceof SpaceProtocolError)
+    assert.equal(error.code, 'task_rejected')
+    assert.equal(error.message, 'The task input is invalid.')
+    assert.deepEqual(error.details, sent.details)
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
 test('keeps tasks and documents unavailable, and sends nothing, when the host negotiates only the record protocol', async () => {
   const port = new FakePort()
   const simple = await connectWithHost(port, recordContext, { record: 1 })

@@ -223,40 +223,90 @@ test('refuses a reply that cannot be recorded before anything is sent', async ()
   assert.deepEqual(transport.requests, [])
 })
 
-test('translates a task refusal from the host into a structured protocol error', async () => {
+test('translates a host error without details into a structured protocol error', async () => {
+  const message = 'Task command outcome is unknown; retry reuses the same durable IDs.'
   const transport = createTransport(request => ({
-    error: { code: 'not_found', message: 'The task type does not exist.' },
+    error: { code: 'timeout', message },
     ok: false,
     protocol: PROTOCOL_VERSION,
     requestId: request.requestId,
   }))
   const simple = createSimpleClient({ taskTransport: transport })
 
-  await assert.rejects(
-    () => simple.tasks.create({ input: {}, taskTypeId: 'TTY999999', title: 'Plan' }),
-    error => isProtocolError('not_found')(error) && error.message === 'The task type does not exist.',
-  )
-})
-
-test('keeps the details of a host refusal as the host sent them', async () => {
-  const details = {
-    issues: [{ pointer: '/lines/0/quantity' }, { pointer: '/lines/1/quantity' }],
-    truncated: true,
-  }
-  const transport = createTransport(request => ({
-    error: { code: 'invalid_request', details, message: 'The task input does not match its task type.' },
-    ok: false,
-    protocol: PROTOCOL_VERSION,
-    requestId: request.requestId,
-  }))
-  const simple = createSimpleClient({ taskTransport: transport })
-
-  const error = await simple.tasks.create({ input: { lines: [{}, {}] }, taskTypeId: 'TTY000003', title: 'Plan' })
+  const error = await simple.tasks.create({ input: {}, taskTypeId: 'TTY000003', title: 'Plan' })
     .catch(caught => caught)
 
-  assert.ok(isProtocolError('invalid_request')(error))
-  assert.deepEqual(error.details, details)
+  assert.ok(isProtocolError('timeout')(error))
+  assert.equal(error.message, message)
+  assert.equal(error.details, undefined)
 })
+
+// The task channel's refusals of a create, as the platform's channel tests
+// produce them. The host forwards each one as the details of task_rejected.
+const channelRefusals = {
+  'an assignee who is not a user': {
+    category: 'validation',
+    code: 'TASK_ASSIGNEE_INVALID',
+    details: {},
+    message: 'The task assignee is invalid.',
+    pointers: ['/assigned_to_id'],
+  },
+  'an input over its size': {
+    category: 'validation',
+    code: 'TASK_INPUT_TOO_LARGE',
+    details: { allowed_bytes: 32768, measured_bytes: 32781 },
+    message: 'The task input is too large. Shorten the request or split the work into more than one task.',
+    pointers: ['/input'],
+  },
+  'an input that fails its schema': {
+    category: 'validation',
+    code: 'TASK_INPUT_INVALID',
+    details: {
+      errors: [
+        { code: 'required', instance_pointer: '', schema_pointer: '' },
+        { code: 'type', instance_pointer: '/amount', schema_pointer: '/properties/amount' },
+        { code: 'boolean_schema', instance_pointer: '/note', schema_pointer: '/additionalProperties' },
+      ],
+      truncated: false,
+    },
+    message: 'The task input is invalid.',
+    pointers: ['/input', '/input/amount', '/input/note'],
+  },
+  'an input with more schema issues than the host reports': {
+    category: 'validation',
+    code: 'TASK_INPUT_INVALID',
+    details: {
+      errors: Array.from({ length: 50 }, (_, index) => ({
+        code: 'type',
+        instance_pointer: `/lines/${String(index).padStart(2, '0')}`,
+        schema_pointer: '/properties/lines/items',
+      })),
+      truncated: true,
+    },
+    message: 'The task input is invalid.',
+    pointers: Array.from({ length: 50 }, (_, index) => `/input/lines/${String(index).padStart(2, '0')}`),
+  },
+}
+
+for (const [refusalCase, refusal] of Object.entries(channelRefusals)) {
+  test(`passes the channel refusal of ${refusalCase} to the Space unchanged`, async () => {
+    const transport = createTransport(request => ({
+      // The client gets its own copy, so any change it made would show below.
+      error: { code: 'task_rejected', details: structuredClone(refusal), message: refusal.message },
+      ok: false,
+      protocol: PROTOCOL_VERSION,
+      requestId: request.requestId,
+    }))
+    const simple = createSimpleClient({ taskTransport: transport })
+
+    const error = await simple.tasks.create({ input: { amount: 700 }, taskTypeId: 'TTY000003', title: 'Open the job' })
+      .catch(caught => caught)
+
+    assert.ok(isProtocolError('task_rejected')(error))
+    assert.equal(error.message, refusal.message)
+    assert.deepEqual(error.details, refusal)
+  })
+}
 
 test('rejects a task response that does not match the request envelope', async () => {
   const transport = createTransport(() => ({
