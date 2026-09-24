@@ -13,13 +13,15 @@ class FakePort {
   onmessage = null
   sent = []
   started = false
+  transfers = []
 
   emit(data) {
     this.onmessage?.({ data })
   }
 
-  postMessage(message) {
+  postMessage(message, transfer) {
     this.sent.push(message)
+    this.transfers.push(transfer)
   }
 
   start() {
@@ -161,7 +163,7 @@ test('offers every protocol capability at version 1 during the existing Space ha
   })
 
   assert.deepEqual(spaceWindow.parentMessages, [{
-    message: { protocols: { record: [1], task: [1] }, type: 'SPACE_READY' },
+    message: { protocols: { document: [1], record: [1], task: [1] }, type: 'SPACE_READY' },
     targetOrigin: 'https://acme.simple.lcl',
   }])
 
@@ -268,7 +270,7 @@ test('sends task operations over the MessagePort when the host negotiates the ta
   await assert.rejects(() => simple.records.current(), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
 })
 
-test('keeps tasks unavailable, and sends nothing, when the host negotiates only the record protocol', async () => {
+test('keeps tasks and documents unavailable, and sends nothing, when the host negotiates only the record protocol', async () => {
   const port = new FakePort()
   const simple = await connectWithHost(port, recordContext, { record: 1 })
 
@@ -276,5 +278,75 @@ test('keeps tasks unavailable, and sends nothing, when the host negotiates only 
     () => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }),
     error => error instanceof SpaceProtocolError && error.code === 'unavailable',
   )
+  await assert.rejects(
+    () => simple.documents.stage({ file: new File(['x'], 'x.pdf') }),
+    error => error instanceof SpaceProtocolError && error.code === 'unavailable',
+  )
   assert.deepEqual(port.sent, [])
+})
+
+const stagedHandle = {
+  file_hash: 'a3f1c9',
+  filename: 'packet.pdf',
+  mime_type: 'application/pdf',
+  scope: 'staged',
+  size: 15,
+  storage_path: 'staged/a3f1c9',
+}
+
+function stagedResponse(requestId) {
+  return {
+    response: { ok: true, protocol: PROTOCOL_VERSION, requestId, result: { handle: stagedHandle } },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  }
+}
+
+test('stages a document over the MessagePort and names its bytes in the transfer list', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, { kind: 'standalone' }, { document: 1 })
+
+  const staged = simple.documents.stage({ file: new File(['contract packet'], 'packet.pdf', { type: 'application/pdf' }) })
+  // The bytes are read before the request is posted, so it arrives a few turns later.
+  for (let turn = 0; turn < 20 && port.sent.length === 0; turn++)
+    await new Promise(resolve => setImmediate(resolve))
+
+  const [message] = port.sent
+  assert.equal(message.type, 'SPACE_PROTOCOL_REQUEST')
+  assert.equal(message.request.operation, 'document.stage')
+  assert.equal(message.request.protocol, 1)
+  assert.equal(message.request.payload.name, 'packet.pdf')
+  assert.equal(message.request.payload.mimeType, 'application/pdf')
+  assert.deepEqual(port.transfers[0], [message.request.payload.bytes])
+
+  port.emit(stagedResponse(message.request.requestId))
+
+  assert.deepEqual(await staged, { handle: stagedHandle })
+})
+
+test('transfers the staged bytes to the host instead of copying them', { timeout: 5000 }, async () => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+  const posted = []
+  const postMessage = spacePort.postMessage.bind(spacePort)
+  spacePort.postMessage = (message, transfer) => {
+    posted.push(message)
+    postMessage(message, transfer)
+  }
+  const received = []
+  hostPort.onmessage = ({ data }) => {
+    received.push(data)
+    hostPort.postMessage(stagedResponse(data.request.requestId))
+  }
+
+  try {
+    const simple = await connectWithHost(spacePort, { kind: 'standalone' }, { document: 1 })
+    const result = await simple.documents.stage({ file: new File(['contract packet'], 'packet.pdf') })
+
+    assert.deepEqual(result, { handle: stagedHandle })
+    assert.equal(posted[0].request.payload.bytes.byteLength, 0, 'the Space no longer owns the bytes')
+    assert.equal(new TextDecoder().decode(received[0].request.payload.bytes), 'contract packet')
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
 })

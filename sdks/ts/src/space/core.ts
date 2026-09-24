@@ -1,3 +1,5 @@
+import type { DocumentHandle } from '../types.js'
+
 export const PROTOCOL_VERSION = 1 as const
 
 export type SpaceContext
@@ -86,6 +88,28 @@ export interface SimpleTasksClient {
   reply: (reply: TaskReplyInput) => Promise<TaskReplyResult>
 }
 
+/** A stored file that is not yet attached to any record. */
+export interface StagedDocumentHandle extends DocumentHandle {
+  scope?: 'ephemeral' | 'record' | 'staged'
+}
+
+export interface DocumentStageInput {
+  /** The file to stage. Its bytes are transferred to the host, not copied. */
+  file: Blob | File
+  /** Defaults to the file's own type, then to `application/octet-stream`. */
+  mimeType?: string
+  /** Defaults to the name of a `File`. A plain `Blob` has none, so it needs one. */
+  name?: string
+}
+
+export interface DocumentStageResult {
+  handle: StagedDocumentHandle
+}
+
+export interface SimpleDocumentsClient {
+  stage: (document: DocumentStageInput) => Promise<DocumentStageResult>
+}
+
 export interface SpaceDataTransport {
   execute: <TResult = unknown>(document: string, variables?: GraphQLVariables) => Promise<TResult>
 }
@@ -105,6 +129,7 @@ export interface RecordHandle {
 export interface SimpleClient {
   context: SpaceContext
   data: SimpleDataClient
+  documents: SimpleDocumentsClient
   records: {
     current: () => Promise<RecordHandle>
   }
@@ -202,8 +227,21 @@ export interface TaskReplyRequest {
   requestId: string
 }
 
+export interface DocumentStageRequest {
+  operation: 'document.stage'
+  payload: {
+    /** Transferred with the request, so it is detached in the Space afterwards. */
+    bytes: ArrayBuffer
+    mimeType: string
+    name: string
+  }
+  protocol: typeof PROTOCOL_VERSION
+  requestId: string
+}
+
 export type ProtocolRequest
   = | CurrentRecordRequest
+    | DocumentStageRequest
     | RecordSubmitRequest
     | RecordUpdateRequest
     | TaskCreateRequest
@@ -228,12 +266,19 @@ export type ProtocolResponse<TResult>
     | ProtocolSuccessResponse<TResult>
 
 export interface SpaceTransport {
-  request: <TResult>(request: ProtocolRequest) => Promise<ProtocolResponse<TResult>>
+  /**
+   * `transfer` names buffers inside the request whose ownership moves to the
+   * host with it instead of being copied. A transport that cannot transfer
+   * sends them by value.
+   */
+  request: <TResult>(request: ProtocolRequest, transfer?: ArrayBuffer[]) => Promise<ProtocolResponse<TResult>>
 }
 
 export interface SimpleClientOptions {
   context?: SpaceContext
   dataTransport?: SpaceDataTransport
+  /** Present only when the host negotiated the document protocol. */
+  documentTransport?: SpaceTransport
   nextRequestId?: () => string
   /** Present only when the host negotiated the task protocol. */
   taskTransport?: SpaceTransport
@@ -251,6 +296,7 @@ export interface SimpleClientOptions {
 export function createSimpleClient({
   context = { kind: 'standalone' },
   dataTransport,
+  documentTransport,
   nextRequestId = createRequestId,
   taskTransport,
   transport,
@@ -263,6 +309,7 @@ export function createSimpleClient({
       mutate: (document, variables) => executeData(dataTransport, document, variables),
       query: (document, variables) => executeData(dataTransport, document, variables),
     },
+    documents: createDocumentsClient(documentTransport, nextRequestId),
     records: {
       async current() {
         if (immutableContext.kind !== 'record') {
@@ -331,6 +378,44 @@ function executeData<TResult>(
   }
 
   return dataTransport.execute<TResult>(document, variables)
+}
+
+/**
+ * A staged document is stored without being attached to a record, so staging
+ * is available in any Space whose host negotiated the document protocol.
+ */
+function createDocumentsClient(
+  transport: SpaceTransport | undefined,
+  nextRequestId: () => string,
+): SimpleDocumentsClient {
+  return {
+    async stage(document) {
+      if (!transport) {
+        throw new SpaceProtocolError({
+          code: 'unavailable',
+          message: 'Documents are unavailable because the Space host did not negotiate the document protocol.',
+        })
+      }
+
+      const { file, mimeType, name } = readDocumentStageInput(document)
+      // A Blob cannot itself be transferred. Its bytes are read into a buffer
+      // once, and that buffer is handed to the host rather than copied again.
+      const bytes = await file.arrayBuffer()
+      const request: DocumentStageRequest = {
+        operation: 'document.stage',
+        payload: { bytes, mimeType, name },
+        protocol: PROTOCOL_VERSION,
+        requestId: nextRequestId(),
+      }
+      const response = await transport.request<DocumentStageResult>(request, [bytes])
+      const result = readResponse(response, request)
+
+      if (!isDocumentStageResult(result))
+        throw invalidResponse('The document-stage response is malformed.')
+
+      return { handle: { ...result.handle } }
+    },
+  }
 }
 
 /**
@@ -552,12 +637,61 @@ function isJsonValue(value: unknown, ancestors = new Set<object>()): value is Js
   return valid
 }
 
+function readDocumentStageInput(document: DocumentStageInput): { file: Blob, mimeType: string, name: string } {
+  if (!isObjectRecord(document) || !isBlob(document.file))
+    throw invalidRequest('A staged document needs a File or Blob.')
+
+  const name = document.name ?? readFileName(document.file)
+  if (!isNonBlankString(name))
+    throw invalidRequest('A staged document needs a name, and a Blob has none of its own.')
+  if (document.mimeType !== undefined && typeof document.mimeType !== 'string')
+    throw invalidRequest('A staged document type must be a MIME type.')
+
+  return {
+    file: document.file,
+    mimeType: document.mimeType || document.file.type || 'application/octet-stream',
+    name,
+  }
+}
+
+/** Duck-typed so a Blob from another realm, or a test double, is accepted. */
+function isBlob(value: unknown): value is Blob {
+  if (!isObjectRecord(value))
+    return false
+
+  return typeof value.arrayBuffer === 'function' && typeof value.size === 'number' && typeof value.type === 'string'
+}
+
+function readFileName(file: Blob): string | undefined {
+  const { name } = file as Partial<File>
+  return typeof name === 'string' ? name : undefined
+}
+
 function isNonBlankString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-function isRevision(value: unknown): value is number {
+function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+const DOCUMENT_SCOPES: ReadonlySet<unknown> = new Set<StagedDocumentHandle['scope']>([
+  'ephemeral',
+  'record',
+  'staged',
+])
+
+function isDocumentStageResult(value: unknown): value is DocumentStageResult {
+  if (!isObjectRecord(value) || !isObjectRecord(value.handle))
+    return false
+
+  const handle = value.handle
+  return isNonBlankString(handle.file_hash)
+    && isNonBlankString(handle.filename)
+    && typeof handle.mime_type === 'string'
+    && isNonNegativeInteger(handle.size)
+    && isNonBlankString(handle.storage_path)
+    && (handle.scope === undefined || DOCUMENT_SCOPES.has(handle.scope))
 }
 
 const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>([
@@ -574,11 +708,11 @@ function isTaskCreateResult(value: unknown): value is TaskCreateResult {
     return false
 
   const { id, revision, status } = value.task
-  return isNonBlankString(id) && isRevision(revision) && TASK_STATUSES.has(status)
+  return isNonBlankString(id) && isNonNegativeInteger(revision) && TASK_STATUSES.has(status)
 }
 
 function isTaskReplyResult(value: unknown): value is TaskReplyResult {
-  return isObjectRecord(value) && isNonBlankString(value.messageId) && isRevision(value.taskRevision)
+  return isObjectRecord(value) && isNonBlankString(value.messageId) && isNonNegativeInteger(value.taskRevision)
 }
 
 function isCurrentRecordResult(value: unknown): value is CurrentRecordResult {

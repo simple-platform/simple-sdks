@@ -40,7 +40,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
 | **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes |
-| **Space**    | `@simpleplatform/sdk/space`    | Records, data, and tasks in an embedded Space  |
+| **Space**    | `@simpleplatform/sdk/space`    | Records, data, tasks, and documents in a Space |
 
 ## Embedded Spaces
 
@@ -164,6 +164,29 @@ booleans, and `null`) so it means the same thing on every transport. A request
 the SDK can tell is incomplete is refused before it is sent, with
 `SpaceProtocolError` code `invalid_request`; a refusal from the host keeps the
 host's code and message.
+
+### Space documents
+
+`simple.documents.stage()` stores a file without attaching it to any record and
+returns its handle. The host uploads it, so a large file never travels inside
+an action request. The file's bytes are transferred to the host, not copied.
+
+```typescript
+const picker = document.querySelector<HTMLInputElement>('#packet')!
+const { handle } = await simple.documents.stage({ file: picker.files![0] })
+
+// A plain Blob has no name of its own, so it needs one.
+await simple.documents.stage({
+  file: new Blob([csv]),
+  mimeType: 'text/csv',
+  name: 'quantities.csv',
+})
+```
+
+The handle is `{ file_hash, filename, mime_type, size, storage_path, scope? }`.
+`name` defaults to a `File`'s own name, and `mimeType` to the file's type, then
+to `application/octet-stream`. A staged document is not attached to anything
+yet; attach its handle through the workflow that owns the record.
 
 ---
 
