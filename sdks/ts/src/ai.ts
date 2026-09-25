@@ -245,6 +245,71 @@ export interface AITranscribeOptions extends Omit<AICommonOptions, 'prompt'> {
 }
 
 /**
+ * A PDF whose pages are to be transcribed, and optionally which of them.
+ *
+ * `first_page` and `last_page` work as they do for any AI operation: counted
+ * from 1, both ends included, named together or not at all, and cut out first.
+ * `deliver_as` has no meaning here, because the pages are answered as text.
+ */
+export type AITranscribePagesInput = DocumentHandle & Omit<AIDocumentInput, 'deliver_as' | keyof DocumentHandle>
+
+/**
+ * Configuration options for `transcribePages`. There is no prompt and no
+ * reasoning switch: the instructions are the platform's, and every page is
+ * read at the platform's own accuracy-first effort.
+ */
+export interface AITranscribePagesOptions {
+  /**
+   * If true, runs the operation again rather than serving its kept answer.
+   * A page already read is still served from its kept read, which is tied to
+   * this version of the file and to the platform's instructions.
+   */
+  regenerate?: boolean
+
+  /** (Optional) The maximum time in milliseconds to wait for the operation. */
+  timeout?: number
+}
+
+/**
+ * One page's two independent reads, or why it has none. Pages are numbered in
+ * the original document.
+ */
+export type AIPageTranscription
+  = | {
+    /** Why at least one of the two reads failed. No partial text is given. */
+    error: string
+
+    /** The page's number in the original document. */
+    page: number
+  }
+  | {
+    /** The page's number in the original document. */
+    page: number
+
+    /**
+     * The page's text as two differently instructed reads gave it: verbatim
+     * markdown, in reading order, tables as markdown tables, `[illegible]`
+     * where a word could not be read. An empty string is a read that found the
+     * page blank.
+     */
+    transcriptions: [string, string]
+  }
+
+/**
+ * The response of `transcribePages`.
+ */
+export interface AITranscriptionResult {
+  /** Every page of the document, or of the range, that has no usable text layer. */
+  data: { pages: AIPageTranscription[] }
+
+  /**
+   * The operation's metadata. Its token counts are zero: each page read is
+   * charged where it was made, once, whichever operation asked for it.
+   */
+  metadata: AIExecutionResult['metadata']
+}
+
+/**
  * Options for searching faces within the Face Engine.
  */
 export interface AIFaceSearchOptions {
@@ -393,9 +458,9 @@ async function _uploadPendingFiles(obj: any, context: Context): Promise<any> {
  * @internal
  */
 async function _executeAIOperation(
-  operation: 'extract' | 'summarize',
+  operation: 'extract' | 'summarize' | 'transcribe',
   input: AIDocumentInput | DocumentHandle | object | string,
-  options: AIExtractOptions | AISummarizeOptions,
+  options: AIExtractOptions | AISummarizeOptions | AITranscribePagesOptions,
   context: Context,
 ): Promise<AIExecutionResult> {
   const {
@@ -407,7 +472,7 @@ async function _executeAIOperation(
     systemPrompt,
     temperature,
     timeout,
-  } = options
+  } = options as Partial<AIExtractOptions>
 
   const processedInput = await _uploadPendingFiles(input, context)
 
@@ -715,6 +780,64 @@ export async function transcribe(
     },
     context,
   )
+}
+
+/**
+ * Transcribes the pages of a PDF that have no usable text of their own — scans,
+ * image-only exhibits, text that reads as noise — from their images.
+ *
+ * Every such page is read twice, by two differently worded sets of the
+ * platform's instructions, so a caller can check that a quote on an image page
+ * is really there by asking whether both reads carry it. Pages the platform
+ * reads as text are neither read nor returned.
+ *
+ * Page reads are kept per version of the file, page and read, and shared with
+ * every other AI operation: a page already read for an `extract` or
+ * `summarize` that asked for text is not read again.
+ *
+ * @param document The PDF, as a DocumentHandle. Add `first_page` and
+ *   `last_page` to transcribe only those pages; they are counted from 1 and
+ *   the answer numbers pages in the original document.
+ * @param options Optional `regenerate` and `timeout`.
+ * @param context The execution context provided by the host.
+ * @returns A promise that resolves to each page's two reads, or why it has none.
+ * @throws Will throw an error if the operation fails or the input is not a PDF.
+ *
+ * @example
+ * const { data } = await transcribePages(
+ *   { ...contract, first_page: 40, last_page: 52 },
+ *   {},
+ *   context,
+ * )
+ *
+ * for (const page of data.pages) {
+ *   if ('error' in page)
+ *     continue
+ *   const [a, b] = page.transcriptions
+ *   const quoted = a.includes(quote) && b.includes(quote)
+ * }
+ */
+export async function transcribePages(
+  document: AITranscribePagesInput,
+  options: AITranscribePagesOptions,
+  context: Context,
+): Promise<AITranscriptionResult> {
+  if (!document || typeof document !== 'object' || !document.file_hash) {
+    throw new Error('The `document` parameter must be a valid DocumentHandle for `transcribePages`.')
+  }
+
+  const mimeType = (document.mime_type || '').split(';')[0].trim().toLowerCase()
+
+  if (mimeType !== 'application/pdf') {
+    throw new Error('`transcribePages` reads the pages of a PDF.')
+  }
+
+  const result = await _executeAIOperation('transcribe', document, options, context)
+
+  return {
+    data: { pages: Array.isArray(result.data?.pages) ? result.data.pages : [] },
+    metadata: result.metadata,
+  }
 }
 
 // ============================================================================

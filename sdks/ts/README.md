@@ -382,6 +382,37 @@ console.log(result.data.summary) // "Customer called regarding..."
 console.log(result.data.participants) // ["Customer", "Support Agent"]
 ```
 
+#### Transcribe PDF Pages
+
+Read the pages of a PDF that have no usable text of their own — scans,
+image-only exhibits — from their images. Each such page is read twice, by two
+differently worded sets of instructions, so a quote on an image page can be
+checked against both reads. Pages with a readable text layer are not returned.
+
+```typescript
+import { transcribePages } from '@simpleplatform/sdk/ai'
+
+const { data } = await transcribePages(
+  { ...contract, first_page: 40, last_page: 52 },
+  {},
+  request.context
+)
+
+for (const page of data.pages) {
+  if ('error' in page) {
+    console.log(`page ${page.page} could not be read: ${page.error}`)
+    continue
+  }
+
+  const [a, b] = page.transcriptions
+  console.log(page.page, a.includes(quote) && b.includes(quote))
+}
+```
+
+Pages are numbered in the original document. Reads are kept per version of the
+file, so a page already read for an `extract` or `summarize` that asked for
+text (`deliver_as: 'text'`) is not read again.
+
 #### How Files Travelled
 
 Every AI result says how each file it carried reached the model, in
