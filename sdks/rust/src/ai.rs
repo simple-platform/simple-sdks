@@ -82,6 +82,11 @@
 //! [`Delivery`] and [`Pages`] are what they say. A plain handle asks for nothing
 //! and sends the whole file the way its type is sent by default.
 //!
+//! What was asked for is not always what happened, so every answer says how
+//! each file travelled, in [`Metadata::delivery`]: as the document, as its text
+//! or as an image, which pages were read from their images, and, when text was
+//! asked for and the document went instead, which pages could not be read.
+//!
 //! # Files that have not been uploaded yet
 //!
 //! A document handle that is still pending is uploaded to ephemeral storage
@@ -241,8 +246,12 @@ impl Pages {
 /// * [`Delivery::Document`] on a Word, Excel, PowerPoint, CSV, RTF or text
 ///   file, which only ever travels as text.
 ///
-/// A page the platform cannot read as text sends the pages asked for as a PDF
-/// instead, so an answer is never built on text with a hole in it.
+/// A page with no usable text of its own — a scan, or text that reads as noise
+/// — is read from its image instead, and that text stands in its place, marked
+/// `[Transcribed from the page image.]` under its page label. Only if that
+/// reading fails are the pages asked for sent as a PDF, so an answer is never
+/// built on text with a hole in it. The answer's [`Metadata::delivery`] says
+/// which happened.
 ///
 /// Pages asked for as text arrive numbered from 1, because by then they are a
 /// document of their own. A line above them says which pages of which document
@@ -405,7 +414,7 @@ pub struct Execution<T> {
     pub metadata: Metadata,
 }
 
-/// What a run spent, and how it reasoned.
+/// What a run spent, how it reasoned, and how its files reached the model.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Metadata {
     /// Tokens in what was sent.
@@ -419,6 +428,124 @@ pub struct Metadata {
 
     /// The reasoning itself, when the run reported it.
     pub reasoning: Option<String>,
+
+    /// How each file the run carried reached the model, in the order the files
+    /// were given. Empty when the run carried no file, and on an answer kept
+    /// from before the platform reported it.
+    pub delivery: Vec<FileDelivery>,
+}
+
+/// How one file an operation carried reached the model.
+///
+/// A file asked for as text is not always sent as text. A page with no text of
+/// its own is read from its image, and when that reading fails the document is
+/// sent instead, so the answer is never built on text with a hole in it. This
+/// is how a caller finds out which happened, without reading a platform log.
+///
+/// Page numbers are the original document's, whatever range was cut from it,
+/// so a page named here is the page a person would turn to.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::ai::{DeliveredAs, Options, Pages};
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|_name, _params| {
+/// #     Ok(json!({
+/// #         "data": "It commits us to a fixed price.",
+/// #         "metadata": { "delivery": [{
+/// #             "filename": "contract.pdf",
+/// #             "delivered_as": "document",
+/// #             "first_page": 40,
+/// #             "last_page": 52,
+/// #             "transcribed_pages": [],
+/// #             "fallback": {
+/// #                 "reason": "transcription_failed",
+/// #                 "pages": [44],
+/// #                 "message": "page 44: the page image could not be read"
+/// #             }
+/// #         }] }
+/// #     }))
+/// # });
+/// let read = simple::ai::summarize(
+///     json!({
+///         "file_hash": "9f2c…",
+///         "filename": "contract.pdf",
+///         "mime_type": "application/pdf",
+///         "first_page": 40,
+///         "last_page": 52,
+///         "deliver_as": "text"
+///     }),
+///     "Say what it commits us to.",
+///     Options::default(),
+/// )?;
+///
+/// for file in &read.metadata.delivery {
+///     if let Some(fallback) = &file.fallback {
+///         println!("{} was read as a PDF: {}", file.filename, fallback.message);
+///     }
+/// }
+///
+/// let contract = &read.metadata.delivery[0];
+///
+/// assert_eq!(contract.delivered_as, DeliveredAs::Document);
+/// assert_eq!(contract.pages, Some(Pages::new(40, 52)));
+/// # Ok::<(), Error>(())
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileDelivery {
+    /// The file's name.
+    pub filename: String,
+
+    /// How the file travelled.
+    pub delivered_as: DeliveredAs,
+
+    /// The range the file was cut to, when one was asked for. Unset when the
+    /// whole file travelled.
+    pub pages: Option<Pages>,
+
+    /// The pages whose text was read from their images rather than from their
+    /// text layer. Empty when none were.
+    pub transcribed_pages: Vec<u32>,
+
+    /// Set only when text was asked for and the document travelled instead:
+    /// which pages could not be read, and why.
+    pub fallback: Option<DeliveryFallback>,
+}
+
+/// How a file reached the model.
+///
+/// This is what happened, where [`Delivery`] is what was asked for, and it has
+/// a way that cannot be asked for: an image only ever travels as one.
+///
+/// It is `#[non_exhaustive]`: a `match` on it needs a `_` arm, so a way added
+/// later does not break an action that was already written.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeliveredAs {
+    /// The document itself, which the model reads with its layout, tables and
+    /// figures.
+    Document,
+    /// The text read out of the document, with any page that had none read from
+    /// its image.
+    Text,
+    /// An image.
+    Image,
+}
+
+/// Why a file asked for as text travelled as the document instead.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DeliveryFallback {
+    /// Why, as the platform names it: `transcription_failed` when pages with no
+    /// text of their own could not be read from their images. It is kept as
+    /// the platform's word rather than narrowed to a list, so a reason added
+    /// later still reaches you instead of hiding that a fallback happened.
+    pub reason: String,
+
+    /// The pages that could not be read, numbered in the original document.
+    pub pages: Vec<u32>,
+
+    /// What went wrong, page by page, in the platform's words.
+    pub message: String,
 }
 
 /// How far a face search reaches.
@@ -853,12 +980,88 @@ fn metadata_of(metadata: Option<&Value>) -> Metadata {
             .get("reasoning")
             .and_then(Value::as_str)
             .map(str::to_string),
+        delivery: delivery_of(metadata.get("delivery")),
     }
 }
 
 /// One token count, when it is there and is a count.
 fn count(metadata: &Value, key: &str) -> Option<u64> {
     metadata.get(key).and_then(Value::as_u64)
+}
+
+/// How each file travelled, as far as the report can be read.
+///
+/// The report explains an answer; it never decides whether there is one. An
+/// entry that is not an object, names no file, or names a way of travelling
+/// this SDK does not know is left out rather than failing a run that answered.
+fn delivery_of(delivery: Option<&Value>) -> Vec<FileDelivery> {
+    delivery
+        .and_then(Value::as_array)
+        .map(|files| files.iter().filter_map(file_delivery).collect())
+        .unwrap_or_default()
+}
+
+/// One file's delivery, when the entry can be read as one.
+///
+/// A range is kept only when both ends are there, because a range with one end
+/// is not one the engine could have cut. A key sent as `null` reads as absent.
+fn file_delivery(file: &Value) -> Option<FileDelivery> {
+    let delivered_as = match file.get("delivered_as").and_then(Value::as_str)? {
+        "document" => DeliveredAs::Document,
+        "text" => DeliveredAs::Text,
+        "image" => DeliveredAs::Image,
+        _ => return None,
+    };
+
+    let first_page = file.get("first_page").and_then(page_number);
+    let last_page = file.get("last_page").and_then(page_number);
+
+    Some(FileDelivery {
+        filename: file.get("filename").and_then(Value::as_str)?.to_string(),
+        delivered_as,
+        pages: first_page
+            .zip(last_page)
+            .map(|(first, last)| Pages::new(first, last)),
+        transcribed_pages: page_numbers(file.get("transcribed_pages")),
+        fallback: file
+            .get("fallback")
+            .filter(|fallback| fallback.is_object())
+            .map(delivery_fallback),
+    })
+}
+
+/// A fallback, read leniently: that the document went instead of its text is
+/// the fact that matters, so a member missing from the report does not lose it.
+fn delivery_fallback(fallback: &Value) -> DeliveryFallback {
+    let text = |key: &str| {
+        fallback
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    DeliveryFallback {
+        reason: text("reason"),
+        pages: page_numbers(fallback.get("pages")),
+        message: text("message"),
+    }
+}
+
+/// A page number, when this is one: a whole number from 1.
+fn page_number(value: &Value) -> Option<u32> {
+    value
+        .as_u64()
+        .and_then(|number| u32::try_from(number).ok())
+        .filter(|page| *page > 0)
+}
+
+/// The page numbers in a list, leaving out anything that is not one.
+fn page_numbers(pages: Option<&Value>) -> Vec<u32> {
+    pages
+        .and_then(Value::as_array)
+        .map(|pages| pages.iter().filter_map(page_number).collect())
+        .unwrap_or_default()
 }
 
 /// Put whatever is still pending into ephemeral storage, and answer with what
@@ -1483,6 +1686,164 @@ mod tests {
             written.metadata.reasoning.as_deref(),
             Some("Read the total from the last line.")
         );
+    }
+
+    #[test]
+    fn a_run_reports_how_each_file_travelled_in_the_order_the_files_were_given() {
+        let _session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": "done",
+                "metadata": {
+                    "input_tokens": 9,
+                    "output_tokens": 4,
+                    "delivery": [
+                        {
+                            "filename": "contract.pdf",
+                            "delivered_as": "text",
+                            "first_page": 40,
+                            "last_page": 52,
+                            "transcribed_pages": [41, 44],
+                            "fallback": null
+                        },
+                        {
+                            "filename": "drawings.pdf",
+                            "delivered_as": "document",
+                            "first_page": null,
+                            "last_page": null,
+                            "transcribed_pages": [],
+                            "fallback": {
+                                "reason": "transcription_failed",
+                                "pages": [3, 7],
+                                "message": "page 3: timed out; page 7: blank answer"
+                            }
+                        },
+                        {
+                            "filename": "site.jpg",
+                            "delivered_as": "image",
+                            "first_page": null,
+                            "last_page": null,
+                            "transcribed_pages": [],
+                            "fallback": null
+                        }
+                    ]
+                }
+            }))
+        });
+
+        let written = summarize(json!("text"), "One sentence.", Options::default()).unwrap();
+
+        assert_eq!(
+            written.metadata.delivery,
+            vec![
+                FileDelivery {
+                    filename: "contract.pdf".to_string(),
+                    delivered_as: DeliveredAs::Text,
+                    pages: Some(Pages::new(40, 52)),
+                    transcribed_pages: vec![41, 44],
+                    fallback: None,
+                },
+                FileDelivery {
+                    filename: "drawings.pdf".to_string(),
+                    delivered_as: DeliveredAs::Document,
+                    pages: None,
+                    transcribed_pages: Vec::new(),
+                    fallback: Some(DeliveryFallback {
+                        reason: "transcription_failed".to_string(),
+                        pages: vec![3, 7],
+                        message: "page 3: timed out; page 7: blank answer".to_string(),
+                    }),
+                },
+                FileDelivery {
+                    filename: "site.jpg".to_string(),
+                    delivered_as: DeliveredAs::Image,
+                    pages: None,
+                    transcribed_pages: Vec::new(),
+                    fallback: None,
+                },
+            ]
+        );
+        assert_eq!(
+            written.metadata.input_tokens, 9,
+            "the members a result already had read as they did"
+        );
+    }
+
+    #[test]
+    fn an_answer_without_a_delivery_report_carries_none() {
+        for metadata in [
+            json!({ "input_tokens": 1 }),
+            json!({ "delivery": null }),
+            json!({ "delivery": "document" }),
+            json!({ "delivery": { "filename": "contract.pdf", "delivered_as": "text" } }),
+        ] {
+            let _session = testing::install(move |_name, _params| {
+                Ok(json!({ "data": "done", "metadata": metadata.clone() }))
+            });
+
+            let written = summarize(json!("text"), "One sentence.", Options::default())
+                .expect("a report that cannot be read never fails the run");
+
+            assert!(written.metadata.delivery.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_delivery_entry_that_cannot_be_read_is_left_out_and_the_rest_are_kept() {
+        let delivery = delivery_of(Some(&json!([
+            "contract.pdf",
+            { "filename": "no-way.pdf" },
+            { "filename": "audio.mp3", "delivered_as": "audio" },
+            { "delivered_as": "text" },
+            { "filename": 7, "delivered_as": "text" },
+            {
+                "filename": "kept.pdf",
+                "delivered_as": "text",
+                "first_page": 4,
+                "transcribed_pages": ["5", -1, 0, 6, 4_294_967_296_u64, null]
+            }
+        ])));
+
+        assert_eq!(
+            delivery,
+            vec![FileDelivery {
+                filename: "kept.pdf".to_string(),
+                delivered_as: DeliveredAs::Text,
+                pages: None,
+                transcribed_pages: vec![6],
+                fallback: None,
+            }],
+            "a range with one end is not a range, and only whole pages from 1 are pages"
+        );
+    }
+
+    #[test]
+    fn a_fallback_that_is_reported_is_never_lost_to_a_missing_member() {
+        let delivery = delivery_of(Some(&json!([
+            {
+                "filename": "contract.pdf",
+                "delivered_as": "document",
+                "fallback": { "reason": "transcription_failed" }
+            },
+            {
+                "filename": "drawings.pdf",
+                "delivered_as": "document",
+                "fallback": "transcription_failed"
+            }
+        ])));
+
+        assert_eq!(
+            delivery[0].fallback,
+            Some(DeliveryFallback {
+                reason: "transcription_failed".to_string(),
+                pages: Vec::new(),
+                message: String::new(),
+            })
+        );
+        assert_eq!(
+            delivery[1].fallback, None,
+            "a fallback that is not an object says nothing that can be read"
+        );
+        assert!(delivery[0].transcribed_pages.is_empty());
     }
 
     #[test]

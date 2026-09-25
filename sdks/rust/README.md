@@ -394,6 +394,30 @@ heard.data.transcript; // Some("[00:15] Customer: My order is late…")
 heard.data.summary; // Some("The customer was refunded.")
 ```
 
+#### How Files Travelled
+
+A file asked for as text is not always sent as text: a page with no text of its
+own is read from its image, and when that reading fails the document is sent
+instead. Every answer says which happened, per file and in input order, in
+`metadata.delivery`: `delivered_as` (`DeliveredAs::Document`, `Text` or
+`Image`), the range the file was cut to, the pages transcribed from their
+images, and — when text was asked for and the document went instead — a
+`fallback` naming the pages that could not be read and why.
+
+```rust
+let read: Execution<Invoice> = simple::ai::extract(json!(contract), prompt, schema, Options::default())?;
+
+for file in &read.metadata.delivery {
+    if let Some(fallback) = &file.fallback {
+        println!("{} was read as a PDF: {}", file.filename, fallback.message);
+    }
+}
+```
+
+Pages are numbered in the original document. An answer with no report, or an
+entry this SDK cannot read, leaves `delivery` without it rather than failing
+the call.
+
 #### The Face Collection
 
 `simple::ai::enroll_face` adds a face under the subject it belongs to and
