@@ -1,10 +1,11 @@
 //! Asking the AI engine for an answer.
 //!
-//! Three operations read something and answer with it — [`extract`] pulls
+//! Four operations read something and answer with it — [`extract`] pulls
 //! structured data out against a schema you give, [`summarize`] writes prose,
-//! and [`transcribe`] turns audio or video into words. Three more hold the
-//! tenant's face collection: [`enroll_face`], [`search_face`] and
-//! [`delete_face`].
+//! [`transcribe`] turns audio or video into words, and [`transcribe_pages`]
+//! reads the pages of a PDF that have no text of their own from their images.
+//! Three more hold the tenant's face collection: [`enroll_face`],
+//! [`search_face`] and [`delete_face`].
 //!
 //! ```
 //! # use simpleplatform_sdk::prelude::*;
@@ -404,6 +405,67 @@ pub struct Transcript {
     pub participants: Vec<String>,
 }
 
+/// What [`transcribe_pages`] may be told, beyond the PDF and the pages.
+///
+/// There is no prompt, model or reasoning switch, which is why this is not
+/// [`Options`]: the instructions are the platform's, and every page is read at
+/// the platform's own accuracy-first effort.
+#[derive(Clone, Debug, Default)]
+pub struct TranscribePagesOptions {
+    /// Whether to run the operation again rather than answer from its kept
+    /// result. A page already read is still served from its kept read, which
+    /// is tied to this version of the file and to the platform's instructions.
+    pub regenerate: bool,
+
+    /// How long to wait for the answer. Unset leaves the platform's default.
+    pub timeout: Option<Duration>,
+}
+
+/// One page's transcription, or why it has none.
+///
+/// Pages are numbered in the original document, whatever range was asked for.
+/// A page either has its text or has a reason, never both, so a caller cannot
+/// mistake a partial read for the page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PageTranscription {
+    /// The page was read from its image.
+    Read {
+        /// The page's number in the original document.
+        page: u32,
+
+        /// The page's text: verbatim markdown, in reading order, tables as
+        /// markdown tables, `[illegible]` where a word could not be read. An
+        /// empty string is a read that found the page blank.
+        text: String,
+    },
+
+    /// The page could not be read.
+    Unread {
+        /// The page's number in the original document.
+        page: u32,
+
+        /// Why, in the platform's words. No partial text is given.
+        error: String,
+    },
+}
+
+impl PageTranscription {
+    /// The page's number in the original document, read or not.
+    pub fn page(&self) -> u32 {
+        match self {
+            PageTranscription::Read { page, .. } | PageTranscription::Unread { page, .. } => *page,
+        }
+    }
+
+    /// The page's text, when it was read.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            PageTranscription::Read { text, .. } => Some(text),
+            PageTranscription::Unread { .. } => None,
+        }
+    }
+}
+
 /// What an operation answered, and what it cost.
 #[derive(Clone, Debug)]
 pub struct Execution<T> {
@@ -614,7 +676,7 @@ pub fn extract<T: DeserializeOwned>(
         );
     }
 
-    run("extract", input, prompt, Some(schema), &options)
+    run("extract", input, Some(prompt), Some(schema), &options)
 }
 
 /// Write prose about an input.
@@ -643,7 +705,7 @@ pub fn summarize(input: Value, prompt: &str, options: Options) -> Result<Executi
     )?;
     refuse_empty_prompt(prompt, "summarize")?;
 
-    run("summarize", input, prompt, None, &options)
+    run("summarize", input, Some(prompt), None, &options)
 }
 
 /// Turn audio or video into words.
@@ -699,10 +761,108 @@ pub fn transcribe(
     run(
         "extract",
         document,
-        &prompt,
+        Some(&prompt),
         Some(transcribe_schema(&wanted)),
         &options,
     )
+}
+
+/// Read the pages of a PDF that have no usable text of their own — scans,
+/// image-only exhibits, text that reads as noise — from their images.
+///
+/// Every such page is read once, and it is the same transcription an
+/// [`extract`] or [`summarize`] that asked for [`Delivery::Text`] is given in
+/// the page's place. A quote on an image page can therefore be checked against
+/// the very text the answer was built on. Pages the platform reads as text are
+/// neither read nor returned.
+///
+/// A page is not transcribed a second time to check the first: that would be
+/// the same model reading the same image again, doubling the cost of every
+/// scanned page without being independent of the first read. An independent
+/// check reads the pages a second way, as the document itself
+/// ([`Delivery::Document`]), and compares the answers.
+///
+/// Transcriptions are kept per version of the file and page, and shared with
+/// every other operation, so a page already read for an [`extract`] or
+/// [`summarize`] that asked for text is not read again.
+///
+/// `pages` narrows the reading to a range, counted from 1 with both ends
+/// included, and the answer still numbers pages in the original document. The
+/// file is taken as a [`DocumentHandle`] rather than a [`DocumentInput`]
+/// because the pages are answered as text, so a delivery has no meaning here
+/// and cannot be sent. Anything that is not a PDF is refused before the host
+/// is asked.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::ai::{PageTranscription, Pages, TranscribePagesOptions};
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|_name, _params| {
+/// #     Ok(json!({
+/// #         "data": { "pages": [
+/// #             { "page": 41, "text": "## Scope of Work\n\nThe Contractor shall furnish…" },
+/// #             { "page": 44, "error": "the page image could not be read" }
+/// #         ] },
+/// #         "metadata": { "input_tokens": 0, "output_tokens": 0 }
+/// #     }))
+/// # });
+/// # let contract = DocumentHandle {
+/// #     file_hash: "9f2c…".into(),
+/// #     filename: "contract.pdf".into(),
+/// #     mime_type: "application/pdf".into(),
+/// #     size: 1_048_576,
+/// #     storage_path: "acme/documents/9f/2c/9f2c….pdf".into(),
+/// # };
+/// let quote = "The Contractor shall furnish";
+///
+/// let read = simple::ai::transcribe_pages(
+///     &contract,
+///     Some(Pages::new(40, 52)),
+///     TranscribePagesOptions::default(),
+/// )?;
+///
+/// for page in &read.data {
+///     match page {
+///         PageTranscription::Read { page, text } => {
+///             println!("page {page} carries the quote: {}", text.contains(quote));
+///         }
+///         PageTranscription::Unread { page, error } => {
+///             println!("page {page} could not be read: {error}");
+///         }
+///     }
+/// }
+///
+/// assert!(read.data[0].text().is_some_and(|text| text.contains(quote)));
+/// assert_eq!(read.data[1].page(), 44);
+/// # Ok::<(), Error>(())
+/// ```
+pub fn transcribe_pages(
+    document: &DocumentHandle,
+    pages: Option<Pages>,
+    options: TranscribePagesOptions,
+) -> Result<Execution<Vec<PageTranscription>>, Error> {
+    refuse_unless_pdf(document)?;
+
+    let input = json!(DocumentInput {
+        file: document.clone(),
+        pages,
+        deliver_as: None,
+    });
+
+    // The same universal options every other caller of the operation sends,
+    // since the whole map is part of the key a kept result is found under.
+    let options = Options {
+        regenerate: options.regenerate,
+        timeout: options.timeout,
+        ..Options::default()
+    };
+
+    let read: Execution<Value> = run("transcribe", input, None, None, &options)?;
+
+    Ok(Execution {
+        data: page_transcriptions(&read.data),
+        metadata: read.metadata,
+    })
 }
 
 /// Add a face to the tenant's collection, under the subject it belongs to.
@@ -869,7 +1029,7 @@ pub fn delete_face(face_ids: &[String]) -> Result<Vec<String>, Error> {
 fn run<T: DeserializeOwned>(
     operation: &str,
     input: Value,
-    prompt: &str,
+    prompt: Option<&str>,
     schema: Option<Value>,
     options: &Options,
 ) -> Result<Execution<T>, Error> {
@@ -913,7 +1073,7 @@ fn run<T: DeserializeOwned>(
 fn payload(
     operation: &str,
     input: Value,
-    prompt: &str,
+    prompt: Option<&str>,
     schema: Option<Value>,
     options: &Options,
 ) -> Value {
@@ -935,8 +1095,13 @@ fn payload(
 
     payload.insert("operation".to_string(), Value::from(operation));
     payload.insert("input".to_string(), input);
-    payload.insert("prompt".to_string(), Value::from(prompt));
     payload.insert("options".to_string(), Value::Object(universal));
+
+    // An operation whose instructions are the platform's is sent none, rather
+    // than an empty one it would have to tell apart from a prompt.
+    if let Some(prompt) = prompt {
+        payload.insert("prompt".to_string(), Value::from(prompt));
+    }
     payload.insert("regenerate".to_string(), Value::Bool(options.regenerate));
 
     if let Some(schema) = schema {
@@ -1064,6 +1229,42 @@ fn page_numbers(pages: Option<&Value>) -> Vec<u32> {
         .unwrap_or_default()
 }
 
+/// Why a page the platform answered for without its text is unread.
+const NO_TRANSCRIPTION: &str = "no transcription was returned for this page";
+
+/// Each page a transcription answered for, in the shape a caller can rely on.
+///
+/// An answer without a list of pages has none. An entry that names no page is
+/// left out, since there is no page it could be the transcription of.
+fn page_transcriptions(data: &Value) -> Vec<PageTranscription> {
+    data.get("pages")
+        .and_then(Value::as_array)
+        .map(|pages| pages.iter().filter_map(page_transcription).collect())
+        .unwrap_or_default()
+}
+
+/// One page's transcription: its text or its error, never both.
+///
+/// The platform's page is mapped rather than passed through. An error wins
+/// over any text, so no partial text is handed on, and a page that carries no
+/// text is answered as unread rather than as text that is not there.
+fn page_transcription(entry: &Value) -> Option<PageTranscription> {
+    let page = entry.get("page").and_then(page_number)?;
+    let error = entry.get("error").and_then(Value::as_str);
+    let text = entry.get("text").and_then(Value::as_str);
+
+    Some(match (error, text) {
+        (None, Some(text)) => PageTranscription::Read {
+            page,
+            text: text.to_string(),
+        },
+        (error, _) => PageTranscription::Unread {
+            page,
+            error: error.unwrap_or(NO_TRANSCRIPTION).to_string(),
+        },
+    })
+}
+
 /// Put whatever is still pending into ephemeral storage, and answer with what
 /// the operation is to be given instead.
 ///
@@ -1185,6 +1386,30 @@ fn refuse_unless_media(document: &Value) -> Result<(), Error> {
     if !media {
         return Err(Error::invalid("transcribe works on audio and video.")
             .hint("Pass a handle whose mime_type begins audio/ or video/."));
+    }
+
+    Ok(())
+}
+
+/// Refuse anything that is not the handle of a stored PDF.
+///
+/// The type is compared without its parameters and without regard to case, so
+/// `Application/PDF; version=1.7` is a PDF.
+fn refuse_unless_pdf(document: &DocumentHandle) -> Result<(), Error> {
+    if document.file_hash.is_empty() {
+        return Err(
+            Error::invalid("transcribe_pages needs the handle of a stored file.").hint(
+                "Pass the handle the upload or the record answered with, the one carrying \
+                 file_hash.",
+            ),
+        );
+    }
+
+    let essence = document.mime_type.split(';').next().unwrap_or_default();
+
+    if !essence.trim().eq_ignore_ascii_case("application/pdf") {
+        return Err(Error::invalid("transcribe_pages reads the pages of a PDF.")
+            .hint("Pass the handle of a PDF. Read any other file with extract or summarize."));
     }
 
     Ok(())
@@ -2051,6 +2276,208 @@ mod tests {
         }
 
         assert!(session.calls().is_empty());
+    }
+
+    #[test]
+    fn a_page_transcription_asks_for_the_transcribe_operation_with_the_range_and_no_prompt() {
+        let session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": {
+                    "pages": [
+                        { "page": 41, "text": "Scope of Work" },
+                        { "page": 42, "error": "the answer carries no pages" }
+                    ]
+                },
+                "metadata": {
+                    "delivery": null,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "reasoning_tokens": 0
+                }
+            }))
+        });
+
+        let read = transcribe_pages(
+            &stored(),
+            Some(Pages::new(40, 52)),
+            TranscribePagesOptions::default(),
+        )
+        .unwrap();
+
+        let calls = session.calls();
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, ORCHESTRATOR);
+        assert_eq!(
+            calls[0].params,
+            json!({
+                "operation": "transcribe",
+                "input": {
+                    "file_hash": "ffce20f1",
+                    "filename": "contract.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1_234,
+                    "storage_path": "acme/documents/ffce20f1",
+                    "first_page": 40,
+                    "last_page": 52
+                },
+                "options": { "reasoning": true },
+                "regenerate": false
+            }),
+            "no prompt, schema, model or delivery: the instructions are the platform's"
+        );
+
+        assert_eq!(
+            read.data,
+            vec![
+                PageTranscription::Read {
+                    page: 41,
+                    text: "Scope of Work".to_string()
+                },
+                PageTranscription::Unread {
+                    page: 42,
+                    error: "the answer carries no pages".to_string()
+                },
+            ]
+        );
+        assert_eq!(read.metadata.input_tokens, 0);
+        assert!(read.metadata.delivery.is_empty());
+    }
+
+    #[test]
+    fn a_page_transcription_carries_only_the_whole_file_and_the_options_it_was_given() {
+        let session = testing::install(|_name, _params| Ok(json!({ "data": { "pages": [] } })));
+
+        let read = transcribe_pages(
+            &stored(),
+            None,
+            TranscribePagesOptions {
+                regenerate: true,
+                timeout: Some(Duration::from_secs(90)),
+            },
+        )
+        .unwrap();
+
+        let sent = session.calls()[0].params.clone();
+
+        assert!(read.data.is_empty());
+        assert!(sent["input"].get("first_page").is_none());
+        assert!(sent["input"].get("last_page").is_none());
+        assert_eq!(sent["regenerate"], json!(true));
+        assert_eq!(sent["timeout"], json!(90_000));
+        assert_eq!(sent["options"], json!({ "reasoning": true }));
+    }
+
+    #[test]
+    fn a_page_with_no_text_is_answered_as_unread_never_as_text_that_is_not_there() {
+        let _session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": {
+                    "pages": [
+                        { "page": 7, "text": "" },
+                        { "page": 8, "error": "the model timed out", "text": "Scope of" },
+                        { "page": 9 },
+                        { "page": 10, "transcriptions": ["Scope of Work", "Scope of Work"] },
+                        { "page": 11, "error": null, "text": "Clause 4" },
+                        { "page": 12, "error": 500, "text": "Clause 5" },
+                        { "page": 13, "text": null },
+                        { "text": "a page with no number" },
+                        { "page": "14", "text": "a number that is a string" },
+                        "page 15"
+                    ]
+                }
+            }))
+        });
+
+        let read = transcribe_pages(&stored(), None, TranscribePagesOptions::default()).unwrap();
+
+        let unread = |page: u32, error: &str| PageTranscription::Unread {
+            page,
+            error: error.to_string(),
+        };
+        let read_as = |page: u32, text: &str| PageTranscription::Read {
+            page,
+            text: text.to_string(),
+        };
+
+        assert_eq!(
+            read.data,
+            vec![
+                read_as(7, ""),
+                unread(8, "the model timed out"),
+                unread(9, NO_TRANSCRIPTION),
+                unread(10, NO_TRANSCRIPTION),
+                read_as(11, "Clause 4"),
+                read_as(12, "Clause 5"),
+                unread(13, NO_TRANSCRIPTION),
+            ]
+        );
+        assert_eq!(read.data[1].text(), None, "an error wins over partial text");
+        assert_eq!(read.data[0].text(), Some(""), "a blank page is a read");
+        assert_eq!(read.data[2].page(), 9);
+    }
+
+    #[test]
+    fn an_answer_without_a_list_of_pages_has_no_pages() {
+        for data in [
+            json!(null),
+            json!({}),
+            json!({ "pages": "none" }),
+            json!([]),
+        ] {
+            let _session =
+                testing::install(move |_name, _params| Ok(json!({ "data": data.clone() })));
+
+            let read =
+                transcribe_pages(&stored(), None, TranscribePagesOptions::default()).unwrap();
+
+            assert!(read.data.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_page_transcription_of_anything_but_a_pdf_is_refused_before_the_host_is_asked() {
+        let session = testing::install(|_name, _params| Ok(json!({ "data": { "pages": [] } })));
+
+        let spreadsheet = transcribe_pages(
+            &DocumentHandle {
+                filename: "rates.csv".to_string(),
+                mime_type: "text/csv".to_string(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .unwrap_err();
+
+        let unstored = transcribe_pages(
+            &DocumentHandle {
+                file_hash: String::new(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .unwrap_err();
+
+        for refusal in [&spreadsheet, &unstored] {
+            assert_eq!(refusal.code().as_str(), "INVALID_TOOL_INPUT");
+        }
+
+        assert!(spreadsheet.message().contains("reads the pages of a PDF"));
+        assert!(session.calls().is_empty());
+
+        transcribe_pages(
+            &DocumentHandle {
+                mime_type: "Application/PDF; version=1.7".to_string(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .expect("a PDF type with parameters or in capitals is still a PDF");
+
+        assert_eq!(session.calls().len(), 1);
     }
 
     #[test]
