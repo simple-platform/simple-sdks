@@ -382,6 +382,60 @@ console.log(result.data.summary) // "Customer called regarding..."
 console.log(result.data.participants) // ["Customer", "Support Agent"]
 ```
 
+#### Transcribe PDF Pages
+
+Read the pages of a PDF that have no usable text of their own — scans,
+image-only exhibits — from their images. Each such page is transcribed once,
+and it is the same transcription an `extract` or `summarize` that asks for text
+is given in the page's place, so a quote on an image page can be checked
+against the text the answer was built on. Pages with a readable text layer are
+not returned.
+
+```typescript
+import { transcribePages } from '@simpleplatform/sdk/ai'
+
+const { data } = await transcribePages(
+  { ...contract, first_page: 40, last_page: 52 },
+  {},
+  request.context
+)
+
+for (const page of data.pages) {
+  if ('error' in page) {
+    console.log(`page ${page.page} could not be read: ${page.error}`)
+    continue
+  }
+
+  console.log(page.page, page.text.includes(quote))
+}
+```
+
+Pages are numbered in the original document. Transcriptions are kept per
+version of the file and page, so a page already read for an `extract` or
+`summarize` that asked for text (`deliver_as: 'text'`) is not read again.
+
+A page is not transcribed twice to check itself: that would be the same model
+reading the same image again, doubling the cost of every scanned page without
+adding independence. To check an answer independently, read the pages a second
+way — as the document itself (`deliver_as: 'document'`) — and compare.
+
+#### How Files Travelled
+
+Every AI result says how each file it carried reached the model, in
+`metadata.delivery`: `deliveredAs` (`'document'`, `'text'` or `'image'`), the
+range it was cut to, the pages transcribed from their images, and — when text
+was asked for and the document was sent instead — a `fallback` naming the pages
+that could not be read and why.
+
+```typescript
+const result = await extract({ ...contract, deliver_as: 'text' }, { prompt, schema }, request.context)
+
+for (const file of result.metadata.delivery ?? []) {
+  if (file.fallback)
+    console.log(`${file.filename} was read as a PDF: ${file.fallback.message}`)
+}
+```
+
 ### GraphQL Module
 
 Execute type-safe database operations with GraphQL:

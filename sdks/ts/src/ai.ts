@@ -109,8 +109,12 @@ export type JSONSchema
  *   file,
  *   which only ever travels as text.
  *
- * A page the platform cannot read as text sends the pages asked for as a PDF
- * instead, so an answer is never built on text with a hole in it.
+ * A page with no usable text of its own — a scan, or text that reads as noise
+ * — is read from its image instead, and that text stands in its place, marked
+ * `[Transcribed from the page image.]` under its page label. Only if that
+ * reading fails are the pages asked for sent as a PDF, so an answer is never
+ * built on text with a hole in it. The answer's `metadata.delivery` says which
+ * happened.
  *
  * Pages asked for as text arrive numbered from 1, because by then they are a
  * document of their own. A line above them says which pages of which document
@@ -241,6 +245,70 @@ export interface AITranscribeOptions extends Omit<AICommonOptions, 'prompt'> {
 }
 
 /**
+ * A PDF whose pages are to be transcribed, and optionally which of them.
+ *
+ * `first_page` and `last_page` work as they do for any AI operation: counted
+ * from 1, both ends included, named together or not at all, and cut out first.
+ * `deliver_as` has no meaning here, because the pages are answered as text.
+ */
+export type AITranscribePagesInput = DocumentHandle & Omit<AIDocumentInput, 'deliver_as' | keyof DocumentHandle>
+
+/**
+ * Configuration options for `transcribePages`. There is no prompt and no
+ * reasoning switch: the instructions are the platform's, and every page is
+ * read at the platform's own accuracy-first effort.
+ */
+export interface AITranscribePagesOptions {
+  /**
+   * If true, runs the operation again rather than serving its kept answer.
+   * A page already read is still served from its kept read, which is tied to
+   * this version of the file and to the platform's instructions.
+   */
+  regenerate?: boolean
+
+  /** (Optional) The maximum time in milliseconds to wait for the operation. */
+  timeout?: number
+}
+
+/**
+ * One page's transcription, or why it has none. Pages are numbered in the
+ * original document.
+ */
+export type AIPageTranscription
+  = | {
+    /** Why the page could not be read. No partial text is given. */
+    error: string
+
+    /** The page's number in the original document. */
+    page: number
+  }
+  | {
+    /** The page's number in the original document. */
+    page: number
+
+    /**
+     * The page's text as read from its image: verbatim markdown, in reading
+     * order, tables as markdown tables, `[illegible]` where a word could not
+     * be read. An empty string is a read that found the page blank.
+     */
+    text: string
+  }
+
+/**
+ * The response of `transcribePages`.
+ */
+export interface AITranscriptionResult {
+  /** Every page of the document, or of the range, that has no usable text layer. */
+  data: { pages: AIPageTranscription[] }
+
+  /**
+   * The operation's metadata. Its token counts are zero: each page read is
+   * charged where it was made, once, whichever operation asked for it.
+   */
+  metadata: AIExecutionResult['metadata']
+}
+
+/**
  * Options for searching faces within the Face Engine.
  */
 export interface AIFaceSearchOptions {
@@ -258,6 +326,42 @@ export interface AIFaceSearchOptions {
 }
 
 /**
+ * How one file an AI operation carried reached the model. Page numbers are
+ * the original document's, whatever range was cut from it.
+ */
+export interface AIFileDelivery {
+  /** How the file travelled: as the document itself, as its text, or as an image. */
+  deliveredAs: 'document' | 'image' | 'text'
+
+  /**
+   * Present only when text was asked for and the document was sent instead:
+   * the pages whose images could not be read, and why.
+   */
+  fallback?: {
+    /** What went wrong, page by page, in the platform's words. */
+    message: string
+
+    /** The pages that could not be transcribed. */
+    pages: number[]
+
+    /** Why the document travelled instead of its text. */
+    reason: 'transcription_failed'
+  }
+
+  /** The file's name. */
+  filename: string
+
+  /** The first page of the range the file was cut to, when one was named. */
+  firstPage?: number
+
+  /** The last page of the range the file was cut to, when one was named. */
+  lastPage?: number
+
+  /** The pages whose text was read from their images rather than their text layer. */
+  transcribedPages: number[]
+}
+
+/**
  * The response structure from a successful AI `extract` or `summarize` operation.
  */
 export interface AIExecutionResult {
@@ -272,6 +376,13 @@ export interface AIExecutionResult {
    * providing context to the user.
    */
   metadata: {
+    /**
+     * How each file the operation carried reached the model, in input order.
+     * Absent when the operation carried no file, and on an answer kept from
+     * before the platform reported it.
+     */
+    delivery?: AIFileDelivery[]
+
     /** The number of tokens in the input prompt. */
     inputTokens: number
 
@@ -346,9 +457,9 @@ async function _uploadPendingFiles(obj: any, context: Context): Promise<any> {
  * @internal
  */
 async function _executeAIOperation(
-  operation: 'extract' | 'summarize',
+  operation: 'extract' | 'summarize' | 'transcribe',
   input: AIDocumentInput | DocumentHandle | object | string,
-  options: AIExtractOptions | AISummarizeOptions,
+  options: AIExtractOptions | AISummarizeOptions | AITranscribePagesOptions,
   context: Context,
 ): Promise<AIExecutionResult> {
   const {
@@ -360,7 +471,7 @@ async function _executeAIOperation(
     systemPrompt,
     temperature,
     timeout,
-  } = options
+  } = options as Partial<AIExtractOptions>
 
   const processedInput = await _uploadPendingFiles(input, context)
 
@@ -401,11 +512,47 @@ async function _executeAIOperation(
   return {
     data,
     metadata: {
+      ...(Array.isArray(metadata.delivery) && { delivery: metadata.delivery.map(_fileDelivery) }),
       inputTokens: metadata.input_tokens,
       outputTokens: metadata.output_tokens,
       reasoning: metadata.reasoning,
       reasoningTokens: metadata.reasoning_tokens,
     },
+  }
+}
+
+/**
+ * One file's delivery as the platform reports it, in the SDK's own casing.
+ * A key the platform sends as `null` is left out rather than carried as one.
+ *
+ * @internal
+ */
+function _fileDelivery(file: any): AIFileDelivery {
+  return {
+    deliveredAs: file.delivered_as,
+    ...(file.fallback && { fallback: file.fallback }),
+    filename: file.filename,
+    ...(typeof file.first_page === 'number' && { firstPage: file.first_page }),
+    ...(typeof file.last_page === 'number' && { lastPage: file.last_page }),
+    transcribedPages: Array.isArray(file.transcribed_pages) ? file.transcribed_pages : [],
+  }
+}
+
+/**
+ * One page's transcription as the platform reports it: its text or its error,
+ * never both. An error wins, so no partial text is handed on, and a page that
+ * carries no text is reported as unread rather than as text that is not there.
+ *
+ * @internal
+ */
+function _pageTranscription(page: any): AIPageTranscription {
+  if (typeof page.text === 'string' && typeof page.error !== 'string') {
+    return { page: page.page, text: page.text }
+  }
+
+  return {
+    error: typeof page.error === 'string' ? page.error : 'no transcription was returned for this page',
+    page: page.page,
   }
 }
 
@@ -650,6 +797,70 @@ export async function transcribe(
     },
     context,
   )
+}
+
+/**
+ * Transcribes the pages of a PDF that have no usable text of their own — scans,
+ * image-only exhibits, text that reads as noise — from their images.
+ *
+ * Every such page is read once, and it is the same transcription an `extract`
+ * or `summarize` that asked for text is given in the page's place, so a caller
+ * can check that a quote on an image page is really there by looking for it in
+ * the text the answer was built on. Pages the platform reads as text are
+ * neither read nor returned.
+ *
+ * A page is not transcribed a second time to check the first: that would be
+ * the same model reading the same image again, doubling the cost of every
+ * scanned page without being independent of the first read. An independent
+ * check reads the pages a second way — as the document itself
+ * (`deliver_as: 'document'`) — and compares the answers.
+ *
+ * Transcriptions are kept per version of the file and page, and shared with
+ * every other AI operation: a page already read for an `extract` or
+ * `summarize` that asked for text is not read again.
+ *
+ * @param document The PDF, as a DocumentHandle. Add `first_page` and
+ *   `last_page` to transcribe only those pages; they are counted from 1 and
+ *   the answer numbers pages in the original document.
+ * @param options Optional `regenerate` and `timeout`.
+ * @param context The execution context provided by the host.
+ * @returns A promise that resolves to each page's transcription, or why it has none.
+ * @throws Will throw an error if the operation fails or the input is not a PDF.
+ *
+ * @example
+ * const { data } = await transcribePages(
+ *   { ...contract, first_page: 40, last_page: 52 },
+ *   {},
+ *   context,
+ * )
+ *
+ * for (const page of data.pages) {
+ *   if ('error' in page)
+ *     continue
+ *   const quoted = page.text.includes(quote)
+ * }
+ */
+export async function transcribePages(
+  document: AITranscribePagesInput,
+  options: AITranscribePagesOptions,
+  context: Context,
+): Promise<AITranscriptionResult> {
+  if (!document || typeof document !== 'object' || !document.file_hash) {
+    throw new Error('The `document` parameter must be a valid DocumentHandle for `transcribePages`.')
+  }
+
+  const mimeType = (document.mime_type || '').split(';')[0].trim().toLowerCase()
+
+  if (mimeType !== 'application/pdf') {
+    throw new Error('`transcribePages` reads the pages of a PDF.')
+  }
+
+  const result = await _executeAIOperation('transcribe', document, options, context)
+
+  return {
+    data: { pages: Array.isArray(result.data?.pages) ? result.data.pages.map(_pageTranscription) : [] },
+    metadata: result.metadata,
+  }
 }
 
 // ============================================================================
