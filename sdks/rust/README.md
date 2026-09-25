@@ -394,6 +394,67 @@ heard.data.transcript; // Some("[00:15] Customer: My order is late…")
 heard.data.summary; // Some("The customer was refunded.")
 ```
 
+#### Transcribe PDF Pages
+
+Read the pages of a PDF that have no usable text of their own — scans,
+image-only exhibits — from their images. Each such page is transcribed once,
+and it is the same transcription an `extract` or `summarize` that asks for text
+is given in the page's place, so a quote on an image page can be checked
+against the text the answer was built on. Pages with a readable text layer are
+not returned.
+
+```rust
+use simple::ai::{PageTranscription, Pages, TranscribePagesOptions};
+
+let read = simple::ai::transcribe_pages(
+    &contract, // a DocumentHandle
+    Some(Pages::new(40, 52)),
+    TranscribePagesOptions::default(),
+)?;
+
+for page in &read.data {
+    match page {
+        PageTranscription::Read { page, text } => println!("{page}: {}", text.contains(quote)),
+        PageTranscription::Unread { page, error } => println!("page {page} could not be read: {error}"),
+    }
+}
+```
+
+Pages are numbered in the original document. A page has its text or the reason
+it has none, never both, so partial text is never handed on. Transcriptions are
+kept per version of the file and page, so a page already read for an `extract`
+or `summarize` that asked for text (`Delivery::Text`) is not read again.
+Anything that is not a PDF is refused before the platform is asked.
+
+A page is not transcribed twice to check itself: that would be the same model
+reading the same image again, doubling the cost of every scanned page without
+adding independence. To check an answer independently, read the pages a second
+way — as the document itself (`Delivery::Document`) — and compare.
+
+#### How Files Travelled
+
+A file asked for as text is not always sent as text: a page with no text of its
+own is read from its image, and when that reading fails the document is sent
+instead. Every answer says which happened, per file and in input order, in
+`metadata.delivery`: `delivered_as` (`DeliveredAs::Document`, `Text` or
+`Image`), the range the file was cut to, the pages transcribed from their
+images, and — when text was asked for and the document went instead — a
+`fallback` naming the pages that could not be read and why.
+
+```rust
+let read: Execution<Invoice> = simple::ai::extract(json!(contract), prompt, schema, Options::default())?;
+
+for file in &read.metadata.delivery {
+    if let Some(fallback) = &file.fallback {
+        println!("{} was read as a PDF: {}", file.filename, fallback.message);
+    }
+}
+```
+
+Pages are numbered in the original document. An answer with no report, or an
+entry this SDK cannot read, leaves `delivery` without it rather than failing
+the call.
+
 #### The Face Collection
 
 `simple::ai::enroll_face` adds a face under the subject it belongs to and

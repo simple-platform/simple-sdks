@@ -1,10 +1,11 @@
 //! Asking the AI engine for an answer.
 //!
-//! Three operations read something and answer with it — [`extract`] pulls
+//! Four operations read something and answer with it — [`extract`] pulls
 //! structured data out against a schema you give, [`summarize`] writes prose,
-//! and [`transcribe`] turns audio or video into words. Three more hold the
-//! tenant's face collection: [`enroll_face`], [`search_face`] and
-//! [`delete_face`].
+//! [`transcribe`] turns audio or video into words, and [`transcribe_pages`]
+//! reads the pages of a PDF that have no text of their own from their images.
+//! Three more hold the tenant's face collection: [`enroll_face`],
+//! [`search_face`] and [`delete_face`].
 //!
 //! ```
 //! # use simpleplatform_sdk::prelude::*;
@@ -81,6 +82,11 @@
 //! should. [`DocumentInput`] is that reference with those two beside it, and
 //! [`Delivery`] and [`Pages`] are what they say. A plain handle asks for nothing
 //! and sends the whole file the way its type is sent by default.
+//!
+//! What was asked for is not always what happened, so every answer says how
+//! each file travelled, in [`Metadata::delivery`]: as the document, as its text
+//! or as an image, which pages were read from their images, and, when text was
+//! asked for and the document went instead, which pages could not be read.
 //!
 //! # Files that have not been uploaded yet
 //!
@@ -241,8 +247,12 @@ impl Pages {
 /// * [`Delivery::Document`] on a Word, Excel, PowerPoint, CSV, RTF or text
 ///   file, which only ever travels as text.
 ///
-/// A page the platform cannot read as text sends the pages asked for as a PDF
-/// instead, so an answer is never built on text with a hole in it.
+/// A page with no usable text of its own — a scan, or text that reads as noise
+/// — is read from its image instead, and that text stands in its place, marked
+/// `[Transcribed from the page image.]` under its page label. Only if that
+/// reading fails are the pages asked for sent as a PDF, so an answer is never
+/// built on text with a hole in it. The answer's [`Metadata::delivery`] says
+/// which happened.
 ///
 /// Pages asked for as text arrive numbered from 1, because by then they are a
 /// document of their own. A line above them says which pages of which document
@@ -395,6 +405,67 @@ pub struct Transcript {
     pub participants: Vec<String>,
 }
 
+/// What [`transcribe_pages`] may be told, beyond the PDF and the pages.
+///
+/// There is no prompt, model or reasoning switch, which is why this is not
+/// [`Options`]: the instructions are the platform's, and every page is read at
+/// the platform's own accuracy-first effort.
+#[derive(Clone, Debug, Default)]
+pub struct TranscribePagesOptions {
+    /// Whether to run the operation again rather than answer from its kept
+    /// result. A page already read is still served from its kept read, which
+    /// is tied to this version of the file and to the platform's instructions.
+    pub regenerate: bool,
+
+    /// How long to wait for the answer. Unset leaves the platform's default.
+    pub timeout: Option<Duration>,
+}
+
+/// One page's transcription, or why it has none.
+///
+/// Pages are numbered in the original document, whatever range was asked for.
+/// A page either has its text or has a reason, never both, so a caller cannot
+/// mistake a partial read for the page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PageTranscription {
+    /// The page was read from its image.
+    Read {
+        /// The page's number in the original document.
+        page: u32,
+
+        /// The page's text: verbatim markdown, in reading order, tables as
+        /// markdown tables, `[illegible]` where a word could not be read. An
+        /// empty string is a read that found the page blank.
+        text: String,
+    },
+
+    /// The page could not be read.
+    Unread {
+        /// The page's number in the original document.
+        page: u32,
+
+        /// Why, in the platform's words. No partial text is given.
+        error: String,
+    },
+}
+
+impl PageTranscription {
+    /// The page's number in the original document, read or not.
+    pub fn page(&self) -> u32 {
+        match self {
+            PageTranscription::Read { page, .. } | PageTranscription::Unread { page, .. } => *page,
+        }
+    }
+
+    /// The page's text, when it was read.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            PageTranscription::Read { text, .. } => Some(text),
+            PageTranscription::Unread { .. } => None,
+        }
+    }
+}
+
 /// What an operation answered, and what it cost.
 #[derive(Clone, Debug)]
 pub struct Execution<T> {
@@ -405,7 +476,7 @@ pub struct Execution<T> {
     pub metadata: Metadata,
 }
 
-/// What a run spent, and how it reasoned.
+/// What a run spent, how it reasoned, and how its files reached the model.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Metadata {
     /// Tokens in what was sent.
@@ -419,6 +490,124 @@ pub struct Metadata {
 
     /// The reasoning itself, when the run reported it.
     pub reasoning: Option<String>,
+
+    /// How each file the run carried reached the model, in the order the files
+    /// were given. Empty when the run carried no file, and on an answer kept
+    /// from before the platform reported it.
+    pub delivery: Vec<FileDelivery>,
+}
+
+/// How one file an operation carried reached the model.
+///
+/// A file asked for as text is not always sent as text. A page with no text of
+/// its own is read from its image, and when that reading fails the document is
+/// sent instead, so the answer is never built on text with a hole in it. This
+/// is how a caller finds out which happened, without reading a platform log.
+///
+/// Page numbers are the original document's, whatever range was cut from it,
+/// so a page named here is the page a person would turn to.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::ai::{DeliveredAs, Options, Pages};
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|_name, _params| {
+/// #     Ok(json!({
+/// #         "data": "It commits us to a fixed price.",
+/// #         "metadata": { "delivery": [{
+/// #             "filename": "contract.pdf",
+/// #             "delivered_as": "document",
+/// #             "first_page": 40,
+/// #             "last_page": 52,
+/// #             "transcribed_pages": [],
+/// #             "fallback": {
+/// #                 "reason": "transcription_failed",
+/// #                 "pages": [44],
+/// #                 "message": "page 44: the page image could not be read"
+/// #             }
+/// #         }] }
+/// #     }))
+/// # });
+/// let read = simple::ai::summarize(
+///     json!({
+///         "file_hash": "9f2c…",
+///         "filename": "contract.pdf",
+///         "mime_type": "application/pdf",
+///         "first_page": 40,
+///         "last_page": 52,
+///         "deliver_as": "text"
+///     }),
+///     "Say what it commits us to.",
+///     Options::default(),
+/// )?;
+///
+/// for file in &read.metadata.delivery {
+///     if let Some(fallback) = &file.fallback {
+///         println!("{} was read as a PDF: {}", file.filename, fallback.message);
+///     }
+/// }
+///
+/// let contract = &read.metadata.delivery[0];
+///
+/// assert_eq!(contract.delivered_as, DeliveredAs::Document);
+/// assert_eq!(contract.pages, Some(Pages::new(40, 52)));
+/// # Ok::<(), Error>(())
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileDelivery {
+    /// The file's name.
+    pub filename: String,
+
+    /// How the file travelled.
+    pub delivered_as: DeliveredAs,
+
+    /// The range the file was cut to, when one was asked for. Unset when the
+    /// whole file travelled.
+    pub pages: Option<Pages>,
+
+    /// The pages whose text was read from their images rather than from their
+    /// text layer. Empty when none were.
+    pub transcribed_pages: Vec<u32>,
+
+    /// Set only when text was asked for and the document travelled instead:
+    /// which pages could not be read, and why.
+    pub fallback: Option<DeliveryFallback>,
+}
+
+/// How a file reached the model.
+///
+/// This is what happened, where [`Delivery`] is what was asked for, and it has
+/// a way that cannot be asked for: an image only ever travels as one.
+///
+/// It is `#[non_exhaustive]`: a `match` on it needs a `_` arm, so a way added
+/// later does not break an action that was already written.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeliveredAs {
+    /// The document itself, which the model reads with its layout, tables and
+    /// figures.
+    Document,
+    /// The text read out of the document, with any page that had none read from
+    /// its image.
+    Text,
+    /// An image.
+    Image,
+}
+
+/// Why a file asked for as text travelled as the document instead.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DeliveryFallback {
+    /// Why, as the platform names it: `transcription_failed` when pages with no
+    /// text of their own could not be read from their images. It is kept as
+    /// the platform's word rather than narrowed to a list, so a reason added
+    /// later still reaches you instead of hiding that a fallback happened.
+    pub reason: String,
+
+    /// The pages that could not be read, numbered in the original document.
+    pub pages: Vec<u32>,
+
+    /// What went wrong, page by page, in the platform's words.
+    pub message: String,
 }
 
 /// How far a face search reaches.
@@ -487,7 +676,7 @@ pub fn extract<T: DeserializeOwned>(
         );
     }
 
-    run("extract", input, prompt, Some(schema), &options)
+    run("extract", input, Some(prompt), Some(schema), &options)
 }
 
 /// Write prose about an input.
@@ -516,7 +705,7 @@ pub fn summarize(input: Value, prompt: &str, options: Options) -> Result<Executi
     )?;
     refuse_empty_prompt(prompt, "summarize")?;
 
-    run("summarize", input, prompt, None, &options)
+    run("summarize", input, Some(prompt), None, &options)
 }
 
 /// Turn audio or video into words.
@@ -572,10 +761,108 @@ pub fn transcribe(
     run(
         "extract",
         document,
-        &prompt,
+        Some(&prompt),
         Some(transcribe_schema(&wanted)),
         &options,
     )
+}
+
+/// Read the pages of a PDF that have no usable text of their own — scans,
+/// image-only exhibits, text that reads as noise — from their images.
+///
+/// Every such page is read once, and it is the same transcription an
+/// [`extract`] or [`summarize`] that asked for [`Delivery::Text`] is given in
+/// the page's place. A quote on an image page can therefore be checked against
+/// the very text the answer was built on. Pages the platform reads as text are
+/// neither read nor returned.
+///
+/// A page is not transcribed a second time to check the first: that would be
+/// the same model reading the same image again, doubling the cost of every
+/// scanned page without being independent of the first read. An independent
+/// check reads the pages a second way, as the document itself
+/// ([`Delivery::Document`]), and compares the answers.
+///
+/// Transcriptions are kept per version of the file and page, and shared with
+/// every other operation, so a page already read for an [`extract`] or
+/// [`summarize`] that asked for text is not read again.
+///
+/// `pages` narrows the reading to a range, counted from 1 with both ends
+/// included, and the answer still numbers pages in the original document. The
+/// file is taken as a [`DocumentHandle`] rather than a [`DocumentInput`]
+/// because the pages are answered as text, so a delivery has no meaning here
+/// and cannot be sent. Anything that is not a PDF is refused before the host
+/// is asked.
+///
+/// ```
+/// # use simpleplatform_sdk::prelude::*;
+/// # use simpleplatform_sdk::ai::{PageTranscription, Pages, TranscribePagesOptions};
+/// # use simpleplatform_sdk::testing;
+/// # let _session = testing::install(|_name, _params| {
+/// #     Ok(json!({
+/// #         "data": { "pages": [
+/// #             { "page": 41, "text": "## Scope of Work\n\nThe Contractor shall furnish…" },
+/// #             { "page": 44, "error": "the page image could not be read" }
+/// #         ] },
+/// #         "metadata": { "input_tokens": 0, "output_tokens": 0 }
+/// #     }))
+/// # });
+/// # let contract = DocumentHandle {
+/// #     file_hash: "9f2c…".into(),
+/// #     filename: "contract.pdf".into(),
+/// #     mime_type: "application/pdf".into(),
+/// #     size: 1_048_576,
+/// #     storage_path: "acme/documents/9f/2c/9f2c….pdf".into(),
+/// # };
+/// let quote = "The Contractor shall furnish";
+///
+/// let read = simple::ai::transcribe_pages(
+///     &contract,
+///     Some(Pages::new(40, 52)),
+///     TranscribePagesOptions::default(),
+/// )?;
+///
+/// for page in &read.data {
+///     match page {
+///         PageTranscription::Read { page, text } => {
+///             println!("page {page} carries the quote: {}", text.contains(quote));
+///         }
+///         PageTranscription::Unread { page, error } => {
+///             println!("page {page} could not be read: {error}");
+///         }
+///     }
+/// }
+///
+/// assert!(read.data[0].text().is_some_and(|text| text.contains(quote)));
+/// assert_eq!(read.data[1].page(), 44);
+/// # Ok::<(), Error>(())
+/// ```
+pub fn transcribe_pages(
+    document: &DocumentHandle,
+    pages: Option<Pages>,
+    options: TranscribePagesOptions,
+) -> Result<Execution<Vec<PageTranscription>>, Error> {
+    refuse_unless_pdf(document)?;
+
+    let input = json!(DocumentInput {
+        file: document.clone(),
+        pages,
+        deliver_as: None,
+    });
+
+    // The same universal options every other caller of the operation sends,
+    // since the whole map is part of the key a kept result is found under.
+    let options = Options {
+        regenerate: options.regenerate,
+        timeout: options.timeout,
+        ..Options::default()
+    };
+
+    let read: Execution<Value> = run("transcribe", input, None, None, &options)?;
+
+    Ok(Execution {
+        data: page_transcriptions(&read.data),
+        metadata: read.metadata,
+    })
 }
 
 /// Add a face to the tenant's collection, under the subject it belongs to.
@@ -742,7 +1029,7 @@ pub fn delete_face(face_ids: &[String]) -> Result<Vec<String>, Error> {
 fn run<T: DeserializeOwned>(
     operation: &str,
     input: Value,
-    prompt: &str,
+    prompt: Option<&str>,
     schema: Option<Value>,
     options: &Options,
 ) -> Result<Execution<T>, Error> {
@@ -786,7 +1073,7 @@ fn run<T: DeserializeOwned>(
 fn payload(
     operation: &str,
     input: Value,
-    prompt: &str,
+    prompt: Option<&str>,
     schema: Option<Value>,
     options: &Options,
 ) -> Value {
@@ -808,8 +1095,13 @@ fn payload(
 
     payload.insert("operation".to_string(), Value::from(operation));
     payload.insert("input".to_string(), input);
-    payload.insert("prompt".to_string(), Value::from(prompt));
     payload.insert("options".to_string(), Value::Object(universal));
+
+    // An operation whose instructions are the platform's is sent none, rather
+    // than an empty one it would have to tell apart from a prompt.
+    if let Some(prompt) = prompt {
+        payload.insert("prompt".to_string(), Value::from(prompt));
+    }
     payload.insert("regenerate".to_string(), Value::Bool(options.regenerate));
 
     if let Some(schema) = schema {
@@ -853,12 +1145,124 @@ fn metadata_of(metadata: Option<&Value>) -> Metadata {
             .get("reasoning")
             .and_then(Value::as_str)
             .map(str::to_string),
+        delivery: delivery_of(metadata.get("delivery")),
     }
 }
 
 /// One token count, when it is there and is a count.
 fn count(metadata: &Value, key: &str) -> Option<u64> {
     metadata.get(key).and_then(Value::as_u64)
+}
+
+/// How each file travelled, as far as the report can be read.
+///
+/// The report explains an answer; it never decides whether there is one. An
+/// entry that is not an object, names no file, or names a way of travelling
+/// this SDK does not know is left out rather than failing a run that answered.
+fn delivery_of(delivery: Option<&Value>) -> Vec<FileDelivery> {
+    delivery
+        .and_then(Value::as_array)
+        .map(|files| files.iter().filter_map(file_delivery).collect())
+        .unwrap_or_default()
+}
+
+/// One file's delivery, when the entry can be read as one.
+///
+/// A range is kept only when both ends are there, because a range with one end
+/// is not one the engine could have cut. A key sent as `null` reads as absent.
+fn file_delivery(file: &Value) -> Option<FileDelivery> {
+    let delivered_as = match file.get("delivered_as").and_then(Value::as_str)? {
+        "document" => DeliveredAs::Document,
+        "text" => DeliveredAs::Text,
+        "image" => DeliveredAs::Image,
+        _ => return None,
+    };
+
+    let first_page = file.get("first_page").and_then(page_number);
+    let last_page = file.get("last_page").and_then(page_number);
+
+    Some(FileDelivery {
+        filename: file.get("filename").and_then(Value::as_str)?.to_string(),
+        delivered_as,
+        pages: first_page
+            .zip(last_page)
+            .map(|(first, last)| Pages::new(first, last)),
+        transcribed_pages: page_numbers(file.get("transcribed_pages")),
+        fallback: file
+            .get("fallback")
+            .filter(|fallback| fallback.is_object())
+            .map(delivery_fallback),
+    })
+}
+
+/// A fallback, read leniently: that the document went instead of its text is
+/// the fact that matters, so a member missing from the report does not lose it.
+fn delivery_fallback(fallback: &Value) -> DeliveryFallback {
+    let text = |key: &str| {
+        fallback
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    DeliveryFallback {
+        reason: text("reason"),
+        pages: page_numbers(fallback.get("pages")),
+        message: text("message"),
+    }
+}
+
+/// A page number, when this is one: a whole number from 1.
+fn page_number(value: &Value) -> Option<u32> {
+    value
+        .as_u64()
+        .and_then(|number| u32::try_from(number).ok())
+        .filter(|page| *page > 0)
+}
+
+/// The page numbers in a list, leaving out anything that is not one.
+fn page_numbers(pages: Option<&Value>) -> Vec<u32> {
+    pages
+        .and_then(Value::as_array)
+        .map(|pages| pages.iter().filter_map(page_number).collect())
+        .unwrap_or_default()
+}
+
+/// Why a page the platform answered for without its text is unread.
+const NO_TRANSCRIPTION: &str = "no transcription was returned for this page";
+
+/// Each page a transcription answered for, in the shape a caller can rely on.
+///
+/// An answer without a list of pages has none. An entry that names no page is
+/// left out, since there is no page it could be the transcription of.
+fn page_transcriptions(data: &Value) -> Vec<PageTranscription> {
+    data.get("pages")
+        .and_then(Value::as_array)
+        .map(|pages| pages.iter().filter_map(page_transcription).collect())
+        .unwrap_or_default()
+}
+
+/// One page's transcription: its text or its error, never both.
+///
+/// The platform's page is mapped rather than passed through. An error wins
+/// over any text, so no partial text is handed on, and a page that carries no
+/// text is answered as unread rather than as text that is not there.
+fn page_transcription(entry: &Value) -> Option<PageTranscription> {
+    let page = entry.get("page").and_then(page_number)?;
+    let error = entry.get("error").and_then(Value::as_str);
+    let text = entry.get("text").and_then(Value::as_str);
+
+    Some(match (error, text) {
+        (None, Some(text)) => PageTranscription::Read {
+            page,
+            text: text.to_string(),
+        },
+        (error, _) => PageTranscription::Unread {
+            page,
+            error: error.unwrap_or(NO_TRANSCRIPTION).to_string(),
+        },
+    })
 }
 
 /// Put whatever is still pending into ephemeral storage, and answer with what
@@ -982,6 +1386,30 @@ fn refuse_unless_media(document: &Value) -> Result<(), Error> {
     if !media {
         return Err(Error::invalid("transcribe works on audio and video.")
             .hint("Pass a handle whose mime_type begins audio/ or video/."));
+    }
+
+    Ok(())
+}
+
+/// Refuse anything that is not the handle of a stored PDF.
+///
+/// The type is compared without its parameters and without regard to case, so
+/// `Application/PDF; version=1.7` is a PDF.
+fn refuse_unless_pdf(document: &DocumentHandle) -> Result<(), Error> {
+    if document.file_hash.is_empty() {
+        return Err(
+            Error::invalid("transcribe_pages needs the handle of a stored file.").hint(
+                "Pass the handle the upload or the record answered with, the one carrying \
+                 file_hash.",
+            ),
+        );
+    }
+
+    let essence = document.mime_type.split(';').next().unwrap_or_default();
+
+    if !essence.trim().eq_ignore_ascii_case("application/pdf") {
+        return Err(Error::invalid("transcribe_pages reads the pages of a PDF.")
+            .hint("Pass the handle of a PDF. Read any other file with extract or summarize."));
     }
 
     Ok(())
@@ -1486,6 +1914,164 @@ mod tests {
     }
 
     #[test]
+    fn a_run_reports_how_each_file_travelled_in_the_order_the_files_were_given() {
+        let _session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": "done",
+                "metadata": {
+                    "input_tokens": 9,
+                    "output_tokens": 4,
+                    "delivery": [
+                        {
+                            "filename": "contract.pdf",
+                            "delivered_as": "text",
+                            "first_page": 40,
+                            "last_page": 52,
+                            "transcribed_pages": [41, 44],
+                            "fallback": null
+                        },
+                        {
+                            "filename": "drawings.pdf",
+                            "delivered_as": "document",
+                            "first_page": null,
+                            "last_page": null,
+                            "transcribed_pages": [],
+                            "fallback": {
+                                "reason": "transcription_failed",
+                                "pages": [3, 7],
+                                "message": "page 3: timed out; page 7: blank answer"
+                            }
+                        },
+                        {
+                            "filename": "site.jpg",
+                            "delivered_as": "image",
+                            "first_page": null,
+                            "last_page": null,
+                            "transcribed_pages": [],
+                            "fallback": null
+                        }
+                    ]
+                }
+            }))
+        });
+
+        let written = summarize(json!("text"), "One sentence.", Options::default()).unwrap();
+
+        assert_eq!(
+            written.metadata.delivery,
+            vec![
+                FileDelivery {
+                    filename: "contract.pdf".to_string(),
+                    delivered_as: DeliveredAs::Text,
+                    pages: Some(Pages::new(40, 52)),
+                    transcribed_pages: vec![41, 44],
+                    fallback: None,
+                },
+                FileDelivery {
+                    filename: "drawings.pdf".to_string(),
+                    delivered_as: DeliveredAs::Document,
+                    pages: None,
+                    transcribed_pages: Vec::new(),
+                    fallback: Some(DeliveryFallback {
+                        reason: "transcription_failed".to_string(),
+                        pages: vec![3, 7],
+                        message: "page 3: timed out; page 7: blank answer".to_string(),
+                    }),
+                },
+                FileDelivery {
+                    filename: "site.jpg".to_string(),
+                    delivered_as: DeliveredAs::Image,
+                    pages: None,
+                    transcribed_pages: Vec::new(),
+                    fallback: None,
+                },
+            ]
+        );
+        assert_eq!(
+            written.metadata.input_tokens, 9,
+            "the members a result already had read as they did"
+        );
+    }
+
+    #[test]
+    fn an_answer_without_a_delivery_report_carries_none() {
+        for metadata in [
+            json!({ "input_tokens": 1 }),
+            json!({ "delivery": null }),
+            json!({ "delivery": "document" }),
+            json!({ "delivery": { "filename": "contract.pdf", "delivered_as": "text" } }),
+        ] {
+            let _session = testing::install(move |_name, _params| {
+                Ok(json!({ "data": "done", "metadata": metadata.clone() }))
+            });
+
+            let written = summarize(json!("text"), "One sentence.", Options::default())
+                .expect("a report that cannot be read never fails the run");
+
+            assert!(written.metadata.delivery.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_delivery_entry_that_cannot_be_read_is_left_out_and_the_rest_are_kept() {
+        let delivery = delivery_of(Some(&json!([
+            "contract.pdf",
+            { "filename": "no-way.pdf" },
+            { "filename": "audio.mp3", "delivered_as": "audio" },
+            { "delivered_as": "text" },
+            { "filename": 7, "delivered_as": "text" },
+            {
+                "filename": "kept.pdf",
+                "delivered_as": "text",
+                "first_page": 4,
+                "transcribed_pages": ["5", -1, 0, 6, 4_294_967_296_u64, null]
+            }
+        ])));
+
+        assert_eq!(
+            delivery,
+            vec![FileDelivery {
+                filename: "kept.pdf".to_string(),
+                delivered_as: DeliveredAs::Text,
+                pages: None,
+                transcribed_pages: vec![6],
+                fallback: None,
+            }],
+            "a range with one end is not a range, and only whole pages from 1 are pages"
+        );
+    }
+
+    #[test]
+    fn a_fallback_that_is_reported_is_never_lost_to_a_missing_member() {
+        let delivery = delivery_of(Some(&json!([
+            {
+                "filename": "contract.pdf",
+                "delivered_as": "document",
+                "fallback": { "reason": "transcription_failed" }
+            },
+            {
+                "filename": "drawings.pdf",
+                "delivered_as": "document",
+                "fallback": "transcription_failed"
+            }
+        ])));
+
+        assert_eq!(
+            delivery[0].fallback,
+            Some(DeliveryFallback {
+                reason: "transcription_failed".to_string(),
+                pages: Vec::new(),
+                message: String::new(),
+            })
+        );
+        assert_eq!(
+            delivery[1].fallback, None,
+            "a fallback that is not an object says nothing that can be read"
+        );
+        assert!(delivery[0].transcribed_pages.is_empty());
+    }
+
+    #[test]
     fn an_operation_with_nothing_to_do_is_refused_before_anything_is_sent() {
         let session = testing::install(|_name, _params| Ok(answered()));
 
@@ -1690,6 +2276,208 @@ mod tests {
         }
 
         assert!(session.calls().is_empty());
+    }
+
+    #[test]
+    fn a_page_transcription_asks_for_the_transcribe_operation_with_the_range_and_no_prompt() {
+        let session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": {
+                    "pages": [
+                        { "page": 41, "text": "Scope of Work" },
+                        { "page": 42, "error": "the answer carries no pages" }
+                    ]
+                },
+                "metadata": {
+                    "delivery": null,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "reasoning_tokens": 0
+                }
+            }))
+        });
+
+        let read = transcribe_pages(
+            &stored(),
+            Some(Pages::new(40, 52)),
+            TranscribePagesOptions::default(),
+        )
+        .unwrap();
+
+        let calls = session.calls();
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, ORCHESTRATOR);
+        assert_eq!(
+            calls[0].params,
+            json!({
+                "operation": "transcribe",
+                "input": {
+                    "file_hash": "ffce20f1",
+                    "filename": "contract.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1_234,
+                    "storage_path": "acme/documents/ffce20f1",
+                    "first_page": 40,
+                    "last_page": 52
+                },
+                "options": { "reasoning": true },
+                "regenerate": false
+            }),
+            "no prompt, schema, model or delivery: the instructions are the platform's"
+        );
+
+        assert_eq!(
+            read.data,
+            vec![
+                PageTranscription::Read {
+                    page: 41,
+                    text: "Scope of Work".to_string()
+                },
+                PageTranscription::Unread {
+                    page: 42,
+                    error: "the answer carries no pages".to_string()
+                },
+            ]
+        );
+        assert_eq!(read.metadata.input_tokens, 0);
+        assert!(read.metadata.delivery.is_empty());
+    }
+
+    #[test]
+    fn a_page_transcription_carries_only_the_whole_file_and_the_options_it_was_given() {
+        let session = testing::install(|_name, _params| Ok(json!({ "data": { "pages": [] } })));
+
+        let read = transcribe_pages(
+            &stored(),
+            None,
+            TranscribePagesOptions {
+                regenerate: true,
+                timeout: Some(Duration::from_secs(90)),
+            },
+        )
+        .unwrap();
+
+        let sent = session.calls()[0].params.clone();
+
+        assert!(read.data.is_empty());
+        assert!(sent["input"].get("first_page").is_none());
+        assert!(sent["input"].get("last_page").is_none());
+        assert_eq!(sent["regenerate"], json!(true));
+        assert_eq!(sent["timeout"], json!(90_000));
+        assert_eq!(sent["options"], json!({ "reasoning": true }));
+    }
+
+    #[test]
+    fn a_page_with_no_text_is_answered_as_unread_never_as_text_that_is_not_there() {
+        let _session = testing::install(|_name, _params| {
+            Ok(json!({
+                "data": {
+                    "pages": [
+                        { "page": 7, "text": "" },
+                        { "page": 8, "error": "the model timed out", "text": "Scope of" },
+                        { "page": 9 },
+                        { "page": 10, "transcriptions": ["Scope of Work", "Scope of Work"] },
+                        { "page": 11, "error": null, "text": "Clause 4" },
+                        { "page": 12, "error": 500, "text": "Clause 5" },
+                        { "page": 13, "text": null },
+                        { "text": "a page with no number" },
+                        { "page": "14", "text": "a number that is a string" },
+                        "page 15"
+                    ]
+                }
+            }))
+        });
+
+        let read = transcribe_pages(&stored(), None, TranscribePagesOptions::default()).unwrap();
+
+        let unread = |page: u32, error: &str| PageTranscription::Unread {
+            page,
+            error: error.to_string(),
+        };
+        let read_as = |page: u32, text: &str| PageTranscription::Read {
+            page,
+            text: text.to_string(),
+        };
+
+        assert_eq!(
+            read.data,
+            vec![
+                read_as(7, ""),
+                unread(8, "the model timed out"),
+                unread(9, NO_TRANSCRIPTION),
+                unread(10, NO_TRANSCRIPTION),
+                read_as(11, "Clause 4"),
+                read_as(12, "Clause 5"),
+                unread(13, NO_TRANSCRIPTION),
+            ]
+        );
+        assert_eq!(read.data[1].text(), None, "an error wins over partial text");
+        assert_eq!(read.data[0].text(), Some(""), "a blank page is a read");
+        assert_eq!(read.data[2].page(), 9);
+    }
+
+    #[test]
+    fn an_answer_without_a_list_of_pages_has_no_pages() {
+        for data in [
+            json!(null),
+            json!({}),
+            json!({ "pages": "none" }),
+            json!([]),
+        ] {
+            let _session =
+                testing::install(move |_name, _params| Ok(json!({ "data": data.clone() })));
+
+            let read =
+                transcribe_pages(&stored(), None, TranscribePagesOptions::default()).unwrap();
+
+            assert!(read.data.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_page_transcription_of_anything_but_a_pdf_is_refused_before_the_host_is_asked() {
+        let session = testing::install(|_name, _params| Ok(json!({ "data": { "pages": [] } })));
+
+        let spreadsheet = transcribe_pages(
+            &DocumentHandle {
+                filename: "rates.csv".to_string(),
+                mime_type: "text/csv".to_string(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .unwrap_err();
+
+        let unstored = transcribe_pages(
+            &DocumentHandle {
+                file_hash: String::new(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .unwrap_err();
+
+        for refusal in [&spreadsheet, &unstored] {
+            assert_eq!(refusal.code().as_str(), "INVALID_TOOL_INPUT");
+        }
+
+        assert!(spreadsheet.message().contains("reads the pages of a PDF"));
+        assert!(session.calls().is_empty());
+
+        transcribe_pages(
+            &DocumentHandle {
+                mime_type: "Application/PDF; version=1.7".to_string(),
+                ..stored()
+            },
+            None,
+            TranscribePagesOptions::default(),
+        )
+        .expect("a PDF type with parameters or in capitals is still a PDF");
+
+        assert_eq!(session.calls().len(), 1);
     }
 
     #[test]
