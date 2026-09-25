@@ -109,8 +109,12 @@ export type JSONSchema
  *   file,
  *   which only ever travels as text.
  *
- * A page the platform cannot read as text sends the pages asked for as a PDF
- * instead, so an answer is never built on text with a hole in it.
+ * A page with no usable text of its own — a scan, or text that reads as noise
+ * — is read from its image instead, and that text stands in its place, marked
+ * `[Transcribed from the page image.]` under its page label. Only if that
+ * reading fails are the pages asked for sent as a PDF, so an answer is never
+ * built on text with a hole in it. The answer's `metadata.delivery` says which
+ * happened.
  *
  * Pages asked for as text arrive numbered from 1, because by then they are a
  * document of their own. A line above them says which pages of which document
@@ -258,6 +262,42 @@ export interface AIFaceSearchOptions {
 }
 
 /**
+ * How one file an AI operation carried reached the model. Page numbers are
+ * the original document's, whatever range was cut from it.
+ */
+export interface AIFileDelivery {
+  /** How the file travelled: as the document itself, as its text, or as an image. */
+  deliveredAs: 'document' | 'image' | 'text'
+
+  /**
+   * Present only when text was asked for and the document was sent instead:
+   * the pages whose images could not be read, and why.
+   */
+  fallback?: {
+    /** What went wrong, page by page, in the platform's words. */
+    message: string
+
+    /** The pages that could not be transcribed. */
+    pages: number[]
+
+    /** Why the document travelled instead of its text. */
+    reason: 'transcription_failed'
+  }
+
+  /** The file's name. */
+  filename: string
+
+  /** The first page of the range the file was cut to, when one was named. */
+  firstPage?: number
+
+  /** The last page of the range the file was cut to, when one was named. */
+  lastPage?: number
+
+  /** The pages whose text was read from their images rather than their text layer. */
+  transcribedPages: number[]
+}
+
+/**
  * The response structure from a successful AI `extract` or `summarize` operation.
  */
 export interface AIExecutionResult {
@@ -272,6 +312,13 @@ export interface AIExecutionResult {
    * providing context to the user.
    */
   metadata: {
+    /**
+     * How each file the operation carried reached the model, in input order.
+     * Absent when the operation carried no file, and on an answer kept from
+     * before the platform reported it.
+     */
+    delivery?: AIFileDelivery[]
+
     /** The number of tokens in the input prompt. */
     inputTokens: number
 
@@ -401,11 +448,29 @@ async function _executeAIOperation(
   return {
     data,
     metadata: {
+      ...(Array.isArray(metadata.delivery) && { delivery: metadata.delivery.map(_fileDelivery) }),
       inputTokens: metadata.input_tokens,
       outputTokens: metadata.output_tokens,
       reasoning: metadata.reasoning,
       reasoningTokens: metadata.reasoning_tokens,
     },
+  }
+}
+
+/**
+ * One file's delivery as the platform reports it, in the SDK's own casing.
+ * A key the platform sends as `null` is left out rather than carried as one.
+ *
+ * @internal
+ */
+function _fileDelivery(file: any): AIFileDelivery {
+  return {
+    deliveredAs: file.delivered_as,
+    ...(file.fallback && { fallback: file.fallback }),
+    filename: file.filename,
+    ...(typeof file.first_page === 'number' && { firstPage: file.first_page }),
+    ...(typeof file.last_page === 'number' && { lastPage: file.last_page }),
+    transcribedPages: Array.isArray(file.transcribed_pages) ? file.transcribed_pages : [],
   }
 }
 

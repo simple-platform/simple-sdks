@@ -382,6 +382,23 @@ console.log(result.data.summary) // "Customer called regarding..."
 console.log(result.data.participants) // ["Customer", "Support Agent"]
 ```
 
+#### How Files Travelled
+
+Every AI result says how each file it carried reached the model, in
+`metadata.delivery`: `deliveredAs` (`'document'`, `'text'` or `'image'`), the
+range it was cut to, the pages transcribed from their images, and — when text
+was asked for and the document was sent instead — a `fallback` naming the pages
+that could not be read and why.
+
+```typescript
+const result = await extract({ ...contract, deliver_as: 'text' }, { prompt, schema }, request.context)
+
+for (const file of result.metadata.delivery ?? []) {
+  if (file.fallback)
+    console.log(`${file.filename} was read as a PDF: ${file.fallback.message}`)
+}
+```
+
 ### GraphQL Module
 
 Execute type-safe database operations with GraphQL:
