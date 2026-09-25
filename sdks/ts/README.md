@@ -385,9 +385,11 @@ console.log(result.data.participants) // ["Customer", "Support Agent"]
 #### Transcribe PDF Pages
 
 Read the pages of a PDF that have no usable text of their own — scans,
-image-only exhibits — from their images. Each such page is read twice, by two
-differently worded sets of instructions, so a quote on an image page can be
-checked against both reads. Pages with a readable text layer are not returned.
+image-only exhibits — from their images. Each such page is transcribed once,
+and it is the same transcription an `extract` or `summarize` that asks for text
+is given in the page's place, so a quote on an image page can be checked
+against the text the answer was built on. Pages with a readable text layer are
+not returned.
 
 ```typescript
 import { transcribePages } from '@simpleplatform/sdk/ai'
@@ -404,14 +406,18 @@ for (const page of data.pages) {
     continue
   }
 
-  const [a, b] = page.transcriptions
-  console.log(page.page, a.includes(quote) && b.includes(quote))
+  console.log(page.page, page.text.includes(quote))
 }
 ```
 
-Pages are numbered in the original document. Reads are kept per version of the
-file, so a page already read for an `extract` or `summarize` that asked for
-text (`deliver_as: 'text'`) is not read again.
+Pages are numbered in the original document. Transcriptions are kept per
+version of the file and page, so a page already read for an `extract` or
+`summarize` that asked for text (`deliver_as: 'text'`) is not read again.
+
+A page is not transcribed twice to check itself: that would be the same model
+reading the same image again, doubling the cost of every scanned page without
+adding independence. To check an answer independently, read the pages a second
+way — as the document itself (`deliver_as: 'document'`) — and compare.
 
 #### How Files Travelled
 

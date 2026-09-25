@@ -56,8 +56,8 @@ test('transcribePages asks for the transcribe operation with the pages on the re
   const calls = install({
     data: {
       pages: [
-        { page: 41, transcriptions: ['Scope of Work', 'Scope of Work'] },
-        { error: 'pass b: the answer carries no pages', page: 42 },
+        { page: 41, text: 'Scope of Work' },
+        { error: 'the answer carries no pages', page: 42 },
       ],
     },
     metadata: { delivery: null, input_tokens: 0, output_tokens: 0, reasoning_tokens: 0 },
@@ -75,12 +75,35 @@ test('transcribePages asks for the transcribe operation with the pages on the re
   assert.equal('schema' in payload, false)
 
   assert.deepEqual(result.data.pages, [
-    { page: 41, transcriptions: ['Scope of Work', 'Scope of Work'] },
-    { error: 'pass b: the answer carries no pages', page: 42 },
+    { page: 41, text: 'Scope of Work' },
+    { error: 'the answer carries no pages', page: 42 },
   ])
 
   assert.equal(result.metadata.inputTokens, 0)
   assert.equal('delivery' in result.metadata, false)
+})
+
+test('transcribePages answers a page with no text as unread, never as text that is not there', async () => {
+  install({
+    data: {
+      pages: [
+        { page: 7, text: '' },
+        { error: 'the model timed out', page: 8, text: 'Scope of' },
+        { page: 9 },
+        { page: 10, transcriptions: ['Scope of Work', 'Scope of Work'] },
+      ],
+    },
+    metadata: {},
+  })
+
+  const result = await ai.transcribePages(contract, {}, context)
+
+  assert.deepEqual(result.data.pages, [
+    { page: 7, text: '' },
+    { error: 'the model timed out', page: 8 },
+    { error: 'no transcription was returned for this page', page: 9 },
+    { error: 'no transcription was returned for this page', page: 10 },
+  ])
 })
 
 test('transcribePages refuses anything that is not a PDF before the host is asked', async () => {

@@ -271,12 +271,12 @@ export interface AITranscribePagesOptions {
 }
 
 /**
- * One page's two independent reads, or why it has none. Pages are numbered in
- * the original document.
+ * One page's transcription, or why it has none. Pages are numbered in the
+ * original document.
  */
 export type AIPageTranscription
   = | {
-    /** Why at least one of the two reads failed. No partial text is given. */
+    /** Why the page could not be read. No partial text is given. */
     error: string
 
     /** The page's number in the original document. */
@@ -287,12 +287,11 @@ export type AIPageTranscription
     page: number
 
     /**
-     * The page's text as two differently instructed reads gave it: verbatim
-     * markdown, in reading order, tables as markdown tables, `[illegible]`
-     * where a word could not be read. An empty string is a read that found the
-     * page blank.
+     * The page's text as read from its image: verbatim markdown, in reading
+     * order, tables as markdown tables, `[illegible]` where a word could not
+     * be read. An empty string is a read that found the page blank.
      */
-    transcriptions: [string, string]
+    text: string
   }
 
 /**
@@ -536,6 +535,24 @@ function _fileDelivery(file: any): AIFileDelivery {
     ...(typeof file.first_page === 'number' && { firstPage: file.first_page }),
     ...(typeof file.last_page === 'number' && { lastPage: file.last_page }),
     transcribedPages: Array.isArray(file.transcribed_pages) ? file.transcribed_pages : [],
+  }
+}
+
+/**
+ * One page's transcription as the platform reports it: its text or its error,
+ * never both. An error wins, so no partial text is handed on, and a page that
+ * carries no text is reported as unread rather than as text that is not there.
+ *
+ * @internal
+ */
+function _pageTranscription(page: any): AIPageTranscription {
+  if (typeof page.text === 'string' && typeof page.error !== 'string') {
+    return { page: page.page, text: page.text }
+  }
+
+  return {
+    error: typeof page.error === 'string' ? page.error : 'no transcription was returned for this page',
+    page: page.page,
   }
 }
 
@@ -786,12 +803,19 @@ export async function transcribe(
  * Transcribes the pages of a PDF that have no usable text of their own — scans,
  * image-only exhibits, text that reads as noise — from their images.
  *
- * Every such page is read twice, by two differently worded sets of the
- * platform's instructions, so a caller can check that a quote on an image page
- * is really there by asking whether both reads carry it. Pages the platform
- * reads as text are neither read nor returned.
+ * Every such page is read once, and it is the same transcription an `extract`
+ * or `summarize` that asked for text is given in the page's place, so a caller
+ * can check that a quote on an image page is really there by looking for it in
+ * the text the answer was built on. Pages the platform reads as text are
+ * neither read nor returned.
  *
- * Page reads are kept per version of the file, page and read, and shared with
+ * A page is not transcribed a second time to check the first: that would be
+ * the same model reading the same image again, doubling the cost of every
+ * scanned page without being independent of the first read. An independent
+ * check reads the pages a second way — as the document itself
+ * (`deliver_as: 'document'`) — and compares the answers.
+ *
+ * Transcriptions are kept per version of the file and page, and shared with
  * every other AI operation: a page already read for an `extract` or
  * `summarize` that asked for text is not read again.
  *
@@ -800,7 +824,7 @@ export async function transcribe(
  *   the answer numbers pages in the original document.
  * @param options Optional `regenerate` and `timeout`.
  * @param context The execution context provided by the host.
- * @returns A promise that resolves to each page's two reads, or why it has none.
+ * @returns A promise that resolves to each page's transcription, or why it has none.
  * @throws Will throw an error if the operation fails or the input is not a PDF.
  *
  * @example
@@ -813,8 +837,7 @@ export async function transcribe(
  * for (const page of data.pages) {
  *   if ('error' in page)
  *     continue
- *   const [a, b] = page.transcriptions
- *   const quoted = a.includes(quote) && b.includes(quote)
+ *   const quoted = page.text.includes(quote)
  * }
  */
 export async function transcribePages(
@@ -835,7 +858,7 @@ export async function transcribePages(
   const result = await _executeAIOperation('transcribe', document, options, context)
 
   return {
-    data: { pages: Array.isArray(result.data?.pages) ? result.data.pages : [] },
+    data: { pages: Array.isArray(result.data?.pages) ? result.data.pages.map(_pageTranscription) : [] },
     metadata: result.metadata,
   }
 }
