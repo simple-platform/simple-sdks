@@ -53,7 +53,7 @@
 //! is — in the doc comments and on the members themselves. There is nothing to
 //! keep in step by hand.
 //!
-//! Three tags describe the action, written with `///` in the doc comment above
+//! Four tags describe the action, written with `///` in the doc comment above
 //! the handler — the same comment that carries its description:
 //!
 //! ```text
@@ -75,6 +75,11 @@
 //!   listing of tools.
 //! - `@usewhen` — one line, up to 100 characters, written up to ten times. One
 //!   occasion each, for reaching for this rather than something else.
+//! - `@parallelsafe` — bare, with no value, written only alongside `@tool`. It
+//!   claims that the action changes no stored data and sends nothing, so it is
+//!   safe to run at the same time as other calls in the same batch. The
+//!   platform does not verify the claim, and it changes dispatch only — never
+//!   whether a failed call is retried.
 //!
 //! The prose above the tags stays as written, and is the full description.
 //!

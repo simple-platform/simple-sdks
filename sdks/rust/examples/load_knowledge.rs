@@ -134,6 +134,7 @@ fn main() {
 /// @shortdesc Fetch knowledge articles by id, each with its title, body, and who last updated it when.
 /// @usewhen The id of a knowledge article is known and its contents are needed.
 /// @usewhen Several knowledge ids came out of a search and have to be read together.
+/// @parallelsafe
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     let ids = wanted_ids(request.data.ids)?;
 

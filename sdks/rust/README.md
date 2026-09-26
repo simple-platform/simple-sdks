@@ -209,9 +209,9 @@ What an action is, and what its input looks like, is written where the code is �
 in the doc comments and on the members themselves. There is nothing to keep in
 step by hand.
 
-#### The three tags
+#### The four tags
 
-Three tags describe the action, written with `///` in the doc comment above the
+Four tags describe the action, written with `///` in the doc comment above the
 handler — the same comment that carries its description:
 
 ```rust
@@ -235,11 +235,29 @@ Give the handler a name to hang them on, and pass it to `simple::run`:
 fn main() { simple::run(handler) }
 ```
 
-| Tag          | Shape                                           | What it says                                                  |
-| ------------ | ----------------------------------------------- | ------------------------------------------------------------- |
-| `@tool`      | bare, no value                                  | This action can be reached as a tool                          |
-| `@shortdesc` | one line, up to 300 characters, written once    | What this is, read in a listing of tools                      |
-| `@usewhen`   | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else |
+| Tag             | Shape                                           | What it says                                                                                                               |
+| --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@tool`         | bare, no value                                  | This action can be reached as a tool                                                                                       |
+| `@shortdesc`    | one line, up to 300 characters, written once    | What this is, read in a listing of tools                                                                                   |
+| `@usewhen`      | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else                                                              |
+| `@parallelsafe` | bare, no value, only alongside `@tool`          | This tool changes no stored data and sends nothing, so it is safe to run at the same time as other calls in the same batch |
+
+`@parallelsafe` is a claim you make about your own action; the platform does not
+verify it. It changes only how the batch is dispatched — never whether a failed
+call is retried, which stays unaffected either way. Write it only when the
+action is read-only:
+
+```rust
+/// Look up a lead's open activity.
+///
+/// @tool
+/// @shortdesc Look up a lead's open activity.
+/// @usewhen A caller wants a lead's current open activity.
+/// @parallelsafe
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    // reads only — no writes, no outbound calls
+}
+```
 
 **The prose above the tags is the full description.** It stays exactly as
 written — the first paragraph and everything under it — so the long form of what
