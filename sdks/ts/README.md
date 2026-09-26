@@ -308,6 +308,60 @@ yet; attach its handle through the workflow that owns the record.
 
 ## API Documentation
 
+### Describing an Action
+
+What an action is, and when to reach for it, is written where the code is — in
+the JSDoc comment above the handler, the same comment that carries its
+description:
+
+```typescript
+/**
+ * Close a duplicate lead and point it at the record that survives.
+ *
+ * The surviving lead keeps its activity; the duplicate is marked closed and
+ * linked to it, so a later report still reaches both records.
+ *
+ * @tool
+ * @shortdesc Close a duplicate lead, pointing it at the surviving record.
+ * @usewhen A lead is a duplicate of one already in the system.
+ * @usewhen Two leads share a contact and one should be retired.
+ */
+simple.Handle(async (request) => {
+  // ...
+})
+```
+
+| Tag             | Shape                                           | What it says                                                                                                               |
+| --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@tool`         | bare, no value                                  | This action can be reached as a tool                                                                                       |
+| `@shortdesc`    | one line, up to 300 characters, written once    | What this is, read in a listing of tools                                                                                   |
+| `@usewhen`      | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else                                                              |
+| `@parallelsafe` | bare, no value, only alongside `@tool`          | This tool changes no stored data and sends nothing, so it is safe to run at the same time as other calls in the same batch |
+
+`@parallelsafe` is a claim you make about your own action; the platform does
+not verify it. It changes only how a batch of tool calls is dispatched — never
+whether a failed call is retried, which stays unaffected either way. Write it
+only when the action is read-only:
+
+```typescript
+/**
+ * Look up a lead's open activity.
+ *
+ * @tool
+ * @shortdesc Look up a lead's open activity.
+ * @usewhen A caller wants a lead's current open activity.
+ * @parallelsafe
+ */
+simple.Handle(async (request) => {
+  // reads only — no writes, no outbound calls
+})
+```
+
+The prose above the tags is the full description, and stays exactly as
+written. Each tag is declared in `tsdoc.json` (`{"tagName": "@parallelsafe",
+"syntaxKind": "modifier"}` alongside `@tool`, `@shortdesc` and `@usewhen`), so
+an editor with TSDoc support recognizes it instead of flagging it as unknown.
+
 ### AI Module
 
 The AI module provides powerful capabilities for working with unstructured data.
