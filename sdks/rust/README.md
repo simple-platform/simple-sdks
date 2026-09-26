@@ -420,9 +420,9 @@ heard.data.summary; // Some("The customer was refunded.")
 Read the pages of a PDF that have no usable text of their own — scans,
 image-only exhibits — from their images. Each such page is transcribed once,
 and it is the same transcription an `extract` or `summarize` that asks for text
-is given in the page's place, so a quote on an image page can be checked
-against the text the answer was built on. Pages with a readable text layer are
-not returned.
+is given in the page's place, so the text you hold for an image page is exactly
+the text the answer was built on. Pages with a readable text layer are not
+returned.
 
 ```rust
 use simple::ai::{PageTranscription, Pages, TranscribePagesOptions};
@@ -435,7 +435,7 @@ let read = simple::ai::transcribe_pages(
 
 for page in &read.data {
     match page {
-        PageTranscription::Read { page, text } => println!("{page}: {}", text.contains(quote)),
+        PageTranscription::Read { page, text } => println!("{page}: {text}"),
         PageTranscription::Unread { page, error } => println!("page {page} could not be read: {error}"),
     }
 }

@@ -772,9 +772,9 @@ pub fn transcribe(
 ///
 /// Every such page is read once, and it is the same transcription an
 /// [`extract`] or [`summarize`] that asked for [`Delivery::Text`] is given in
-/// the page's place. A quote on an image page can therefore be checked against
-/// the very text the answer was built on. Pages the platform reads as text are
-/// neither read nor returned.
+/// the page's place, so the text a caller holds for an image page is exactly the
+/// text the answer was built on. Pages the platform reads as text are neither
+/// read nor returned.
 ///
 /// A page is not transcribed a second time to check the first: that would be
 /// the same model reading the same image again, doubling the cost of every
@@ -813,8 +813,6 @@ pub fn transcribe(
 /// #     size: 1_048_576,
 /// #     storage_path: "acme/documents/9f/2c/9f2c….pdf".into(),
 /// # };
-/// let quote = "The Contractor shall furnish";
-///
 /// let read = simple::ai::transcribe_pages(
 ///     &contract,
 ///     Some(Pages::new(40, 52)),
@@ -824,7 +822,7 @@ pub fn transcribe(
 /// for page in &read.data {
 ///     match page {
 ///         PageTranscription::Read { page, text } => {
-///             println!("page {page} carries the quote: {}", text.contains(quote));
+///             println!("page {page}: {text}");
 ///         }
 ///         PageTranscription::Unread { page, error } => {
 ///             println!("page {page} could not be read: {error}");
@@ -832,7 +830,10 @@ pub fn transcribe(
 ///     }
 /// }
 ///
-/// assert!(read.data[0].text().is_some_and(|text| text.contains(quote)));
+/// assert_eq!(
+///     read.data[0].text(),
+///     Some("## Scope of Work\n\nThe Contractor shall furnish…")
+/// );
 /// assert_eq!(read.data[1].page(), 44);
 /// # Ok::<(), Error>(())
 /// ```
