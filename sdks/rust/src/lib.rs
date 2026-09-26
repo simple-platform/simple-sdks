@@ -75,11 +75,14 @@
 //!   listing of tools.
 //! - `@usewhen` — one line, up to 100 characters, written up to ten times. One
 //!   occasion each, for reaching for this rather than something else.
-//! - `@parallelsafe` — bare, with no value, written only alongside `@tool`. It
-//!   claims that the action changes no stored data and sends nothing, so it is
-//!   safe to run at the same time as other calls in the same batch. The
-//!   platform does not verify the claim, and it changes dispatch only — never
-//!   whether a failed call is retried.
+//! - `@parallelsafe` — bare, with no value, written only alongside `@tool`; the
+//!   build refuses it without `@tool`, with a value, or written twice. It
+//!   claims that the action changes no stored data and sends nothing, so it may
+//!   run at the same time as the other parallel-safe calls next to it in a
+//!   batch; every other call still runs alone, in the order asked. The platform
+//!   does not verify the claim, and it changes dispatch only — never whether a
+//!   failed call is retried, nor the assumption that a failed call may have
+//!   changed stored data.
 //!
 //! The prose above the tags stays as written, and is the full description.
 //!

@@ -235,17 +235,20 @@ Give the handler a name to hang them on, and pass it to `simple::run`:
 fn main() { simple::run(handler) }
 ```
 
-| Tag             | Shape                                           | What it says                                                                                                               |
-| --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `@tool`         | bare, no value                                  | This action can be reached as a tool                                                                                       |
-| `@shortdesc`    | one line, up to 300 characters, written once    | What this is, read in a listing of tools                                                                                   |
-| `@usewhen`      | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else                                                              |
-| `@parallelsafe` | bare, no value, only alongside `@tool`          | This tool changes no stored data and sends nothing, so it is safe to run at the same time as other calls in the same batch |
+| Tag             | Shape                                           | What it says                                                                                                                              |
+| --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tool`         | bare, no value                                  | This action can be reached as a tool                                                                                                      |
+| `@shortdesc`    | one line, up to 300 characters, written once    | What this is, read in a listing of tools                                                                                                  |
+| `@usewhen`      | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else                                                                             |
+| `@parallelsafe` | bare, no value, only alongside `@tool`          | This tool changes no stored data and sends nothing, so it may run at the same time as the other parallel-safe calls next to it in a batch |
 
 `@parallelsafe` is a claim you make about your own action; the platform does not
-verify it. It changes only how the batch is dispatched — never whether a failed
-call is retried, which stays unaffected either way. Write it only when the
-action is read-only:
+verify it. It changes only which calls of a batch may overlap — consecutive
+parallel-safe calls may run at the same time, and every other call still runs
+alone, in the order asked. It never changes whether a failed call is retried,
+nor the platform's assumption that a failed call may have changed stored data.
+The build refuses it without `@tool`, with a value, or written twice. Write it
+only when the action is read-only:
 
 ```rust
 /// Look up a lead's open activity.
