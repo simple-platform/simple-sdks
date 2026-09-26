@@ -14,6 +14,9 @@ struct Payload {
 
     #[simple(tool)]
     ids: Vec<String>,
+
+    #[simple(parallelsafe)]
+    tags: Vec<String>,
 }
 
 fn main() {}
