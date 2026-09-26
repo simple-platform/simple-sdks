@@ -444,9 +444,9 @@ console.log(result.data.participants) // ["Customer", "Support Agent"]
 Read the pages of a PDF that have no usable text of their own — scans,
 image-only exhibits — from their images. Each such page is transcribed once,
 and it is the same transcription an `extract` or `summarize` that asks for text
-is given in the page's place, so a quote on an image page can be checked
-against the text the answer was built on. Pages with a readable text layer are
-not returned.
+is given in the page's place, so the text you hold for an image page is exactly
+the text the answer was built on. Pages with a readable text layer are not
+returned.
 
 ```typescript
 import { transcribePages } from '@simpleplatform/sdk/ai'
@@ -463,7 +463,7 @@ for (const page of data.pages) {
     continue
   }
 
-  console.log(page.page, page.text.includes(quote))
+  console.log(page.page, page.text)
 }
 ```
 

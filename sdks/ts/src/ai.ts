@@ -804,10 +804,9 @@ export async function transcribe(
  * image-only exhibits, text that reads as noise — from their images.
  *
  * Every such page is read once, and it is the same transcription an `extract`
- * or `summarize` that asked for text is given in the page's place, so a caller
- * can check that a quote on an image page is really there by looking for it in
- * the text the answer was built on. Pages the platform reads as text are
- * neither read nor returned.
+ * or `summarize` that asked for text is given in the page's place, so the text
+ * a caller holds for an image page is exactly the text the answer was built on.
+ * Pages the platform reads as text are neither read nor returned.
  *
  * A page is not transcribed a second time to check the first: that would be
  * the same model reading the same image again, doubling the cost of every
@@ -834,10 +833,11 @@ export async function transcribe(
  *   context,
  * )
  *
+ * const pages = new Map<number, string>()
  * for (const page of data.pages) {
  *   if ('error' in page)
  *     continue
- *   const quoted = page.text.includes(quote)
+ *   pages.set(page.page, page.text) // the text the answer was built on
  * }
  */
 export async function transcribePages(
