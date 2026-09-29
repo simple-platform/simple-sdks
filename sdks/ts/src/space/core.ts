@@ -131,14 +131,19 @@ export interface ActionRunOptions {
 export interface ActionFailedDetails {
   /** The action's response body as parsed JSON, or `null` when it was not JSON. */
   body: JsonValue
-  /** The HTTP status the server answered with. */
+  /**
+   * The HTTP status the server answered with. An action the host ran in the
+   * browser (declared `client` or `both`) carries 200, the status the server
+   * gives the same failure, and its `body` has the same `{ error: [...] }` shape.
+   */
   status: number
 }
 
 export interface SimpleActionsClient {
   /**
-   * Runs an action of this Space's own app on the server, as the signed-in
-   * user, and returns its JSON result as the action returned it. The host
+   * Runs an action of this Space's own app where the app declares it runs
+   * (on the server, or in the browser for a `client` or `both` action), as
+   * the signed-in user, and returns its JSON result as the action returned it. The host
    * adds the app, so `action` is the name alone, such as `document-attach`.
    */
   run: <TResult = unknown>(action: string, input: unknown, options?: ActionRunOptions) => Promise<TResult>

@@ -306,8 +306,10 @@ yet; attach its handle through the workflow that owns the record.
 
 ### Space actions
 
-`simple.actions.run()` runs an action of the Space's own app on the server, as
-the signed-in user, and returns the action's JSON result. The host makes the
+`simple.actions.run()` runs an action of the Space's own app where the app
+declares it runs, as the signed-in user, and returns the action's JSON result:
+a `server` action on the server, a `client` or `both` action in the browser, in
+the platform page's own workers. The host makes the
 call, so the Space makes no network request of its own: it names no domain,
 needs no `network` permission to reach the platform, and handles no sign-in.
 Actions work in standalone and record Spaces alike.
@@ -335,7 +337,7 @@ runs out, the host stops waiting and the call rejects with `timeout`. If the
 host's answer never comes, as when the host has closed its end of the
 connection, the SDK stops waiting 5,000 ms after the timeout and rejects with
 `timeout` itself, so a call always ends. Either way the action may still
-complete on the server, so a caller whose action writes should re-read before
+complete, so a caller whose action writes should re-read before
 offering to run it again.
 
 A request the SDK can tell is malformed is refused before it is sent, with
@@ -357,7 +359,9 @@ A call that does not return a result rejects with `SpaceProtocolError`, and its
 
 For `action_failed`, `details` is an `ActionFailedDetails`: `status` is the
 HTTP status the server answered with, and `body` is the response body as
-parsed JSON, or `null` when it was not JSON. Neither the host nor the SDK
+parsed JSON, or `null` when it was not JSON. An action the host ran in the
+browser carries 200 and the same `{ error: [...] }` body shape the server
+gives for the same failure. Neither the host nor the SDK
 changes the body, so an action's own error envelope is read from it:
 
 ```typescript
