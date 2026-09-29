@@ -233,6 +233,108 @@ test('leaves the range of the timeout to the host', async () => {
   assert.equal(error.message, message)
 })
 
+// A host that never answers, as one whose port has closed, records the signal
+// the client hands it so a test can see the client give up on the request.
+function createSilentTransport() {
+  const signals = []
+
+  return {
+    request: (_request, _transfer, signal) => {
+      signals.push(signal)
+      return new Promise(() => {})
+    },
+    signals,
+  }
+}
+
+function track(promise) {
+  const outcome = {}
+  promise.then(
+    (result) => {
+      outcome.result = result
+    },
+    (error) => {
+      outcome.error = error
+    },
+  )
+  return outcome
+}
+
+function flush() {
+  return new Promise(resolve => setImmediate(resolve))
+}
+
+test('stops waiting for a host that never answers a little after the timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const transport = createSilentTransport()
+  const simple = createSimpleClient({ actionTransport: transport })
+
+  const outcome = track(simple.actions.run('document-attach', {}, { timeoutMs: 120_000 }))
+
+  // The host answers `timeout` itself at 120 s; the client waits 5 s more.
+  t.mock.timers.tick(124_999)
+  await flush()
+  assert.deepEqual(outcome, {})
+  assert.equal(transport.signals[0].aborted, false)
+
+  t.mock.timers.tick(1)
+  await flush()
+  assert.ok(isProtocolError('timeout')(outcome.error))
+  assert.equal(outcome.error.message, 'The Space host did not answer action.run within 125000 milliseconds, so its outcome is unknown.')
+  // The transport is told to forget the request, so it is not kept forever.
+  assert.equal(transport.signals[0].aborted, true)
+  assert.equal(transport.signals[0].reason, outcome.error)
+})
+
+test('waits on the host\'s default timeout when the caller gives none', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const simple = createSimpleClient({ actionTransport: createSilentTransport() })
+
+  const outcome = track(simple.actions.run('document-attach', {}))
+
+  t.mock.timers.tick(64_999)
+  await flush()
+  assert.deepEqual(outcome, {})
+
+  t.mock.timers.tick(1)
+  await flush()
+  assert.ok(isProtocolError('timeout')(outcome.error))
+})
+
+test('stops its own wait once the host answers', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const signals = []
+  const simple = createSimpleClient({
+    actionTransport: {
+      request: async (request, _transfer, signal) => {
+        signals.push(signal)
+        return succeed(attached)(request)
+      },
+    },
+  })
+
+  assert.deepEqual(await simple.actions.run('document-attach', {}, { timeoutMs: 1000 }), attached)
+
+  t.mock.timers.tick(1_200_000)
+  assert.equal(signals[0].aborted, false)
+})
+
+test('leaves a timeout no timer can hold for the host to refuse', async () => {
+  const message = 'timeoutMs must be between 1000 and 1200000.'
+  // The host's refusal takes a moment to arrive, as it does over a port.
+  const transport = {
+    request: request => new Promise(resolve => setTimeout(() => resolve(refuse({ code: 'invalid_request', message })(request)), 20)),
+  }
+  const simple = createSimpleClient({ actionTransport: transport })
+
+  for (const timeoutMs of [-60_000, 1e12]) {
+    const error = await simple.actions.run('document-attach', {}, { timeoutMs }).catch(caught => caught)
+
+    assert.ok(isProtocolError('invalid_request')(error), `timeoutMs ${timeoutMs} answered ${error?.code}`)
+    assert.equal(error.message, message)
+  }
+})
+
 // Synthetic failures in the shapes the logic endpoint answers with.
 const actionFailures = {
   'a 200 that carries an error result': {

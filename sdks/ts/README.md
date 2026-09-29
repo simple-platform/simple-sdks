@@ -331,9 +331,12 @@ result as it returned it, unchecked: `TResult` is the caller's description of
 it.
 
 `timeoutMs` defaults to 60,000, and the host accepts 1,000 to 1,200,000. When it
-runs out, the host stops waiting and the call rejects with `timeout`. The
-action may still complete on the server, so a caller whose action writes
-should re-read before offering to run it again.
+runs out, the host stops waiting and the call rejects with `timeout`. If the
+host's answer never comes, as when the host has closed its end of the
+connection, the SDK stops waiting 5,000 ms after the timeout and rejects with
+`timeout` itself, so a call always ends. Either way the action may still
+complete on the server, so a caller whose action writes should re-read before
+offering to run it again.
 
 A request the SDK can tell is malformed is refused before it is sent, with
 `SpaceProtocolError` code `invalid_request`: a name outside that pattern, an
@@ -348,7 +351,7 @@ A call that does not return a result rejects with `SpaceProtocolError`, and its
 | `invalid_request`      | The name, input, or options are malformed, or `timeoutMs` is out of range | None               |
 | `unsupported_protocol` | The host does not support the protocol version                            | None               |
 | `unavailable`          | The host did not negotiate actions, or cannot run them                    | None               |
-| `timeout`              | The action did not answer within `timeoutMs`                              | None               |
+| `timeout`              | The action did not answer within `timeoutMs`, or the host did not answer  | None               |
 | `action_failed`        | The server answered with a status other than 2xx, or with an error result | `{ status, body }` |
 | `network`              | The host could not make the request                                       | None               |
 

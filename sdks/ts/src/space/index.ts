@@ -204,11 +204,19 @@ function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTranspor
         })
       })
     },
-    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = []) => {
-      return new Promise<ProtocolResponse<TResult>>((resolve) => {
+    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
+      return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
+        const abort = () => {
+          pending.delete(request.requestId)
+          reject(signal?.reason)
+        }
         pending.set(request.requestId, {
-          resolve: response => resolve(response as ProtocolResponse<TResult>),
+          resolve: (response) => {
+            signal?.removeEventListener('abort', abort)
+            resolve(response as ProtocolResponse<TResult>)
+          },
         })
+        signal?.addEventListener('abort', abort, { once: true })
         port.postMessage({ request, type: 'SPACE_PROTOCOL_REQUEST' }, transfer)
       })
     },

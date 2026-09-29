@@ -317,9 +317,10 @@ export interface SpaceTransport {
   /**
    * `transfer` names buffers inside the request whose ownership moves to the
    * host with it instead of being copied. A transport that cannot transfer
-   * sends them by value.
+   * sends them by value. When `signal` aborts, the transport forgets the
+   * request, so a late answer is dropped, and rejects with the signal's reason.
    */
-  request: <TResult>(request: ProtocolRequest, transfer?: ArrayBuffer[]) => Promise<ProtocolResponse<TResult>>
+  request: <TResult>(request: ProtocolRequest, transfer?: ArrayBuffer[], signal?: AbortSignal) => Promise<ProtocolResponse<TResult>>
 }
 
 export interface SimpleClientOptions {
@@ -451,13 +452,14 @@ function createActionsClient(
         })
       }
 
+      const payload = readActionRunPayload(action, input, options)
       const request: ActionRunRequest = {
         operation: 'action.run',
-        payload: readActionRunPayload(action, input, options),
+        payload,
         protocol: PROTOCOL_VERSION,
         requestId: nextRequestId(),
       }
-      const response = await transport.request<TResult>(request)
+      const response = await requestWithin<TResult>(transport, request, actionWaitMs(payload.timeoutMs))
       // Any JSON value is a valid result, so it is returned as the host sent it.
       return readResponse(response, request)
     },
@@ -700,6 +702,55 @@ function readTaskReplyPayload(reply: TaskReplyInput): TaskReplyInput {
 
 /** An action's name within its app, as the host checks it before adding the app. */
 const ACTION_NAME = /^[a-z0-9][a-z0-9-]*$/
+
+/** The host's timeout for an action run that names none. */
+const DEFAULT_ACTION_TIMEOUT_MS = 60_000
+/** How much longer than the host's timeout the client waits for its answer. */
+const ACTION_ANSWER_GRACE_MS = 5_000
+/** The longest delay `setTimeout` keeps; it runs a longer one at once. */
+const MAX_TIMER_MS = 2_147_483_647
+
+/**
+ * How long a run waits for the host. The host answers `timeout` itself at the
+ * timeout, so this wait only ends a run whose answer never comes, as when the
+ * host has closed its port. A timeout the host refuses is answered at once, so
+ * it only needs to give a delay a timer can hold.
+ */
+function actionWaitMs(timeoutMs: number | undefined): number {
+  const hostTimeoutMs = Math.max(timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS, 0)
+  return Math.min(hostTimeoutMs + ACTION_ANSWER_GRACE_MS, MAX_TIMER_MS)
+}
+
+/**
+ * Sends a request and waits at most `waitMs` for its answer. After that it
+ * rejects with `timeout` and aborts the transport's wait, so the request is
+ * not kept pending on a port the host may no longer read.
+ */
+async function requestWithin<TResult>(
+  transport: SpaceTransport,
+  request: ProtocolRequest,
+  waitMs: number,
+): Promise<ProtocolResponse<TResult>> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const error = new SpaceProtocolError({
+        code: 'timeout',
+        message: `The Space host did not answer ${request.operation} within ${waitMs} milliseconds, so its outcome is unknown.`,
+      })
+      controller.abort(error)
+      reject(error)
+    }, waitMs)
+  })
+
+  try {
+    return await Promise.race([transport.request<TResult>(request, undefined, controller.signal), expired])
+  }
+  finally {
+    clearTimeout(timer)
+  }
+}
 
 /**
  * Checks an action run before it is sent. The timeout's range is the host's to

@@ -423,6 +423,27 @@ test('runs an action over the MessagePort when the host negotiates the action pr
 // replaced below.
 const failedActionResponse = '{"type":"SPACE_PROTOCOL_RESPONSE","response":{"ok":false,"protocol":1,"requestId":"request-1","error":{"code":"action_failed","message":"The action failed.","details":{"status":422,"body":{"error":{"version":1,"code":"DOCUMENT_NOT_FOUND","category":"validation","message":"The document does not exist.","retryable":false,"pointers":["/document_id"],"details":null,"hint":"Choose a document that is still in the job.","repair":null,"execution_id":"EXE000001"}}}}}}'
 
+test('ends an action with timeout when the host has closed its port', { timeout: 5000 }, async (t) => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+
+  try {
+    const simple = await connectWithHost(spacePort, { kind: 'standalone' }, { action: 1 })
+    // The host tore its end down, as it does when its Space view rebuilds the
+    // connection, so the request below is posted into a port nobody reads.
+    hostPort.close()
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+
+    const ran = simple.actions.run('document-attach', { document_id: 'DOC000001' }, { timeoutMs: 1000 })
+    t.mock.timers.tick(6000)
+
+    await assert.rejects(ran, error => error instanceof SpaceProtocolError && error.code === 'timeout')
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
 test('delivers a failed action over a real MessagePort with its status and body unchanged', { timeout: 5000 }, async () => {
   const { port1: spacePort, port2: hostPort } = new MessageChannel()
   hostPort.onmessage = ({ data }) => {
