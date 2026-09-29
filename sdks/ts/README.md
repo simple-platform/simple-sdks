@@ -31,16 +31,16 @@ simple.Handle(async (request) => {
 
 The TypeScript SDK is organized into focused modules for different capabilities:
 
-| Module       | Import                         | Purpose                                        |
-| ------------ | ------------------------------ | ---------------------------------------------- |
-| **Core**     | `@simpleplatform/sdk`          | Request handling and action execution          |
-| **AI**       | `@simpleplatform/sdk/ai`       | AI operations (extract, summarize, transcribe) |
-| **GraphQL**  | `@simpleplatform/sdk/graphql`  | Database queries and mutations                 |
-| **HTTP**     | `@simpleplatform/sdk/http`     | External HTTP requests                         |
-| **Security** | `@simpleplatform/sdk/security` | Security policy authoring                      |
-| **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                 |
-| **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes |
-| **Space**    | `@simpleplatform/sdk/space`    | Records, data, tasks, and documents in a Space |
+| Module       | Import                         | Purpose                                                 |
+| ------------ | ------------------------------ | ------------------------------------------------------- |
+| **Core**     | `@simpleplatform/sdk`          | Request handling and action execution                   |
+| **AI**       | `@simpleplatform/sdk/ai`       | AI operations (extract, summarize, transcribe)          |
+| **GraphQL**  | `@simpleplatform/sdk/graphql`  | Database queries and mutations                          |
+| **HTTP**     | `@simpleplatform/sdk/http`     | External HTTP requests                                  |
+| **Security** | `@simpleplatform/sdk/security` | Security policy authoring                               |
+| **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                          |
+| **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes          |
+| **Space**    | `@simpleplatform/sdk/space`    | Records, data, tasks, documents, and actions in a Space |
 
 ## Embedded Spaces
 
@@ -303,6 +303,76 @@ The handle is `{ file_hash, filename, mime_type, size, storage_path, scope? }`.
 `name` defaults to a `File`'s own name, and `mimeType` to the file's type, then
 to `application/octet-stream`. A staged document is not attached to anything
 yet; attach its handle through the workflow that owns the record.
+
+### Space actions
+
+`simple.actions.run()` runs an action of the Space's own app on the server, as
+the signed-in user, and returns the action's JSON result. The host makes the
+call, so the Space makes no network request of its own: it names no domain,
+needs no `network` permission to reach the platform, and handles no sign-in.
+Actions work in standalone and record Spaces alike.
+
+```typescript
+interface AttachResult { data: { document_id: string, status: string } }
+
+const result = await simple.actions.run<AttachResult>(
+  'document-attach',
+  { document_id: 'DOC000001', job_id: 'JOB000007' },
+  { timeoutMs: 120_000 }, // Optional: how long the host waits, in milliseconds.
+)
+```
+
+`action` is the action's name alone, such as `document-attach`: lowercase
+letters, digits, and hyphens, starting with a letter or a digit. The host adds
+the Space's own app, so a Space runs only its own app's actions and never names
+an app. `input` is any JSON value and reaches the action as its payload; pass
+`{}` or `null` when the action takes none. The result is the action's JSON
+result as it returned it, unchecked: `TResult` is the caller's description of
+it.
+
+`timeoutMs` defaults to 60,000, and the host accepts 1,000 to 1,200,000. When it
+runs out, the host stops waiting and the call rejects with `timeout`. The
+action may still complete on the server, so a caller whose action writes
+should re-read before offering to run it again.
+
+A request the SDK can tell is malformed is refused before it is sent, with
+`SpaceProtocolError` code `invalid_request`: a name outside that pattern, an
+input that is not a JSON value, or a `timeoutMs` that is not a number. The host
+checks the range of `timeoutMs`.
+
+A call that does not return a result rejects with `SpaceProtocolError`, and its
+`code` says why:
+
+| `code`                 | When                                                                      | `details`          |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------ |
+| `invalid_request`      | The name, input, or options are malformed, or `timeoutMs` is out of range | None               |
+| `unsupported_protocol` | The host does not support the protocol version                            | None               |
+| `unavailable`          | The host did not negotiate actions, or cannot run them                    | None               |
+| `timeout`              | The action did not answer within `timeoutMs`                              | None               |
+| `action_failed`        | The server answered with a status other than 2xx, or with an error result | `{ status, body }` |
+| `network`              | The host could not make the request                                       | None               |
+
+For `action_failed`, `details` is an `ActionFailedDetails`: `status` is the
+HTTP status the server answered with, and `body` is the response body as
+parsed JSON, or `null` when it was not JSON. Neither the host nor the SDK
+changes the body, so an action's own error envelope is read from it:
+
+```typescript
+import type { ActionFailedDetails } from '@simpleplatform/sdk/space'
+import { SpaceProtocolError } from '@simpleplatform/sdk/space'
+
+try {
+  await simple.actions.run('document-attach', { document_id: 'DOC000001' })
+}
+catch (error) {
+  if (!(error instanceof SpaceProtocolError) || error.code !== 'action_failed')
+    throw error
+
+  const { body, status } = error.details as ActionFailedDetails
+  // body is the action's own response, such as its error envelope.
+  console.warn(status, body)
+}
+```
 
 ---
 
