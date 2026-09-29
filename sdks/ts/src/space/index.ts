@@ -20,6 +20,8 @@ export {
   SpaceProtocolError,
 }
 export type {
+  ActionFailedDetails,
+  ActionRunOptions,
   DocumentStageInput,
   DocumentStageResult,
   GraphQLVariables,
@@ -32,6 +34,7 @@ export type {
   RecordSnapshot,
   RecordSubmitResult,
   RecordUpdateResult,
+  SimpleActionsClient,
   SimpleClient,
   SimpleDataClient,
   SimpleDocumentsClient,
@@ -78,7 +81,8 @@ export interface ConnectSpaceOptions {
  * Connects any embedded Space to its parent through the dedicated MessagePort
  * handshake. Each protocol capability is offered in `SPACE_READY` and becomes
  * available only when the host negotiates it in `INIT_RPC`: record operations
- * for a configured record view, and task and document operations in any Space.
+ * for a configured record view, and task, document, and action operations in
+ * any Space.
  */
 export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
   if (!window) {
@@ -114,6 +118,7 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
       const transport = createMessagePortTransport(port)
       const protocols = event.data.protocols
       resolve(createSimpleClient({
+        actionTransport: protocols?.action === PROTOCOL_VERSION ? transport : undefined,
         context: event.data.context,
         dataTransport: transport,
         documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
@@ -125,6 +130,7 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
     window.addEventListener('message', onMessage)
     window.parent.postMessage({
       protocols: {
+        action: [PROTOCOL_VERSION],
         document: [PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
         task: [PROTOCOL_VERSION],
@@ -198,11 +204,19 @@ function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTranspor
         })
       })
     },
-    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = []) => {
-      return new Promise<ProtocolResponse<TResult>>((resolve) => {
+    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
+      return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
+        const abort = () => {
+          pending.delete(request.requestId)
+          reject(signal?.reason)
+        }
         pending.set(request.requestId, {
-          resolve: response => resolve(response as ProtocolResponse<TResult>),
+          resolve: (response) => {
+            signal?.removeEventListener('abort', abort)
+            resolve(response as ProtocolResponse<TResult>)
+          },
         })
+        signal?.addEventListener('abort', abort, { once: true })
         port.postMessage({ request, type: 'SPACE_PROTOCOL_REQUEST' }, transfer)
       })
     },
@@ -243,7 +257,7 @@ function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
 
 function isInitializationMessage(value: unknown): value is {
   context?: unknown
-  protocols?: { document?: unknown, record?: unknown, task?: unknown }
+  protocols?: { action?: unknown, document?: unknown, record?: unknown, task?: unknown }
   type: 'INIT_RPC'
 } {
   if (!value || typeof value !== 'object')

@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. `simple.tasks.create()` / `simple.tasks.reply()` and `simple.documents.stage()` are implemented in the SDK and wait on the host to negotiate and answer the task and document protocols. List context and public secondary-record APIs are deferred from this release.
-- **Last updated:** 2026-09-24
+- **Status:** The foundation SDK is implemented through `simple.context`, `simple.records.current()`, `record.update()`, `record.submit()`, and `simple.data.query()` / `simple.data.mutate()`. Its browser bootstrap works in standalone and record contexts; record commands explain when no route-owned record exists. `simple.tasks.create()` / `simple.tasks.reply()` and `simple.documents.stage()` are implemented in the SDK and wait on the host to negotiate and answer the task and document protocols. `simple.actions.run()` is implemented in the SDK and waits on the host to negotiate and answer the action protocol. List context and public secondary-record APIs are deferred from this release.
+- **Last updated:** 2026-09-29
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces and its future portal-compatible transport boundary.
 - **Out of scope:** The host record runtime, record-page layout, Space selection, customer-Space migration, React presentation components, and public-portal server implementation.
 
@@ -58,7 +58,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
-- Each protocol capability has its own key in that handshake. The Space offers `protocols: { document: [1], record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants in `INIT_RPC`. As agreed with the host, it grants `task: 1` and `document: 1` to every Space, record or standalone, and adds `record: 1` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository). A host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key.
+- Each protocol capability has its own key in that handshake. The Space offers `protocols: { document: [1], record: [1], task: [1] }` in `SPACE_READY`; the host answers the keys it grants in `INIT_RPC`. As agreed with the host, it grants `task: 1` and `document: 1` to every Space, record or standalone, and adds `record: 1` only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository). A host with no protocol handler drops a `SPACE_PROTOCOL_REQUEST` it does not recognise, so the SDK sends an operation only for a negotiated key. The Space also offers `action: [1]`; a host that does not answer `action: 1` leaves `simple.actions.run()` rejecting with `unavailable`.
+- Before `action.run`, Spaces ran their own app's actions with a `fetch` of their own to `https://triggers.<parent host>/logic`. That needs the app to name a domain in its Space network permission, which the host turns into the iframe's CSP `connect-src` (`apps/platform_web/components/space-iframe.tsx`), so a Space broke on any other domain, and each Space resolved the endpoint itself.
 - Before `document.stage`, Spaces uploaded files through an ad hoc `DOCUMENT_CREATE_HANDLE_REQUEST` message that the host answers outside the protocol (`apps/platform_web/components/space-iframe.tsx`), and each Space carried its own client for it.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
@@ -74,12 +75,13 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 │   ├── simple.records           behavior-aware form records
 │   ├── simple.data              flexible authorized application data
 │   ├── simple.tasks             tasks created from a task type, and replies
-│   └── simple.documents         staged documents, bytes transferred to the host
+│   ├── simple.documents         staged documents, bytes transferred to the host
+│   └── simple.actions           the Space's own app's actions, run by the host
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
 
 Embedded Space
 └── BrowserSpaceTransport
-    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, task, and document commands
+    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, task, document, and action commands
     └── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
 
 Future public portal
@@ -241,10 +243,31 @@ const { handle } = await simple.documents.stage({ file }) // File or Blob; name 
 
 The wire operation is `document.stage`, with payload `{ bytes, name, mimeType }` and result `{ handle: { file_hash, filename, mime_type, size, storage_path, scope? } }`. `bytes` is an `ArrayBuffer` named in the request's transfer list, so it is detached in the Space once sent.
 
+### Actions
+
+```ts
+const result = await simple.actions.run<AttachResult>(
+  'document-attach', // the name alone; the host adds the Space's own app
+  { document_id: 'DOC000001' }, // any JSON value
+  { timeoutMs: 120_000 }, // optional
+)
+```
+
+The wire operation is `action.run`, with payload `{ action, input, timeoutMs? }` and result the action's JSON result, as returned. It is negotiated by its own `protocols.action` key.
+
+The action contract agreed with the host:
+
+- `action` is the action's name within the Space's own app, matching `/^[a-z0-9][a-z0-9-]*$/`, so it holds no `/`. The host binds the app id of the iframe's own app and runs `{ logic: "<app id>/<action>", payload: input }` through the platform's server-logic path with the user's session. The Space never names an app, so it can run only its own app's actions. The SDK refuses a name outside the pattern before sending, with `invalid_request`.
+- `input` is any JSON value. The SDK refuses anything else, `undefined` included, with `invalid_request`.
+- `timeoutMs` is optional. The host uses 60,000 when it is absent, accepts 1,000 to 1,200,000, refuses anything else with `invalid_request`, and aborts the server call at the timeout. The SDK checks only that it is a finite number, and sends it only when the caller gives one. It waits for the host's answer until 5,000 ms after the timeout (the default when none is given), then rejects with `timeout` and aborts the transport's wait, so a run whose answer never comes still ends and is not kept pending.
+- The host answers `invalid_request`, `unsupported_protocol`, `unavailable` (it cannot run actions), `timeout` (it aborted at `timeoutMs`), `action_failed` (the server answered with a status other than 2xx or with an error result), or `network` (the request could not be made). For `action_failed`, `details` is `{ status, body }`: the HTTP status and the response body as parsed JSON, or `null` when it was not JSON. The exported `ActionFailedDetails` types it.
+
+`test/space-action.test.mjs` checks the envelope, the name, input, and option checks, that each host answer reaches `SpaceProtocolError` with its code, message, and details unchanged, and when the SDK's own wait ends. `test/space-browser.test.mjs` sends an `action_failed` response verbatim over a real `MessageChannel`, and ends a run with `timeout` after the host closes its port.
+
 ### Errors and lifecycle
 
-- `SpaceProtocolError` represents malformed, invalid, unsupported, unavailable, denied, or closed record, task, and document protocol operations.
-- `SpaceProtocolError.details` is whatever the host sent, unchanged. For `task_rejected` it is the task channel's error, `{ code, category, message, pointers, details }` (see _Task refusals_).
+- `SpaceProtocolError` represents malformed, invalid, unsupported, unavailable, denied, or closed record, task, document, and action protocol operations.
+- `SpaceProtocolError.details` is whatever the host sent, unchanged. For `task_rejected` it is the task channel's error, `{ code, category, message, pointers, details }` (see _Task refusals_). For `action_failed` it is `{ status, body }` (see _Actions_).
 - `SpaceDataError` represents unavailable/closed data transport or a host GraphQL failure.
 - The primary record belongs to the route and has no public close method.
 - Internal MessagePort teardown is implementation cleanup. Public `record.close()` begins only with secondary-record support.
@@ -261,6 +284,7 @@ simple-sdks/
     ├── test/space-record.test.mjs
     ├── test/space-task.test.mjs
     ├── test/space-document.test.mjs
+    ├── test/space-action.test.mjs
     ├── test/space-browser.test.mjs
     ├── package.json             explicit ./space export
     └── README.md                public usage guidance
@@ -272,9 +296,10 @@ simple-sdks/
 2. **Primary record update and submit — complete.** Use host-owned behavior and persistence sequencing; validate field/form feedback and header parity.
 3. **Unify package and flexible data access — complete.** Publish the `@simpleplatform/sdk/space` subpaths, provide `simple.data`, and prove the deployed fixture can make a safe read without regressing the record API.
 4. **Tasks and staged documents — SDK side complete.** Negotiate `protocols.task` and `protocols.document`, send `task.create` / `task.reply` / `document.stage`, and contract-test envelopes, input checks, byte transfer, and result validation. The host side is a separate platform change.
-5. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
-6. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
-7. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
+5. **Actions run by the host — SDK side complete.** Negotiate `protocols.action`, send `action.run` with the action's name alone, and contract-test the envelope, the name, input, and timeout checks, and the pass-through of every host answer. The host side is a separate platform change.
+6. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
+7. **Production bridge migration — not started.** Inventory each B&V Space capability, migrate in bounded groups to the SDK, browser-validate each group, and only then consider retiring copied bridge code.
+8. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -428,3 +453,16 @@ Every step ends with focused automated contract tests and a browser checkpoint b
 - **Reason:** The platform now keeps these three codes on the channel instead of folding them into `TASK_COMMAND_INVALID` (platform decision D-304) and sends the schema issues with them, so a Space can tell its user what to correct. The payload is already the channel's published contract; passing it through leaves one definition of it, in the platform, rather than an SDK copy that could drift. `error.code` stays the transport-level answer, so `task_rejected`, `timeout`, and `runtime_error` remain distinguishable without reading `details`.
 - **Boundary:** No SDK code changes; `readResponse()` already passes the host's `error` through. Tests now pin the exact payloads, over the core client and over a real `MessageChannel`. The SDK still checks no input limits of its own and adds no authorization check. The `required` issue's missing member is an open platform question, not an SDK one.
 - **Supersedes:** The earlier contract lines, which placed `truncated` at `details.truncated` and did not say where a channel code arrives. `truncated` is at `details.details.truncated`, and the channel code is at `details.code` under `task_rejected`.
+
+### 2026-09-29 — Run the Space's own actions through the host
+
+- **Decision:** Add `simple.actions.run(action, input, options?)` as the `action.run` operation at protocol version 1, negotiated by its own `protocols.action` key. The payload is `{ action, input, timeoutMs? }`. The host binds the Space's own app to `action` and runs it through the platform's server-logic path with the user's session; the result is the action's JSON result as returned. A failure keeps the host's code, and `action_failed` carries `{ status, body }` in `details`, typed by the exported `ActionFailedDetails`.
+- **Reason:** A Space ran its app's actions with its own `fetch` to `https://triggers.<parent host>/logic`. That needs the app to name a domain in its Space network permission, which the host turns into the iframe's CSP `connect-src`, so a Space broke on any other domain (a local instance was blocked), and each Space resolved the endpoint and relied on the session cookie itself. With the host making the call, a Space makes no direct network request, names no domain, and needs no network permission to reach the platform. The host binds the app, rather than accepting one from the Space, so a Space reaches only its own app's actions. `action_failed` keeps the status and the parsed body because a Space reads an action's structured error envelope from the body, and `timeout` stays a code of its own because a timed-out action may still have completed.
+- **Boundary:** The change is additive: the envelope version stays 1, and a host that reads only the other keys ignores `action`. The SDK checks the name pattern, that `input` is a JSON value, and that `timeoutMs` is a number. The timeout's range, the app binding, and authorization stay with the host and server, as the task input limits do, so the SDK keeps no second copy of them that could drift. The SDK sets no timer of its own, since the host aborts at `timeoutMs` and answers `timeout`, and it does not validate the result, since any JSON value is one. Only the TypeScript SDK has a Space client, so the Rust and Go SDKs have nothing to match. The host side is a separate platform change.
+
+### 2026-09-29 — End an action run whose answer never comes
+
+- **Decision:** `simple.actions.run()` waits for the host's answer until 5,000 ms after the run's timeout, `timeoutMs` or the host's default of 60,000, then rejects with `SpaceProtocolError` code `timeout` and aborts the transport's wait. `SpaceTransport.request()` gains an optional `AbortSignal`; the MessagePort transport forgets the request when it aborts, so a late answer is dropped. The wait is floored at 5,000 ms and capped at the longest delay a timer keeps, so a timeout the host refuses still gets the host's `invalid_request`.
+- **Reason:** The host closes its end of the port whenever its Space view rebuilds the connection, as on a changed record session, context, or developer mode, and the Space does not handshake again, so a run posted afterwards was never answered and waited forever, leaving an upload or confirm spinner up for good. Before `action.run`, a Space's own `fetch` always ended at its timeout; an action run has to end as surely.
+- **Boundary:** The host still owns the timeout: it answers `timeout` at `timeoutMs`, and the SDK's wait only ends a run whose answer never comes. The SDK keeps the host's default to arm the wait, not to check or send it; `timeoutMs` is still sent only when given, and its range is still the host's. Records, tasks, and documents keep their unbounded wait; they are not changed here.
+- **Supersedes:** The 2026-09-29 boundary line that the SDK sets no timer of its own for an action run.

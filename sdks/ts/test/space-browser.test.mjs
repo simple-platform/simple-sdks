@@ -163,7 +163,7 @@ test('offers every protocol capability at version 1 during the existing Space ha
   })
 
   assert.deepEqual(spaceWindow.parentMessages, [{
-    message: { protocols: { document: [1], record: [1], task: [1] }, type: 'SPACE_READY' },
+    message: { protocols: { action: [1], document: [1], record: [1], task: [1] }, type: 'SPACE_READY' },
     targetOrigin: 'https://acme.simple.lcl',
   }])
 
@@ -302,7 +302,7 @@ test('delivers a refused task create over a real MessagePort with its details un
   }
 })
 
-test('keeps tasks and documents unavailable, and sends nothing, when the host negotiates only the record protocol', async () => {
+test('keeps tasks, documents, and actions unavailable, and sends nothing, when the host negotiates only the record protocol', { timeout: 5000 }, async () => {
   const port = new FakePort()
   const simple = await connectWithHost(port, recordContext, { record: 1 })
 
@@ -312,6 +312,10 @@ test('keeps tasks and documents unavailable, and sends nothing, when the host ne
   )
   await assert.rejects(
     () => simple.documents.stage({ file: new File(['x'], 'x.pdf') }),
+    error => error instanceof SpaceProtocolError && error.code === 'unavailable',
+  )
+  await assert.rejects(
+    () => simple.actions.run('document-attach', {}),
     error => error instanceof SpaceProtocolError && error.code === 'unavailable',
   )
   assert.deepEqual(port.sent, [])
@@ -376,6 +380,87 @@ test('transfers the staged bytes to the host instead of copying them', { timeout
     assert.deepEqual(result, { handle: stagedHandle })
     assert.equal(posted[0].request.payload.bytes.byteLength, 0, 'the Space no longer owns the bytes')
     assert.equal(new TextDecoder().decode(received[0].request.payload.bytes), 'contract packet')
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
+test('runs an action over the MessagePort when the host negotiates the action protocol', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, { kind: 'standalone' }, { action: 1 })
+
+  const ran = simple.actions.run('document-attach', { document_id: 'DOC000001' }, { timeoutMs: 120_000 })
+
+  assert.deepEqual(port.sent, [{
+    request: {
+      operation: 'action.run',
+      payload: { action: 'document-attach', input: { document_id: 'DOC000001' }, timeoutMs: 120_000 },
+      protocol: 1,
+      requestId: port.sent[0].request.requestId,
+    },
+    type: 'SPACE_PROTOCOL_REQUEST',
+  }])
+  assert.deepEqual(port.transfers[0], [])
+
+  port.emit({
+    response: {
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: port.sent[0].request.requestId,
+      result: { data: { document_id: 'DOC000001', status: 'attached' } },
+    },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  })
+
+  assert.deepEqual(await ran, { data: { document_id: 'DOC000001', status: 'attached' } })
+  await assert.rejects(() => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
+})
+
+// A failed action as the host posts it: the logic endpoint's status and its
+// parsed body, carrying the action's error envelope. Only the requestId is
+// replaced below.
+const failedActionResponse = '{"type":"SPACE_PROTOCOL_RESPONSE","response":{"ok":false,"protocol":1,"requestId":"request-1","error":{"code":"action_failed","message":"The action failed.","details":{"status":422,"body":{"error":{"version":1,"code":"DOCUMENT_NOT_FOUND","category":"validation","message":"The document does not exist.","retryable":false,"pointers":["/document_id"],"details":null,"hint":"Choose a document that is still in the job.","repair":null,"execution_id":"EXE000001"}}}}}}'
+
+test('ends an action with timeout when the host has closed its port', { timeout: 5000 }, async (t) => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+
+  try {
+    const simple = await connectWithHost(spacePort, { kind: 'standalone' }, { action: 1 })
+    // The host tore its end down, as it does when its Space view rebuilds the
+    // connection, so the request below is posted into a port nobody reads.
+    hostPort.close()
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+
+    const ran = simple.actions.run('document-attach', { document_id: 'DOC000001' }, { timeoutMs: 1000 })
+    t.mock.timers.tick(6000)
+
+    await assert.rejects(ran, error => error instanceof SpaceProtocolError && error.code === 'timeout')
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
+test('delivers a failed action over a real MessagePort with its status and body unchanged', { timeout: 5000 }, async () => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+  hostPort.onmessage = ({ data }) => {
+    const message = JSON.parse(failedActionResponse)
+    message.response.requestId = data.request.requestId
+    hostPort.postMessage(message)
+  }
+
+  try {
+    const simple = await connectWithHost(spacePort, { kind: 'standalone' }, { action: 1 })
+    const error = await simple.actions.run('document-attach', { document_id: 'DOC000009' }).catch(caught => caught)
+
+    const { error: sent } = JSON.parse(failedActionResponse).response
+    assert.ok(error instanceof SpaceProtocolError)
+    assert.equal(error.code, 'action_failed')
+    assert.equal(error.message, 'The action failed.')
+    assert.deepEqual(error.details, sent.details)
   }
   finally {
     spacePort.close()
