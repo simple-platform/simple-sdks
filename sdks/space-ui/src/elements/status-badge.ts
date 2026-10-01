@@ -7,48 +7,48 @@ const STATUS_BADGE_TAG_NAME = 'simple-status-badge'
 const STATUS_BADGE_STYLES = `
   :host {
     display: inline-block;
-    font-family: var(--simple-font-family-sans);
+    font-family: var(--simple-status-badge-font-family);
   }
 
   [part="base"] {
     align-items: center;
-    background: var(--simple-color-surface-sunken);
-    border: 1px solid var(--simple-color-border-default);
-    border-radius: var(--simple-radius-round);
+    background: var(--simple-status-badge-neutral-background);
+    border: 1px solid var(--simple-status-badge-neutral-border);
+    border-radius: var(--simple-status-badge-radius);
     box-sizing: border-box;
-    color: var(--simple-color-text-secondary);
+    color: var(--simple-status-badge-neutral-foreground);
     display: inline-flex;
-    font-size: var(--simple-font-size-xs);
-    font-weight: var(--simple-font-weight-medium);
-    line-height: var(--simple-line-height-tight);
+    font-size: var(--simple-status-badge-font-size);
+    font-weight: var(--simple-status-badge-font-weight);
+    line-height: var(--simple-status-badge-line-height);
     max-width: 100%;
-    min-height: var(--simple-control-height-sm);
+    min-height: var(--simple-status-badge-min-height);
     overflow-wrap: anywhere;
-    padding: 0 var(--simple-space-2);
+    padding: 0 var(--simple-status-badge-padding-inline);
   }
 
   [part="base"][data-tone="info"] {
-    background: var(--simple-color-status-info-background);
-    border-color: var(--simple-color-status-info);
-    color: var(--simple-color-status-info-foreground);
+    background: var(--simple-status-badge-info-background);
+    border-color: var(--simple-status-badge-info-border);
+    color: var(--simple-status-badge-info-foreground);
   }
 
   [part="base"][data-tone="success"] {
-    background: var(--simple-color-status-success-background);
-    border-color: var(--simple-color-status-success);
-    color: var(--simple-color-status-success-foreground);
+    background: var(--simple-status-badge-success-background);
+    border-color: var(--simple-status-badge-success-border);
+    color: var(--simple-status-badge-success-foreground);
   }
 
   [part="base"][data-tone="warning"] {
-    background: var(--simple-color-status-warning-background);
-    border-color: var(--simple-color-status-warning);
-    color: var(--simple-color-status-warning-foreground);
+    background: var(--simple-status-badge-warning-background);
+    border-color: var(--simple-status-badge-warning-border);
+    color: var(--simple-status-badge-warning-foreground);
   }
 
   [part="base"][data-tone="danger"] {
-    background: var(--simple-color-status-danger-background);
-    border-color: var(--simple-color-status-danger);
-    color: var(--simple-color-status-danger-foreground);
+    background: var(--simple-status-badge-danger-background);
+    border-color: var(--simple-status-badge-danger-border);
+    color: var(--simple-status-badge-danger-foreground);
   }
 
   [part="description"] {

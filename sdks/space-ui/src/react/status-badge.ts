@@ -13,5 +13,5 @@ export interface StatusBadgeProps {
 
 /** React bridge for the canonical <simple-status-badge> Element. */
 export function StatusBadge({ description, label, tone }: StatusBadgeProps) {
-  return createElement('simple-status-badge', { description, label, tone })
+  return createElement('simple-status-badge', { description, label, tone }, label)
 }

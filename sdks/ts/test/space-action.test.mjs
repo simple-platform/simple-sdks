@@ -125,7 +125,7 @@ test('explains that actions are unavailable when the host did not negotiate them
   )
 })
 
-test('keeps actions independent of the record, task, and document protocols', async () => {
+test('keeps actions independent of the record and task protocols', async () => {
   const transport = createTransport(succeed(attached))
   const simple = createSimpleClient({
     actionTransport: transport,
@@ -134,7 +134,6 @@ test('keeps actions independent of the record, task, and document protocols', as
 
   await assert.rejects(() => simple.records.current(), isProtocolError('unavailable'))
   await assert.rejects(() => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }), isProtocolError('unavailable'))
-  await assert.rejects(() => simple.documents.stage({ file: new File(['x'], 'x.pdf') }), isProtocolError('unavailable'))
   assert.deepEqual(await simple.actions.run('document-attach', {}), attached)
 })
 

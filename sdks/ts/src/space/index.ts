@@ -1,30 +1,26 @@
-import type {
-  GraphQLVariables,
-  ProtocolRequest,
-  ProtocolResponse,
-  SimpleClient,
-  SpaceDataTransport,
-  SpaceTransport,
-} from './core.js'
-
+import type { BrowserSpaceTransport, MessagePortLike } from './browser-transport.js'
+import type { SimpleClient } from './core.js'
+import type { UiRuntimeDescriptor } from './record-form.js'
+import { createMessagePortTransport } from './browser-transport.js'
 import {
   createSimpleClient,
+  HEADER_ACTIONS_PROTOCOL_VERSION,
   isSpaceContext,
+  MANAGED_RECORD_FORM_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
   SpaceDataError,
   SpaceProtocolError,
+  TOAST_PROTOCOL_VERSION,
 } from './core.js'
+import { isObjectRecord } from './protocol.js'
 
-export {
-  SpaceDataError,
-  SpaceProtocolError,
-}
+export { SpaceDataError, SpaceProtocolError }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
-  DocumentStageInput,
-  DocumentStageResult,
   GraphQLVariables,
+  HeaderAction,
+  HeaderActionType,
   JsonObject,
   JsonValue,
   RecordErrorSnapshot,
@@ -37,26 +33,20 @@ export type {
   SimpleActionsClient,
   SimpleClient,
   SimpleDataClient,
-  SimpleDocumentsClient,
+  SimpleHeaderClient,
   SimpleTasksClient,
+  SimpleToastClient,
   SpaceContext,
   SpaceDataErrorPayload,
   SpaceProtocolErrorPayload,
-  StagedDocumentHandle,
+  SpaceToastOptions,
+  SpaceToastVariant,
   TaskCreateInput,
   TaskCreateResult,
   TaskReplyInput,
   TaskReplyResult,
   TaskStatus,
 } from './core.js'
-
-interface MessagePortLike {
-  onmessage: null | ((event: { data: unknown }) => void)
-  postMessage: (message: unknown, transfer?: ArrayBuffer[]) => void
-  start?: () => void
-}
-
-interface BrowserSpaceTransport extends SpaceDataTransport, SpaceTransport {}
 
 export interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
@@ -77,12 +67,21 @@ export interface ConnectSpaceOptions {
   window?: SpaceWindowLike
 }
 
+/** Connects the current Space to its Simple host. */
+export function connect(): Promise<SimpleClient> {
+  try {
+    return connectSpace({ targetOrigin: readHostOrigin() })
+  }
+  catch (error) {
+    return Promise.reject(error)
+  }
+}
+
 /**
- * Connects any embedded Space to its parent through the dedicated MessagePort
- * handshake. Each protocol capability is offered in `SPACE_READY` and becomes
- * available only when the host negotiates it in `INIT_RPC`: record operations
- * for a configured record view, and task, document, and action operations in
- * any Space.
+ * Connects an embedded Space through the host's dedicated MessagePort.
+ *
+ * @deprecated Use `connect()`. This lower-level bootstrap remains temporarily
+ * for existing embedded Space deployments.
  */
 export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
   if (!window) {
@@ -115,15 +114,20 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
         return
       }
 
-      const transport = createMessagePortTransport(port)
+      const transport: BrowserSpaceTransport = createMessagePortTransport(port, targetOrigin)
       const protocols = event.data.protocols
+      const hasRecord = protocols?.record === PROTOCOL_VERSION
       resolve(createSimpleClient({
         actionTransport: protocols?.action === PROTOCOL_VERSION ? transport : undefined,
+        capabilities: transport.capabilities,
         context: event.data.context,
         dataTransport: transport,
-        documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
+        formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
+        headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
+        runtime: event.data.runtime,
         taskTransport: protocols?.task === PROTOCOL_VERSION ? transport : undefined,
-        transport: protocols?.record === PROTOCOL_VERSION ? transport : undefined,
+        toastTransport: protocols?.toast === TOAST_PROTOCOL_VERSION ? transport : undefined,
+        transport: hasRecord ? transport : undefined,
       }))
     }
 
@@ -131,137 +135,62 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
     window.parent.postMessage({
       protocols: {
         action: [PROTOCOL_VERSION],
-        document: [PROTOCOL_VERSION],
+        form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
+        header: [HEADER_ACTIONS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
         task: [PROTOCOL_VERSION],
+        toast: [TOAST_PROTOCOL_VERSION],
       },
       type: 'SPACE_READY',
     }, targetOrigin)
   })
 }
 
-function createMessagePortTransport(port: MessagePortLike): BrowserSpaceTransport {
-  const pendingData = new Map<string, {
-    reject: (reason?: unknown) => void
-    resolve: (result: unknown) => void
-  }>()
-  const pending = new Map<string, {
-    resolve: (response: ProtocolResponse<unknown>) => void
-  }>()
-  port.onmessage = (event) => {
-    const message = event.data
-    if (!message || typeof message !== 'object')
-      return
-
-    const envelope = message as Partial<{
-      data: unknown
-      error: unknown
-      errors: unknown
-      id: unknown
-      response: ProtocolResponse<unknown>
-      type: string
-    }>
-    if (envelope.type === 'SPACE_PROTOCOL_RESPONSE' && envelope.response) {
-      const requestId = envelope.response.requestId
-      const request = pending.get(requestId)
-      if (!request)
-        return
-
-      pending.delete(requestId)
-      request.resolve(envelope.response)
-      return
-    }
-
-    if (envelope.type !== 'GRAPHQL_RESPONSE' || typeof envelope.id !== 'string')
-      return
-
-    const request = pendingData.get(envelope.id)
-    if (!request)
-      return
-
-    pendingData.delete(envelope.id)
-    if (envelope.error || envelope.errors) {
-      request.reject(new SpaceDataError({
-        code: 'request_failed',
-        details: envelope.errors,
-        message: readGraphQLErrorMessage(envelope.error, envelope.errors),
-      }))
-      return
-    }
-
-    request.resolve(envelope.data)
-  }
-  port.start?.()
-
-  return {
-    execute: <TResult>(document: string, variables?: GraphQLVariables) => {
-      return new Promise<TResult>((resolve, reject) => {
-        const id = createDataRequestId()
-        pendingData.set(id, { reject, resolve: result => resolve(result as TResult) })
-        port.postMessage({
-          payload: { id, query: document, variables },
-          type: 'GRAPHQL_REQUEST',
-        })
-      })
-    },
-    request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
-      return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
-        const abort = () => {
-          pending.delete(request.requestId)
-          reject(signal?.reason)
-        }
-        pending.set(request.requestId, {
-          resolve: (response) => {
-            signal?.removeEventListener('abort', abort)
-            resolve(response as ProtocolResponse<TResult>)
-          },
-        })
-        signal?.addEventListener('abort', abort, { once: true })
-        port.postMessage({ request, type: 'SPACE_PROTOCOL_REQUEST' }, transfer)
-      })
-    },
-  }
-}
-
-function createDataRequestId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-
-  return `space-data-${Math.random().toString(36).slice(2)}`
-}
-
-function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
-  if (typeof error === 'string' && error)
-    return error
-
-  if (Array.isArray(errors)) {
-    const firstError = errors[0]
-    if (firstError && typeof firstError === 'object') {
-      const details = firstError as {
-        extensions?: { details?: { message?: unknown }, issues?: Array<{ message?: unknown }> }
-        message?: unknown
-      }
-      const issue = details.extensions?.issues?.[0]?.message
-      if (typeof issue === 'string' && issue)
-        return issue
-      const message = details.extensions?.details?.message
-      if (typeof message === 'string' && message)
-        return message
-      if (typeof details.message === 'string' && details.message)
-        return details.message
-    }
+function readHostOrigin(): string {
+  const referrer = globalThis.document?.referrer
+  if (!referrer) {
+    throw new SpaceProtocolError({
+      code: 'unavailable',
+      message: 'Simple could not determine the host for this Space.',
+    })
   }
 
-  return 'GraphQL request failed.'
+  try {
+    return new URL(referrer).origin
+  }
+  catch {
+    throw new SpaceProtocolError({
+      code: 'invalid_response',
+      message: 'Simple received an invalid Space host origin.',
+    })
+  }
 }
 
 function isInitializationMessage(value: unknown): value is {
-  context?: unknown
-  protocols?: { action?: unknown, document?: unknown, record?: unknown, task?: unknown }
+  context: unknown
+  protocols?: { action?: unknown, form?: unknown, header?: unknown, record?: unknown, task?: unknown, toast?: unknown }
+  runtime?: UiRuntimeDescriptor
   type: 'INIT_RPC'
 } {
-  if (!value || typeof value !== 'object')
+  if (!isObjectRecord(value) || value.type !== 'INIT_RPC')
     return false
 
-  return (value as { type?: unknown }).type === 'INIT_RPC'
+  return value.runtime === undefined || isUiRuntimeDescriptor(value.runtime)
+}
+
+function isUiRuntimeDescriptor(value: unknown): value is UiRuntimeDescriptor {
+  if (!isObjectRecord(value))
+    return false
+
+  const { url, version } = value
+  if (typeof url !== 'string' || !url || typeof version !== 'string' || !version)
+    return false
+
+  try {
+    const protocol = new URL(url).protocol
+    return protocol === 'http:' || protocol === 'https:'
+  }
+  catch {
+    return false
+  }
 }

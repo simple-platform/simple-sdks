@@ -19,8 +19,8 @@ Object.assign(globalThis, {
   HTMLElement: window.HTMLElement,
 })
 
-const { SimpleStatusBadge } = await import(new URL('../dist/elements/status-badge.js', import.meta.url).href)
 const { StatusBadge } = await import(new URL('../dist/react/status-badge.js', import.meta.url).href)
+const { SimpleStatusBadge } = await import(new URL('../dist/elements/status-badge.js', import.meta.url).href)
 
 after(() => Object.assign(globalThis, previousGlobals))
 
@@ -64,16 +64,17 @@ test('maps unsupported tones to neutral and preserves long labels', () => {
   assert.equal(base.textContent, label)
 })
 
-test('uses only public semantic variables in its component stylesheet', () => {
+test('uses only StatusBadge-local variables in its component stylesheet', () => {
   const badge = renderBadge({ label: 'Ready', tone: 'success' })
   const stylesheet = badge.shadowRoot.querySelector('style').textContent
 
-  assert.match(stylesheet, /var\(--simple-color-status-success-background\)/)
+  assert.match(stylesheet, /var\(--simple-status-badge-success-background\)/)
+  assert.doesNotMatch(stylesheet, /var\(--simple-color-/)
   assert.doesNotMatch(stylesheet, /#[0-9a-f]{3,8}|rgb\(|hsl\(|oklch\(/i)
 })
 
 test('renders the React bridge as the canonical custom element', () => {
   const markup = renderToStaticMarkup(StatusBadge({ label: 'Ready', tone: 'success' }))
 
-  assert.equal(markup, '<simple-status-badge label="Ready" tone="success"></simple-status-badge>')
+  assert.equal(markup, '<simple-status-badge label="Ready" tone="success">Ready</simple-status-badge>')
 })
