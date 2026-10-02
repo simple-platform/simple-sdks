@@ -97,7 +97,7 @@ import { RecordForm } from '@simpleplatform/ui-kit/react'
 import { useEffect, useState } from 'react'
 import '@simpleplatform/ui-kit/theme.css'
 
-const client = connect()
+const client = connect({ targetOrigin: new URL(document.referrer).origin })
 
 export function App() {
   const [record, setRecord] = useState<RecordHandle | null>(null)

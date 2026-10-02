@@ -5,7 +5,6 @@ import test from 'node:test'
 import { PROTOCOL_VERSION } from '../dist/space/core.js'
 import {
   connect,
-  connectSpace,
   SpaceDataError,
   SpaceProtocolError,
 } from '../dist/space/index.js'
@@ -95,29 +94,32 @@ const recordContext = {
 
 async function connectWithHost(port, context, protocols, runtime) {
   const spaceWindow = new FakeSpaceWindow()
-  const connection = connectSpace({
-    targetOrigin: 'https://acme.simple.lcl',
-    window: spaceWindow,
-  })
-  spaceWindow.dispatchMessage({
-    data: { context, protocols, ...(runtime ? { runtime } : {}), type: 'INIT_RPC' },
-    origin: 'https://acme.simple.lcl',
-    ports: [port],
-  })
-  return connection
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: { context, protocols, ...(runtime ? { runtime } : {}), type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    return await connection
+  }
+  finally {
+    restoreWindow()
+  }
 }
 
 test('connects a Space without exposing embedded transport configuration', async () => {
   const port = new FakePort()
   const spaceWindow = new FakeSpaceWindow()
   const restoreWindow = replaceGlobal('window', spaceWindow)
-  const restoreDocument = replaceGlobal('document', { referrer: 'https://acme.simple.lcl/record/user/USR000005' })
 
   try {
-    const connection = connect()
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -137,7 +139,6 @@ test('connects a Space without exposing embedded transport configuration', async
     assert.equal((await primaryRecord).id, 'space-session-primary')
   }
   finally {
-    restoreDocument()
     restoreWindow()
   }
 })
@@ -146,22 +147,16 @@ test('keeps the managed-form bridge out of the supported Space entry point', asy
   const publicSpace = await import('../dist/space/index.js')
 
   assert.equal('getRecordFormBridge' in publicSpace, false)
+  assert.equal('connectSpace' in publicSpace, false)
 })
 
-test('rejects when connect cannot resolve a Space host', async () => {
-  const restoreDocument = replaceGlobal('document', { referrer: '' })
-
-  try {
-    await assert.rejects(
-      () => connect(),
-      error => error instanceof SpaceProtocolError
-        && error.code === 'unavailable'
-        && error.message === 'Simple could not determine the host for this Space.',
-    )
-  }
-  finally {
-    restoreDocument()
-  }
+test('requires an explicit HTTP or HTTPS origin', async () => {
+  await assert.rejects(
+    () => connect({ targetOrigin: 'https://acme.simple.lcl/record' }),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'invalid_request'
+      && error.message === 'connect() requires targetOrigin to be an HTTP or HTTPS origin.',
+  )
 })
 
 test('forwards versioned requests over a dedicated MessagePort', async () => {
@@ -229,35 +224,39 @@ test('maps GraphQL bridge failures to a structured Space data error', async () =
   )
 })
 
-test('offers supported Space capabilities without exposing standalone document staging', async () => {
+test('offers supported Space capabilities including document staging', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const port = new FakePort()
-  const connection = connectSpace({
-    targetOrigin: 'https://acme.simple.lcl',
-    window: spaceWindow,
-  })
+  const restoreWindow = replaceGlobal('window', spaceWindow)
 
-  assert.deepEqual(spaceWindow.parentMessages, [{
-    message: { protocols: { action: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
-    targetOrigin: 'https://acme.simple.lcl',
-  }])
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
-  spaceWindow.dispatchMessage({
-    data: { context: recordContext, protocols: { record: 1 }, type: 'INIT_RPC' },
-    origin: 'https://acme.simple.lcl',
-    ports: [port],
-  })
-  const simple = await connection
-  assert.deepEqual(simple.context, recordContext)
-  assert.equal('documents' in simple, false)
-  const primaryRecord = simple.records.current()
+    assert.deepEqual(spaceWindow.parentMessages, [{
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      targetOrigin: 'https://acme.simple.lcl',
+    }])
 
-  port.emit({
-    response: primaryRecordResponse(port.sent[0].request.requestId),
-    type: 'SPACE_PROTOCOL_RESPONSE',
-  })
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, protocols: { document: 1, record: 1 }, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const simple = await connection
+    assert.deepEqual(simple.context, recordContext)
+    assert.equal(typeof simple.documents.stage, 'function')
+    const primaryRecord = simple.record()
 
-  assert.equal((await primaryRecord).id, 'space-session-primary')
+    port.emit({
+      response: primaryRecordResponse(port.sent[0].request.requestId),
+      type: 'SPACE_PROTOCOL_RESPONSE',
+    })
+
+    assert.equal((await primaryRecord).id, 'space-session-primary')
+  }
+  finally {
+    restoreWindow()
+  }
 })
 
 test('keeps the host-selected UI Runtime descriptor private to the managed form bridge', async () => {
@@ -497,57 +496,63 @@ test('routes private RecordForm capabilities through the existing Space port', a
 test('connects a standalone Space for data access when the host does not negotiate record protocol v1', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const port = new FakePort()
-  const connection = connectSpace({
-    targetOrigin: 'https://acme.simple.lcl',
-    window: spaceWindow,
-  })
+  const restoreWindow = replaceGlobal('window', spaceWindow)
 
-  spaceWindow.dispatchMessage({
-    data: { context: { kind: 'standalone' }, type: 'INIT_RPC' },
-    origin: 'https://acme.simple.lcl',
-    ports: [port],
-  })
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: { context: { kind: 'standalone' }, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
 
-  const simple = await connection
-  assert.deepEqual(simple.context, { kind: 'standalone' })
-  const query = simple.data.query('query Users { users { id } }')
+    const simple = await connection
+    assert.deepEqual(simple.context, { kind: 'standalone' })
+    const query = simple.data.query('query Users { users { id } }')
 
-  assert.equal(port.sent[0].type, 'GRAPHQL_REQUEST')
-  port.emit({
-    data: { users: [] },
-    id: port.sent[0].payload.id,
-    type: 'GRAPHQL_RESPONSE',
-  })
+    assert.equal(port.sent[0].type, 'GRAPHQL_REQUEST')
+    port.emit({
+      data: { users: [] },
+      id: port.sent[0].payload.id,
+      type: 'GRAPHQL_RESPONSE',
+    })
 
-  assert.deepEqual(await query, { users: [] })
+    assert.deepEqual(await query, { users: [] })
 
-  await assert.rejects(
-    () => simple.records.current(),
-    error => error instanceof SpaceProtocolError
-      && error.code === 'unavailable'
-      && error.message === 'The current record is available only when this Space is configured as a record view.',
-  )
+    await assert.rejects(
+      () => simple.records.current(),
+      error => error instanceof SpaceProtocolError
+        && error.code === 'unavailable'
+        && error.message === 'The current record is available only when this Space is configured as a record view.',
+    )
+  }
+  finally {
+    restoreWindow()
+  }
 })
 
 test('rejects a host handshake that does not explicitly provide Space context', async () => {
   const spaceWindow = new FakeSpaceWindow()
-  const connection = connectSpace({
-    targetOrigin: 'https://acme.simple.lcl',
-    window: spaceWindow,
-  })
+  const restoreWindow = replaceGlobal('window', spaceWindow)
 
-  spaceWindow.dispatchMessage({
-    data: { protocols: { record: 1 }, type: 'INIT_RPC' },
-    origin: 'https://acme.simple.lcl',
-    ports: [new FakePort()],
-  })
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: { protocols: { record: 1 }, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
 
-  await assert.rejects(
-    () => connection,
-    error => error instanceof SpaceProtocolError
-      && error.code === 'invalid_response'
-      && error.message === 'The Space host did not provide valid context.',
-  )
+    await assert.rejects(
+      () => connection,
+      error => error instanceof SpaceProtocolError
+        && error.code === 'invalid_response'
+        && error.message === 'The Space host did not provide valid context.',
+    )
+  }
+  finally {
+    restoreWindow()
+  }
 })
 
 test('sends task operations over the MessagePort when the host negotiates the task protocol', async () => {

@@ -66,7 +66,7 @@ simple.Handle(async (request) => {
 ### Space SDK and UI Kit
 
 The browser-safe `@simpleplatform/sdk/space` entry includes the Space data,
-record, task, staged-document, header-action, and platform-toast APIs. See the
+record, document-staging, task, header-action, and platform-toast APIs. See the
 [Space SDK documentation](sdks/ts/README.md#embedded-spaces) for their current
 availability and contracts.
 

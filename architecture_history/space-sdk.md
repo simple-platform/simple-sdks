@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header-action override, platform-toast request, command-driven snapshot refresh, and behavior-feedback fixture are implemented in the working tree. `simple.tasks.create()` / `simple.tasks.reply()` are implemented and depend on host task-protocol negotiation. `simple.actions.run()` is implemented in the SDK and waits on the host to negotiate and answer the action protocol. Standalone document staging is not part of the public API; RecordForm file operations remain private host capabilities. The documented primary-record vocabulary is now `connect()` and `simple.record()`; temporary legacy aliases remain only for existing embedded Space deployments. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and host capabilities remain private.
-- **Last updated:** 2026-09-29
+- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header-action override, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, and standalone document staging are implemented. `connect({ targetOrigin })` is the sole browser bootstrap. `simple.tasks.create()` / `simple.tasks.reply()` depend on host task-protocol negotiation. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and managed-form host capabilities remain private.
+- **Last updated:** 2026-10-02
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -15,7 +15,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 1. Publish one TypeScript package: `@simpleplatform/sdk`.
 2. Keep Action/WASM and browser APIs in explicit, safe entry points.
-3. Provide a small framework-neutral Space client with clear nouns and verbs: `connect()` and `simple.record()`.
+3. Provide a small framework-neutral Space client with clear nouns and verbs: `connect({ targetOrigin })` and `simple.record()`.
 4. Preserve the platform-owned record workflow for form records, including Record Behaviors, validation, documents, authorization enforcement, and submit state.
 5. Retain flexible application data access through a single SDK contract rather than copied bridge code.
 6. Use transport abstractions so an iframe MessagePort and a future portal-session transport can implement the same public contracts.
@@ -36,9 +36,9 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 ### KISS
 
-- Keep the Space surface to namespaces a concrete capability requires: `simple.record()`, `simple.data`, and `simple.tasks`.
-- Use obvious method names: `connect`, `record`, `data.query`, `data.mutate`, `record.update`, `record.submit`, `tasks.create`, and `tasks.reply`.
-- Keep the legacy `connectSpace()` and `records.current()` aliases temporary and undocumented; do not add other aliases, subscriptions, lifecycle methods, or generic record abstractions until a concrete capability requires them.
+- Keep the Space surface to namespaces a concrete capability requires: `simple.record()`, `simple.data`, `simple.documents`, and `simple.tasks`.
+- Use obvious method names: `connect`, `record`, `data.query`, `data.mutate`, `documents.stage`, `record.update`, `record.submit`, `tasks.create`, and `tasks.reply`.
+- Use a single bootstrap name, `connect({ targetOrigin })`; do not retain a `connectSpace` alias. Avoid subscriptions, lifecycle methods, or generic record abstractions until a concrete capability requires them.
 
 ### DRY
 
@@ -59,13 +59,13 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
-- Each public protocol capability has its own key in that handshake. The Space offers `action`, `form`, `header`, `record`, `task`, and `toast`; the host grants tasks, toasts, and actions independently of record access, and grants record/form/header only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository).
+- Each public protocol capability has its own key in that handshake. The Space offers `action`, `document`, `form`, `header`, `record`, `task`, and `toast`; the host grants document staging, tasks, toasts, and actions independently of record access, and grants record/form/header only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository).
 - Before `action.run`, Spaces ran their own app's actions with a `fetch` of their own to `https://triggers.<parent host>/logic`. That needs the app to name a domain in its Space network permission, which the host turns into the iframe's CSP `connect-src` (`apps/platform_web/components/space-iframe.tsx`), so a Space broke on any other domain, and each Space resolved the endpoint itself. With `action.run`, the host makes the call on behalf of the Space without direct network requests.
-- Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities, not a standalone public file API. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to selected file bytes.
+- Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities. Separately, `simple.documents.stage()` supports customer-owned upload workflows and returns an unattached staged handle. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to managed-form file bytes.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - A managed form may receive a private command-notification from its record handle when `update()` or `submit()` replaces the snapshot. This is a one-handle UI synchronization seam, not a public live subscription API; server/live events remain deferred.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
-- `connect()` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.record()` rejects with a structured `unavailable` error only when invoked.
+- `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.record()` rejects with a structured `unavailable` error only when invoked.
 - The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
 
 ## Target architecture
@@ -76,6 +76,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 ├── /space                      framework-neutral Space client
 │   ├── simple.record()          behavior-aware primary form record
 │   ├── simple.data              flexible authorized application data
+│   ├── simple.documents         standalone staged document uploads
 │   ├── simple.tasks             tasks created from a task type, and replies
 │   ├── simple.actions           the Space's own app's actions, run by the host
 │   ├── simple.ui.header         record-space header action delegation
@@ -84,7 +85,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 Embedded Space
 └── BrowserSpaceTransport
-    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, task, and action commands
+    ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, document, task, and action commands
     ├── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
     ├── SPACE_HEADER_ACTIONS_SET / INVOKE   -> platform-owned header actions
     └── SPACE_TOAST_SHOW                    -> platform-owned toast presenter
@@ -142,7 +143,7 @@ import { connect } from '@simpleplatform/sdk/space'
 ### Connection and primary record
 
 ```ts
-const simple = await connect()
+const simple = await connect({ targetOrigin })
 const record = await simple.record()
 
 await record.update({ first_name: 'Ada' })
@@ -402,7 +403,7 @@ secret decryption, and parent-frame navigation.
    reintroduced as generic raw MessagePort access. The Blink Space requires
    both before its copied bridge can be removed.
 3. **Blink administration migration.** Once all of its capabilities have
-   supported replacements, replace its local bridge with one `connect()`
+   supported replacements, replace its local bridge with one `connect({ targetOrigin })`
    client, migrate GraphQL uses to `simple.data`, then browser-validate
    queries, mutations, secret access, navigation, tenant theme, error paths,
    and rollback before deleting `src/lib/simple.ts`.
@@ -615,3 +616,10 @@ secret decryption, and parent-frame navigation.
 - **Reason:** The host closes its end of the port whenever its Space view rebuilds the connection, as on a changed record session, context, or developer mode, and the Space does not handshake again, so a run posted afterwards was never answered and waited forever, leaving an upload or confirm spinner up for good. Before `action.run`, a Space's own `fetch` always ended at its timeout; an action run has to end as surely.
 - **Boundary:** The host still owns the timeout: it answers `timeout` at `timeoutMs`, and the SDK's wait only ends a run whose answer never comes. The SDK keeps the host's default to arm the wait, not to check or send it; `timeoutMs` is still sent only when given, and its range is still the host's. Records, tasks, and documents keep their unbounded wait; they are not changed here.
 - **Supersedes:** The 2026-09-29 boundary line that the SDK sets no timer of its own for an action run.
+
+### 2026-10-02 — Require the host origin and restore public document staging
+
+- **Decision:** Make `connect({ targetOrigin })` the sole Space bootstrap. The caller supplies the exact HTTP(S) origin; the SDK no longer infers it from `document.referrer` and does not export a `connectSpace` alias. Restore `simple.documents.stage({ file, name?, mimeType? })` and the v1 `document.stage` operation, negotiated independently of record access. Staging returns `{ handle }` and does not attach a file to a record.
+- **Reason:** A single explicit bootstrap keeps the public API simple while making host selection visible to Space authors and leaving room for future hosting arrangements. Existing Spaces also depend on staged document uploads, so removing the API broke a shipped workflow; preserving the existing platform upload path restores compatibility without exposing managed RecordForm internals.
+- **Boundary:** The SDK transfers file bytes to the host and validates the returned handle. The platform remains responsible for storage and authorization. Managed RecordForm's upload, promotion, deletion, and preview lifecycle stays on its private adapter; standalone staging is a separate opt-in capability.
+- **Supersedes:** The 2026-09-20 decision to infer the host origin and temporarily keep `connectSpace(options)`, and the 2026-09-29 decision to remove public document staging.

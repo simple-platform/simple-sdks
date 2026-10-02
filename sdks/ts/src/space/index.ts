@@ -18,6 +18,8 @@ export { SpaceDataError, SpaceProtocolError }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
+  DocumentStageInput,
+  DocumentStageResult,
   GraphQLVariables,
   HeaderAction,
   HeaderActionType,
@@ -33,6 +35,7 @@ export type {
   SimpleActionsClient,
   SimpleClient,
   SimpleDataClient,
+  SimpleDocumentsClient,
   SimpleHeaderClient,
   SimpleTasksClient,
   SimpleToastClient,
@@ -41,6 +44,7 @@ export type {
   SpaceProtocolErrorPayload,
   SpaceToastOptions,
   SpaceToastVariant,
+  StagedDocumentHandle,
   TaskCreateInput,
   TaskCreateResult,
   TaskReplyInput,
@@ -48,7 +52,7 @@ export type {
   TaskStatus,
 } from './core.js'
 
-export interface SpaceWindowLike {
+interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
   parent: {
     postMessage: (message: unknown, targetOrigin: string) => void
@@ -56,34 +60,26 @@ export interface SpaceWindowLike {
   removeEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
 }
 
-export interface SpaceMessageEvent {
+interface SpaceMessageEvent {
   data: unknown
   origin: string
   ports: MessagePortLike[]
 }
 
-export interface ConnectSpaceOptions {
+export interface ConnectOptions {
   targetOrigin: string
-  window?: SpaceWindowLike
 }
 
-/** Connects the current Space to its Simple host. */
-export function connect(): Promise<SimpleClient> {
-  try {
-    return connectSpace({ targetOrigin: readHostOrigin() })
+/** Connects this Space to its host using the explicitly supplied host origin. */
+export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient> {
+  if (!isOrigin(targetOrigin)) {
+    return Promise.reject(new SpaceProtocolError({
+      code: 'invalid_request',
+      message: 'connect() requires targetOrigin to be an HTTP or HTTPS origin.',
+    }))
   }
-  catch (error) {
-    return Promise.reject(error)
-  }
-}
 
-/**
- * Connects an embedded Space through the host's dedicated MessagePort.
- *
- * @deprecated Use `connect()`. This lower-level bootstrap remains temporarily
- * for existing embedded Space deployments.
- */
-export function connectSpace({ targetOrigin, window = globalThis.window }: ConnectSpaceOptions): Promise<SimpleClient> {
+  const window = globalThis.window as unknown as SpaceWindowLike | undefined
   if (!window) {
     return Promise.reject(new SpaceProtocolError({
       code: 'unavailable',
@@ -122,6 +118,7 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
         capabilities: transport.capabilities,
         context: event.data.context,
         dataTransport: transport,
+        documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
         runtime: event.data.runtime,
@@ -135,6 +132,7 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
     window.parent.postMessage({
       protocols: {
         action: [PROTOCOL_VERSION],
+        document: [PROTOCOL_VERSION],
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
@@ -146,29 +144,20 @@ export function connectSpace({ targetOrigin, window = globalThis.window }: Conne
   })
 }
 
-function readHostOrigin(): string {
-  const referrer = globalThis.document?.referrer
-  if (!referrer) {
-    throw new SpaceProtocolError({
-      code: 'unavailable',
-      message: 'Simple could not determine the host for this Space.',
-    })
-  }
-
+function isOrigin(targetOrigin: string): boolean {
   try {
-    return new URL(referrer).origin
+    const url = new URL(targetOrigin)
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && url.origin === targetOrigin
   }
   catch {
-    throw new SpaceProtocolError({
-      code: 'invalid_response',
-      message: 'Simple received an invalid Space host origin.',
-    })
+    return false
   }
 }
 
 function isInitializationMessage(value: unknown): value is {
   context: unknown
-  protocols?: { action?: unknown, form?: unknown, header?: unknown, record?: unknown, task?: unknown, toast?: unknown }
+  protocols?: { action?: unknown, document?: unknown, form?: unknown, header?: unknown, record?: unknown, task?: unknown, toast?: unknown }
   runtime?: UiRuntimeDescriptor
   type: 'INIT_RPC'
 } {

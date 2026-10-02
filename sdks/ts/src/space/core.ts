@@ -1,4 +1,5 @@
 import type { SimpleActionsClient } from './actions.js'
+import type { SimpleDocumentsClient } from './documents.js'
 import type { SpaceTransport } from './protocol.js'
 import type {
   RecordFormCapabilities,
@@ -19,6 +20,7 @@ import type {
   SpaceToastTransport,
 } from './ui.js'
 import { createActionsClient } from './actions.js'
+import { createDocumentsClient } from './documents.js'
 import { deepFreeze, invalidResponse, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
 import { isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
 import { createTasksClient } from './tasks.js'
@@ -29,6 +31,12 @@ export type {
   ActionRunOptions,
   SimpleActionsClient,
 } from './actions.js'
+export type {
+  DocumentStageInput,
+  DocumentStageResult,
+  SimpleDocumentsClient,
+  StagedDocumentHandle,
+} from './documents.js'
 export { PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError } from './protocol.js'
 export type {
   ProtocolErrorResponse,
@@ -104,6 +112,7 @@ export interface SimpleClient {
   actions: SimpleActionsClient
   context: SpaceContext
   data: SimpleDataClient
+  documents: SimpleDocumentsClient
   /** Opens the primary record provided by the current record Space. */
   record: () => Promise<RecordHandle>
   /** @deprecated Use simple.record(). */
@@ -123,6 +132,8 @@ export interface SimpleClientOptions {
   capabilities?: RecordFormCapabilities
   context?: SpaceContext
   dataTransport?: SpaceDataTransport
+  /** Present only when the host negotiated the document protocol. */
+  documentTransport?: SpaceTransport
   formModelTransport?: RecordFormModelTransport
   headerTransport?: SpaceHeaderTransport
   nextRequestId?: () => string
@@ -138,6 +149,7 @@ export function createSimpleClient({
   capabilities,
   context = { kind: 'standalone' },
   dataTransport,
+  documentTransport,
   formModelTransport,
   headerTransport,
   nextRequestId = createRequestId,
@@ -198,6 +210,7 @@ export function createSimpleClient({
       mutate: (document, variables) => executeData(dataTransport, document, variables),
       query: (document, variables) => executeData(dataTransport, document, variables),
     },
+    documents: createDocumentsClient(documentTransport, nextRequestId),
     record,
     records: { current: record },
     tasks: createTasksClient(taskTransport, nextRequestId),

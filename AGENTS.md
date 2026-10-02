@@ -11,4 +11,4 @@
 
 - Design public SDK functions as standalone capabilities. Do not make unrelated functions depend on a page, route, framework, or prior domain call.
 - When a capability genuinely requires a particular environment, expose the normal API and return a structured domain error only when that capability is invoked outside the supported environment. Do not fail unrelated SDK initialization, guess context from URLs or the DOM, or add duplicate convenience APIs to hide the requirement.
-- Keep connection/bootstrap functions such as `connectSpace()` explicit. The context they return is descriptive; callers use it to decide which standalone capabilities are appropriate.
+- Keep the single connection/bootstrap function `connect({ targetOrigin })` explicit. Do not add a `connectSpace()` alias. The context it returns is descriptive; callers use it to decide which standalone capabilities are appropriate.

@@ -38,7 +38,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
 | **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
-| **Space** | `@simpleplatform/sdk/space` | Record, data, task, UI, and action capabilities in a Space |
+| **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
 
@@ -48,7 +48,7 @@ Action/WASM API, so Action code never imports browser globals by accident.
 ```typescript
 import { connect } from '@simpleplatform/sdk/space'
 
-const simple = await connect()
+const simple = await connect({ targetOrigin: new URL(document.referrer).origin })
 const record = await simple.record()
 
 await record.update({ first_name: 'Ada' }) // Stages values and runs update Behavior.
@@ -61,6 +61,9 @@ if (!result.ok) {
 ```
 
 Connect once when the Space starts and reuse the returned client. One embedded iframe has one host MessagePort handshake.
+`targetOrigin` is the host's origin, not a full URL. If the embedding setup
+does not provide a referrer, supply the host origin from the Space's trusted
+configuration.
 
 `record()` returns the platform-owned record for the current record
 page. Its handle exposes immutable snapshots, `update(values)`, and `submit()`.
@@ -151,9 +154,9 @@ switch (simple.context.kind) {
 The two exact context forms are `{ kind: 'standalone' }` and
 `{ kind: 'record', applicationId, tableName, recordId }`. There is no
 `unknown` context variant. A missing or malformed context rejects
-`connect()` with `SpaceProtocolError` code `invalid_response`.
+`connect({ targetOrigin })` with `SpaceProtocolError` code `invalid_response`.
 
-`connect()` works in any embedded Space, including standalone dashboards
+`connect({ targetOrigin })` works in any embedded Space, including standalone dashboards
 and tools. In a non-record Space, `simple.data` remains available while
 `simple.record()` rejects with `SpaceProtocolError` code `unavailable`
 and explains that the Space must be configured as a record view.
@@ -162,7 +165,7 @@ Each capability beyond `simple.data` is negotiated with the host when the Space
 connects. A capability the host did not negotiate rejects with
 `SpaceProtocolError` code `unavailable` when it is called, and sends nothing.
 
-The same `connect()` and `simple.record()` vocabulary is reserved for future
+The same `connect({ targetOrigin })` and `simple.record()` vocabulary is reserved for future
 publicly hosted Spaces. That transport and its authentication model are not
 implemented yet; authors should not add portal-specific connection code now.
 
@@ -196,7 +199,16 @@ Use `record.update()` and `record.submit()` for writes to the current record.
 Those commands preserve Record Behaviors, validation, permissions, and the
 shared record state used by the platform. The managed `RecordForm` coordinates
 its specialized document-field workflow through Simple's private host adapter.
-No standalone staged-document API is currently exposed to Spaces.
+For a customer-owned upload workflow, stage a file through the public document
+API:
+
+```ts
+const { handle } = await simple.documents.stage({ file })
+```
+
+The returned handle describes a staged upload; staging does not attach the file
+to a record. The managed `RecordForm` continues to own its specialized
+document-field workflow through Simple's private host adapter.
 `simple.data.mutate()` is for other authorized application data and must not
 bypass the record workflow.
 
