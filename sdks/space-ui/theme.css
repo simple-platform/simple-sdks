@@ -1,0 +1,41 @@
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+/*
+ * Space typography is bundled with the Space itself so it also works in the
+ * cross-origin iframe. These defaults align Spaces with the Simple shell;
+ * customers can override them in their own stylesheet.
+ */
+:root {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Local fallback values for the StatusBadge alpha, not the future token contract. */
+  --simple-status-badge-font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --simple-status-badge-font-size: 0.75rem;
+  --simple-status-badge-font-weight: 500;
+  --simple-status-badge-line-height: 1.25;
+  --simple-status-badge-min-height: 2rem;
+  --simple-status-badge-padding-inline: 0.5rem;
+  --simple-status-badge-radius: 9999px;
+
+  --simple-status-badge-neutral-background: #f8fafc;
+  --simple-status-badge-neutral-border: #cbd5e1;
+  --simple-status-badge-neutral-foreground: #475569;
+
+  --simple-status-badge-info-background: #e0f2fe;
+  --simple-status-badge-info-border: #0369a1;
+  --simple-status-badge-info-foreground: #075985;
+
+  --simple-status-badge-success-background: #dcfce7;
+  --simple-status-badge-success-border: #15803d;
+  --simple-status-badge-success-foreground: #166534;
+
+  --simple-status-badge-warning-background: #fef3c7;
+  --simple-status-badge-warning-border: #b45309;
+  --simple-status-badge-warning-foreground: #92400e;
+
+  --simple-status-badge-danger-background: #fee2e2;
+  --simple-status-badge-danger-border: #b91c1c;
+  --simple-status-badge-danger-foreground: #991b1b;
+}

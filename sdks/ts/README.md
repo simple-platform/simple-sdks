@@ -31,29 +31,25 @@ simple.Handle(async (request) => {
 
 The TypeScript SDK is organized into focused modules for different capabilities:
 
-| Module       | Import                         | Purpose                                                 |
-| ------------ | ------------------------------ | ------------------------------------------------------- |
-| **Core**     | `@simpleplatform/sdk`          | Request handling and action execution                   |
-| **AI**       | `@simpleplatform/sdk/ai`       | AI operations (extract, summarize, transcribe)          |
-| **GraphQL**  | `@simpleplatform/sdk/graphql`  | Database queries and mutations                          |
-| **HTTP**     | `@simpleplatform/sdk/http`     | External HTTP requests                                  |
-| **Security** | `@simpleplatform/sdk/security` | Security policy authoring                               |
-| **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval                          |
-| **Storage**  | `@simpleplatform/sdk/storage`  | File upload, and reading a stored file's bytes          |
-| **Space**    | `@simpleplatform/sdk/space`    | Records, data, tasks, documents, and actions in a Space |
+| **Core** | `@simpleplatform/sdk` | Request handling and action execution |
+| **AI** | `@simpleplatform/sdk/ai` | AI operations (extract, summarize, transcribe) |
+| **GraphQL** | `@simpleplatform/sdk/graphql` | Database queries and mutations |
+| **HTTP** | `@simpleplatform/sdk/http` | External HTTP requests |
+| **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
+| **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
+| **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
+| **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
 
-Use the explicit Space subpaths inside an embedded browser Space. The package
-root remains the Action/WASM API, so Action code never imports browser globals
-by accident.
+Use the Space subpath inside a browser Space. The package root remains the
+Action/WASM API, so Action code never imports browser globals by accident.
 
 ```typescript
-import { connectSpace } from '@simpleplatform/sdk/space'
+import { connect } from '@simpleplatform/sdk/space'
 
-const hostOrigin = new URL(document.referrer).origin
-const simple = await connectSpace({ targetOrigin: hostOrigin })
-const record = await simple.records.current()
+const simple = await connect({ targetOrigin: new URL(document.referrer).origin })
+const record = await simple.record()
 
 await record.update({ first_name: 'Ada' }) // Stages values and runs update Behavior.
 const result = await record.submit() // Runs submit Behavior, then persists on success.
@@ -65,11 +61,76 @@ if (!result.ok) {
 ```
 
 Connect once when the Space starts and reuse the returned client. One embedded iframe has one host MessagePort handshake.
+`targetOrigin` is the host's origin, not a full URL. If the embedding setup
+does not provide a referrer, supply the host origin from the Space's trusted
+configuration.
 
-`records.current()` returns the platform-owned record for the current record
+`record()` returns the platform-owned record for the current record
 page. Its handle exposes immutable snapshots, `update(values)`, and `submit()`.
 The host enforces permissions and runs Record Behaviors; the Space only renders
-the returned state.
+the returned state. Snapshots may also include `formInfo` for behavior-produced
+form-level guidance.
+
+### Managed record UI and header actions (pre-release)
+
+The companion UI Kit currently implements a managed React form for Record
+Spaces:
+
+```tsx
+<RecordForm record={record} />
+```
+
+It renders the complete Simple form without exposing field schemas, editor
+registries, document/reference/secret internals, or Record Behavior timing as
+public APIs. When a Space needs fully custom presentation, keep using the
+record handle's `snapshot()`, `update()`, and `submit()` commands.
+
+Record Spaces can replace the platform main actions in the header while
+mounted:
+
+```ts
+simple.ui.header.setActions([
+  {
+    id: 'start-call',
+    label: 'Start call',
+    onClick: async () => startCall(),
+    type: 'primary',
+  },
+])
+```
+
+Promise-returning callbacks show button loading automatically. `setActions([])`
+renders no main actions. While a custom Record Space is active, this replaces
+the platform `Update` button and persisted View Actions; those defaults return
+when the Space unloads or the user selects the standard view. The full
+pre-release interface and examples live in the
+[`@simpleplatform/ui-kit` README](../space-ui/README.md).
+
+A header action owns its own save feedback. `record.submit()` returns validation
+state without choosing UI; call `simple.ui.toast.show()` when the Space should
+also show a platform toast. `RecordForm` continues to display detailed field
+and form messages inline.
+
+### Show a platform toast
+
+Any Space can show feedback with Simple's existing toast presenter and theme:
+
+```ts
+simple.ui.toast.show({
+  description: 'Your changes are ready.',
+  title: 'Saved',
+})
+
+simple.ui.toast.show({
+  description: 'The changes could not be saved.',
+  variant: 'destructive',
+})
+```
+
+At least one of `title` or `description` is required, and both are plain text.
+Titles are limited to 160 characters and descriptions to 1,000. The supported
+variants are `default` and `destructive`. React content and toast action
+callbacks are not sent across the iframe boundary.
 
 ### Space context
 
@@ -93,16 +154,20 @@ switch (simple.context.kind) {
 The two exact context forms are `{ kind: 'standalone' }` and
 `{ kind: 'record', applicationId, tableName, recordId }`. There is no
 `unknown` context variant. A missing or malformed context rejects
-`connectSpace()` with `SpaceProtocolError` code `invalid_response`.
+`connect({ targetOrigin })` with `SpaceProtocolError` code `invalid_response`.
 
-`connectSpace()` works in any embedded Space, including standalone dashboards
+`connect({ targetOrigin })` works in any embedded Space, including standalone dashboards
 and tools. In a non-record Space, `simple.data` remains available while
-`simple.records.current()` rejects with `SpaceProtocolError` code `unavailable`
+`simple.record()` rejects with `SpaceProtocolError` code `unavailable`
 and explains that the Space must be configured as a record view.
 
 Each capability beyond `simple.data` is negotiated with the host when the Space
 connects. A capability the host did not negotiate rejects with
 `SpaceProtocolError` code `unavailable` when it is called, and sends nothing.
+
+The same `connect({ targetOrigin })` and `simple.record()` vocabulary is reserved for future
+publicly hosted Spaces. That transport and its authentication model are not
+implemented yet; authors should not add portal-specific connection code now.
 
 ### Space data access
 
@@ -131,9 +196,21 @@ const result = await simple.data.mutate<{ insert_demo__note: { id: string } }>(
 ```
 
 Use `record.update()` and `record.submit()` for writes to the current record.
-Those commands preserve Record Behaviors, validation, documents, and the shared
-record state used by the platform header. `simple.data.mutate()` is for other
-authorized application data; it must not be used to bypass a record workflow.
+Those commands preserve Record Behaviors, validation, permissions, and the
+shared record state used by the platform. The managed `RecordForm` coordinates
+its specialized document-field workflow through Simple's private host adapter.
+For a customer-owned upload workflow, stage a file through the public document
+API:
+
+```ts
+const { handle } = await simple.documents.stage({ file })
+```
+
+The returned handle describes a staged upload; staging does not attach the file
+to a record. The managed `RecordForm` continues to own its specialized
+document-field workflow through Simple's private host adapter.
+`simple.data.mutate()` is for other authorized application data and must not
+bypass the record workflow.
 
 ### Space tasks
 
@@ -280,29 +357,6 @@ refused `reply()` arrives the same way, with the service's own code in
 `details.code` and the same categories: after a `runtime` refusal, calling
 `reply()` again with the same arguments resends the kept message rather than
 posting it twice.
-
-### Space documents
-
-`simple.documents.stage()` stores a file without attaching it to any record and
-returns its handle. The host uploads it, so a large file never travels inside
-an action request. The file's bytes are transferred to the host, not copied.
-
-```typescript
-const picker = document.querySelector<HTMLInputElement>('#packet')!
-const { handle } = await simple.documents.stage({ file: picker.files![0] })
-
-// A plain Blob has no name of its own, so it needs one.
-await simple.documents.stage({
-  file: new Blob([csv]),
-  mimeType: 'text/csv',
-  name: 'quantities.csv',
-})
-```
-
-The handle is `{ file_hash, filename, mime_type, size, storage_path, scope? }`.
-`name` defaults to a `File`'s own name, and `mimeType` to the file's type, then
-to `application/octet-stream`. A staged document is not attached to anything
-yet; attach its handle through the workflow that owns the record.
 
 ### Space actions
 

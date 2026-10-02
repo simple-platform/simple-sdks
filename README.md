@@ -39,6 +39,7 @@ The Simple Platform SDKs provide first-class support for:
 - **⚙️ Settings Management**: Access application configuration securely
 - **📁 Storage Operations**: Upload and manage files with content-addressable storage
 - **🧾 Embedded Record Spaces**: Use behavior-aware record workflows through the browser-safe Space entry point
+- **🧩 Managed Space UI**: Reuse supported React UI for complex platform workflows without rebuilding them
 - **⚡ WASM Performance**: Optimized for the Simple Platform's high-performance runtime
 
 ---
@@ -61,6 +62,21 @@ simple.Handle(async (request) => {
 ```
 
 **[→ View full TypeScript SDK documentation](sdks/ts#readme)**
+
+### Space SDK and UI Kit
+
+The browser-safe `@simpleplatform/sdk/space` entry includes the Space data,
+record, document-staging, task, header-action, and platform-toast APIs. See the
+[Space SDK documentation](sdks/ts/README.md#embedded-spaces) for their current
+availability and contracts.
+
+`@simpleplatform/ui-kit` is the companion package for supported Space UI. The
+current alpha contains the `StatusBadge` element/React bridge and a pre-release
+managed React `RecordForm`. RecordForm still requires deployed browser-parity
+approval; check the UI Kit README for the current release status and supported
+contract before depending on it.
+
+**[→ View UI Kit documentation](sdks/space-ui/README.md)**
 
 ### Rust
 

@@ -49,7 +49,7 @@ const stagedHandle = {
   storage_path: 'staged/a3f1c9',
 }
 
-test('stages a file through a versioned request that hands its bytes to the host', async () => {
+test('stages a file through a versioned request that transfers its bytes', async () => {
   const transport = createTransport(succeed({ handle: stagedHandle }))
   const simple = createSimpleClient({ documentTransport: transport, nextRequestId: () => 'request-stage' })
   const file = new File(['contract packet'], 'packet.pdf', { type: 'application/pdf' })
@@ -66,12 +66,11 @@ test('stages a file through a versioned request that hands its bytes to the host
   assert.equal(request.payload.name, 'packet.pdf')
   assert.ok(request.payload.bytes instanceof ArrayBuffer)
   assert.equal(text(request.payload.bytes), 'contract packet')
-  assert.equal(transport.transfers[0].length, 1)
-  assert.equal(transport.transfers[0][0], request.payload.bytes)
+  assert.deepEqual(transport.transfers[0], [request.payload.bytes])
   assert.deepEqual(result, { handle: stagedHandle })
 })
 
-test('stages a plain Blob under the name and type the caller gives', async () => {
+test('stages a Blob using the supplied name and MIME type', async () => {
   const transport = createTransport(succeed({ handle: stagedHandle }))
   const simple = createSimpleClient({ documentTransport: transport })
 
@@ -86,7 +85,7 @@ test('stages a plain Blob under the name and type the caller gives', async () =>
   assert.equal(text(transport.requests[0].payload.bytes), 'a,b\n1,2\n')
 })
 
-test('lets the caller rename a File and falls back to a generic type', async () => {
+test('allows a File to be renamed and uses a generic MIME type when unknown', async () => {
   const transport = createTransport(succeed({ handle: stagedHandle }))
   const simple = createSimpleClient({ documentTransport: transport })
 
@@ -96,19 +95,17 @@ test('lets the caller rename a File and falls back to a generic type', async () 
   assert.equal(transport.requests[0].payload.mimeType, 'application/octet-stream')
 })
 
-test('keeps every member of the handle the host returns, with or without a scope', async () => {
+test('preserves host metadata on the staged handle', async () => {
   const { scope: _scope, ...unscoped } = stagedHandle
   const extended = { ...stagedHandle, preview_path: 'previews/a3f1c9' }
 
   for (const handle of [unscoped, extended]) {
     const simple = createSimpleClient({ documentTransport: createTransport(succeed({ handle })) })
-    const result = await simple.documents.stage({ file: new File(['x'], 'x.pdf') })
-
-    assert.deepEqual(result, { handle })
+    assert.deepEqual(await simple.documents.stage({ file: new File(['x'], 'x.pdf') }), { handle })
   }
 })
 
-test('explains that documents are unavailable when the host did not negotiate them', async () => {
+test('reports documents as unavailable when the host did not negotiate them', async () => {
   const simple = createSimpleClient({})
 
   await assert.rejects(
@@ -118,22 +115,20 @@ test('explains that documents are unavailable when the host did not negotiate th
   )
 })
 
-test('keeps documents independent of the record and task protocols', async () => {
-  const transport = createTransport(succeed({ handle: stagedHandle }))
+test('keeps document staging independent of record and task capabilities', async () => {
   const simple = createSimpleClient({
     context: { applicationId: 'dev.simple.system', kind: 'record', recordId: 'USR000005', tableName: 'user' },
-    documentTransport: transport,
+    documentTransport: createTransport(succeed({ handle: stagedHandle })),
   })
 
-  await assert.rejects(() => simple.records.current(), isProtocolError('unavailable'))
+  await assert.rejects(() => simple.record(), isProtocolError('unavailable'))
   await assert.rejects(() => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }), isProtocolError('unavailable'))
   assert.deepEqual(await simple.documents.stage({ file: new File(['x'], 'x.pdf') }), { handle: stagedHandle })
 })
 
-test('refuses a document that cannot be staged before anything is read or sent', async () => {
+test('rejects invalid input before reading or sending file bytes', async () => {
   const transport = createTransport(succeed({ handle: stagedHandle }))
   const simple = createSimpleClient({ documentTransport: transport })
-
   const invalid = [
     undefined,
     {},
@@ -151,7 +146,7 @@ test('refuses a document that cannot be staged before anything is read or sent',
   assert.deepEqual(transport.requests, [])
 })
 
-test('translates a staging refusal from the host into a structured protocol error', async () => {
+test('preserves a structured staging refusal from the host', async () => {
   const transport = createTransport(request => ({
     error: { code: 'too_large', message: 'The file is larger than this tenant allows.' },
     ok: false,
@@ -166,19 +161,18 @@ test('translates a staging refusal from the host into a structured protocol erro
   )
 })
 
-test('rejects a staging response that does not match the request envelope', async () => {
-  const transport = createTransport(() => ({
-    ok: true,
-    protocol: PROTOCOL_VERSION,
-    requestId: 'another-request',
-    result: { handle: stagedHandle },
-  }))
-  const simple = createSimpleClient({ documentTransport: transport, nextRequestId: () => 'request-stage' })
-
+test('rejects mismatched envelopes and malformed staged handles', async () => {
+  const simple = createSimpleClient({
+    documentTransport: createTransport(() => ({
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: 'another-request',
+      result: { handle: stagedHandle },
+    })),
+    nextRequestId: () => 'request-stage',
+  })
   await assert.rejects(() => simple.documents.stage({ file: new File(['x'], 'x.pdf') }), isProtocolError('invalid_response'))
-})
 
-test('rejects a malformed staged-document handle', async () => {
   const malformed = [
     {},
     { handle: null },
@@ -192,7 +186,7 @@ test('rejects a malformed staged-document handle', async () => {
   ]
 
   for (const result of malformed) {
-    const simple = createSimpleClient({ documentTransport: createTransport(succeed(result)) })
-    await assert.rejects(() => simple.documents.stage({ file: new File(['x'], 'x.pdf') }), isProtocolError('invalid_response'))
+    const client = createSimpleClient({ documentTransport: createTransport(succeed(result)) })
+    await assert.rejects(() => client.documents.stage({ file: new File(['x'], 'x.pdf') }), isProtocolError('invalid_response'))
   }
 })

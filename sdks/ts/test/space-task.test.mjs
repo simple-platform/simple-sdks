@@ -2,11 +2,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import {
-  createSimpleClient,
-  PROTOCOL_VERSION,
-  SpaceProtocolError,
-} from '../dist/space/core.js'
+import { createSimpleClient } from '../dist/space/core.js'
+import { PROTOCOL_VERSION, SpaceProtocolError } from '../dist/space/protocol.js'
 
 function createTransport(response) {
   const requests = []
@@ -146,7 +143,7 @@ test('keeps tasks independent of the record protocol', async () => {
     taskTransport,
   })
 
-  await assert.rejects(() => simple.records.current(), isProtocolError('unavailable'))
+  await assert.rejects(() => simple.record(), isProtocolError('unavailable'))
   assert.deepEqual(await simple.tasks.create({ input: {}, taskTypeId: 'TTY000003', title: 'Plan' }), createdTask)
 })
 
