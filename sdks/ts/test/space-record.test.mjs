@@ -6,8 +6,10 @@ import {
   createSimpleClient,
   getRecordFormBridge,
   PROTOCOL_VERSION,
+  RECORDS_PROTOCOL_VERSION,
   SpaceProtocolError,
 } from '../dist/space/core.js'
+import { connect } from '../dist/space/index.js'
 
 const recordContext = {
   applicationId: 'dev.simple.system',
@@ -50,7 +52,7 @@ test('opens the primary record through a versioned request and exposes an immuta
     transport,
   })
 
-  const record = await simple.record()
+  const record = await simple.records.current()
 
   assert.deepEqual(transport.requests, [{
     operation: 'record.current',
@@ -66,9 +68,10 @@ test('opens the primary record through a versioned request and exposes an immuta
   assert.equal('subscribe' in record, false)
   assert.equal('dispose' in record, false)
   assert.equal('page' in simple, false)
+  assert.equal('record' in simple, false)
 })
 
-test('keeps records.current as a compatibility alias for simple.record', async () => {
+test('keeps records.current as the primary-record API and ensures simple.record is absent', async () => {
   const transport = createTransport(request => ({
     ok: true,
     protocol: PROTOCOL_VERSION,
@@ -84,6 +87,8 @@ test('keeps records.current as a compatibility alias for simple.record', async (
   const record = await simple.records.current()
 
   assert.equal(record.id, 'session-primary')
+  assert.equal('record' in simple, false)
+  assert.equal(simple.record, undefined)
   assert.deepEqual(transport.requests, [{
     operation: 'record.current',
     payload: {},
@@ -122,8 +127,9 @@ test('keeps data available outside a record Space and explains why record access
   })
 
   assert.deepEqual(await simple.data.query('query Users { users { id } }'), { users: [] })
+  assert.equal('record' in simple, false)
   await assert.rejects(
-    () => simple.record(),
+    () => simple.records.current(),
     error => error instanceof SpaceProtocolError
       && error.code === 'unavailable'
       && error.message === 'The current record is available only when this Space is configured as a record view.',
@@ -220,7 +226,7 @@ test('routes private RecordForm toasts through the same platform toast transport
     toastTransport: { showToast: options => shown.push(options) },
     transport,
   })
-  const record = await simple.record()
+  const record = await simple.records.current()
 
   getRecordFormBridge(record).capabilities.showToast({ description: 'Upload complete.' })
   simple.ui.toast.show({ title: 'Saved' })
@@ -422,7 +428,7 @@ test('notifies the private managed form bridge when a command changes the snapsh
     const ids = ['request-open', 'request-submit']
     return () => ids.shift()
   })(), transport })
-  const record = await simple.record()
+  const record = await simple.records.current()
   const snapshots = []
   const bridge = getRecordFormBridge(record)
   const unsubscribe = bridge.subscribe(value => snapshots.push(value))
@@ -464,4 +470,753 @@ test('rejects a malformed record snapshot that cannot render behavior feedback s
     () => simple.records.current(),
     error => error instanceof SpaceProtocolError && error.code === 'invalid_response',
   )
+})
+
+class FakePort {
+  onmessage = null
+  sent = []
+  started = false
+  transfers = []
+
+  emit(data) {
+    this.onmessage?.({ data })
+  }
+
+  postMessage(message, transfer) {
+    this.sent.push(message)
+    this.transfers.push(transfer)
+  }
+
+  start() {
+    this.started = true
+  }
+}
+
+function replaceGlobal(name, value) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name)
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    value,
+    writable: true,
+  })
+
+  return () => {
+    if (descriptor)
+      Object.defineProperty(globalThis, name, descriptor)
+    else
+      delete globalThis[name]
+  }
+}
+
+class FakeSpaceWindow {
+  listeners = new Set()
+  parentMessages = []
+  document = {
+    documentElement: {
+      style: { overscrollBehaviorX: 'auto', overscrollBehaviorY: 'auto' },
+    },
+  }
+
+  parent = {
+    postMessage: (message, targetOrigin) => this.parentMessages.push({ message, targetOrigin }),
+  }
+
+  addEventListener(_type, listener) {
+    this.listeners.add(listener)
+  }
+
+  dispatchMessage(event) {
+    for (const listener of this.listeners)
+      listener(event)
+  }
+
+  removeEventListener(_type, listener) {
+    this.listeners.delete(listener)
+  }
+}
+
+test('records.open opens a secondary record session and returns a RecordHandle without close()', async () => {
+  assert.equal(RECORDS_PROTOCOL_VERSION, 1)
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: 'session-opened-1', snapshot: snapshot(1, { title: 'Secondary' }) },
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => 'request-open-1',
+    recordsTransport,
+  })
+
+  const handle = await simple.records.open({
+    appId: 'app-1',
+    recordId: 'rec-1',
+    tableName: 'contacts',
+  })
+
+  assert.equal(handle.id, 'session-opened-1')
+  assert.deepEqual(handle.snapshot(), snapshot(1, { title: 'Secondary' }))
+  assert.equal(handle.close, undefined)
+  assert.deepEqual(recordsTransport.requests, [{
+    operation: 'records.open',
+    payload: {
+      appId: 'app-1',
+      recordId: 'rec-1',
+      tableName: 'contacts',
+    },
+    protocol: 1,
+    requestId: 'request-open-1',
+  }])
+})
+
+test('makes records.current the sole current-record API and asserts simple.record is absent', async () => {
+  const transport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: 'session-primary', snapshot: snapshot(1) },
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => 'req-current',
+    transport,
+  })
+
+  const recordFromCurrent = await simple.records.current()
+  assert.equal(recordFromCurrent.id, 'session-primary')
+  assert.deepEqual(recordFromCurrent.snapshot(), snapshot(1))
+
+  assert.equal('record' in simple, false)
+  assert.equal(simple.record, undefined)
+})
+
+test('allows records.open in standalone context when recordsTransport is negotiated while current() remains unavailable', async () => {
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: 'session-opened-standalone', snapshot: snapshot(1) },
+  }))
+
+  const standalone = createSimpleClient({
+    context: { kind: 'standalone' },
+    recordsTransport,
+  })
+
+  // Standalone current() is unavailable
+  await assert.rejects(
+    () => standalone.records.current(),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'The current record is available only when this Space is configured as a record view.',
+  )
+
+  // Standalone open() succeeds with negotiated transport
+  const handle = await standalone.records.open({ appId: 'app-1', recordId: 'rec-1', tableName: 'table-1' })
+  assert.equal(handle.id, 'session-opened-standalone')
+  assert.deepEqual(handle.snapshot(), snapshot(1))
+})
+
+test('records.open returns structured unavailable errors when records capability was not negotiated', async () => {
+  // Record context without recordsTransport
+  const noCapabilityRecord = createSimpleClient({
+    context: recordContext,
+  })
+  await assert.rejects(
+    () => noCapabilityRecord.records.open({ appId: 'app-1', recordId: 'rec-1', tableName: 'table-1' }),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'The records protocol is unavailable for this Space.',
+  )
+
+  // Standalone context without recordsTransport
+  const noCapabilityStandalone = createSimpleClient({
+    context: { kind: 'standalone' },
+  })
+  await assert.rejects(
+    () => noCapabilityStandalone.records.open({ appId: 'app-1', recordId: 'rec-1', tableName: 'table-1' }),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'The records protocol is unavailable for this Space.',
+  )
+})
+
+test('records.open validates reference strings locally before sending', async () => {
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: 'session-1', snapshot: snapshot(1) },
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    recordsTransport,
+  })
+
+  // non-object references
+  await assert.rejects(
+    () => simple.records.open(null),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open('app/table/rec'),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // invalid appId
+  await assert.rejects(
+    () => simple.records.open({ appId: '', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: '   ', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 123, recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // invalid tableName
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'r', tableName: '' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'r', tableName: '   ' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'r', tableName: 456 }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // invalid recordId
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: '', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: '   ', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 789, tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // whitespace in appId
+  await assert.rejects(
+    () => simple.records.open({ appId: '  app', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'app  ', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // whitespace in tableName
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'r', tableName: '  table' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'r', tableName: 'table  ' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // whitespace in recordId
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: '  rec', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+  await assert.rejects(
+    () => simple.records.open({ appId: 'a', recordId: 'rec  ', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+  )
+
+  // nothing was sent
+  assert.equal(recordsTransport.requests.length, 0)
+})
+
+test('records.open rejects malformed host responses and mismatched envelopes', async () => {
+  // Mismatched requestId
+  const mismatchedTransport = createTransport(() => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: 'other-request-id',
+    result: { sessionId: 'session-1', snapshot: snapshot(1) },
+  }))
+  const mismatchedSimple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => 'req-open-mismatch',
+    recordsTransport: mismatchedTransport,
+  })
+  await assert.rejects(
+    () => mismatchedSimple.records.open({ appId: 'a', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_response',
+  )
+
+  // Malformed result: missing sessionId
+  const missingSessionTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { snapshot: snapshot(1) },
+  }))
+  const missingSessionSimple = createSimpleClient({
+    context: recordContext,
+    recordsTransport: missingSessionTransport,
+  })
+  await assert.rejects(
+    () => missingSessionSimple.records.open({ appId: 'a', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_response',
+  )
+
+  // Malformed result: malformed snapshot
+  const malformedSnapshotTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: 'session-1', snapshot: { revision: 1 } },
+  }))
+  const malformedSnapshotSimple = createSimpleClient({
+    context: recordContext,
+    recordsTransport: malformedSnapshotTransport,
+  })
+  await assert.rejects(
+    () => malformedSnapshotSimple.records.open({ appId: 'a', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError && error.code === 'invalid_response',
+  )
+
+  // Host error response
+  const hostErrorTransport = createTransport(request => ({
+    error: { code: 'record_not_found', message: 'Record does not exist.' },
+    ok: false,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+  }))
+  const hostErrorSimple = createSimpleClient({
+    context: recordContext,
+    recordsTransport: hostErrorTransport,
+  })
+  await assert.rejects(
+    () => hostErrorSimple.records.open({ appId: 'a', recordId: 'r', tableName: 't' }),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'record_not_found'
+      && error.message === 'Record does not exist.',
+  )
+})
+
+test('repeated opens for the same exact reference within one client share one pending promise and one handle', async () => {
+  let resolveHostResponse
+  const recordsTransport = createTransport(request => new Promise((resolve) => {
+    resolveHostResponse = () => resolve({
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: request.requestId,
+      result: { sessionId: 'session-shared', snapshot: snapshot(1) },
+    })
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => 'req-shared-open',
+    recordsTransport,
+  })
+
+  const ref = { appId: 'app-shared', recordId: 'rec-1', tableName: 'tbl' }
+  const promise1 = simple.records.open(ref)
+  const promise2 = simple.records.open(ref)
+
+  assert.equal(promise1, promise2, 'Concurrent opens for the same reference must share the exact same pending promise')
+  assert.equal(recordsTransport.requests.length, 1)
+
+  resolveHostResponse()
+
+  const [handle1, handle2] = await Promise.all([promise1, promise2])
+  assert.equal(handle1, handle2, 'Resolved handles for concurrent opens must be identical')
+
+  // A subsequent open after resolution also returns the same handle
+  const handle3 = await simple.records.open(ref)
+  assert.equal(handle3, handle1, 'Subsequent open for the same reference must return the existing handle')
+  assert.equal(recordsTransport.requests.length, 1, 'No additional request is sent for repeated opens')
+
+  // Different reference creates a separate session
+  const differentRefTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: `session-${request.payload.recordId}`, snapshot: snapshot(1) },
+  }))
+  const multiSimple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => 'req-multi',
+    recordsTransport: differentRefTransport,
+  })
+  const handleA = await multiSimple.records.open({ appId: 'a', recordId: '1', tableName: 't' })
+  const handleB = await multiSimple.records.open({ appId: 'a', recordId: '2', tableName: 't' })
+  assert.notEqual(handleA, handleB)
+  assert.equal(differentRefTransport.requests.length, 2)
+})
+
+test('record cache keys preserve tuple identity when identifiers contain separators', async () => {
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: `session-${recordsTransport.requests.length}`, snapshot: snapshot(1) },
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    recordsTransport,
+  })
+
+  const first = await simple.records.open({ appId: 'a\0b', recordId: 'd', tableName: 'c' })
+  const second = await simple.records.open({ appId: 'a', recordId: 'd', tableName: 'b\0c' })
+
+  assert.notEqual(first, second)
+  assert.equal(recordsTransport.requests.length, 2)
+})
+
+test('failed open promise cleans up pending cache to allow subsequent retry', async () => {
+  let failFirst = true
+  const recordsTransport = createTransport((request) => {
+    if (failFirst) {
+      failFirst = false
+      return {
+        error: { code: 'temporary_failure', message: 'Host is busy' },
+        ok: false,
+        protocol: PROTOCOL_VERSION,
+        requestId: request.requestId,
+      }
+    }
+    return {
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: request.requestId,
+      result: { sessionId: 'session-retry', snapshot: snapshot(1) },
+    }
+  })
+  const simple = createSimpleClient({
+    context: recordContext,
+    recordsTransport,
+  })
+  const ref = { appId: 'app-retry', recordId: 'r', tableName: 't' }
+
+  await assert.rejects(
+    () => simple.records.open(ref),
+    error => error instanceof SpaceProtocolError && error.code === 'temporary_failure',
+  )
+
+  // Subsequent open can now succeed
+  const handle = await simple.records.open(ref)
+  assert.equal(handle.id, 'session-retry')
+  assert.equal(recordsTransport.requests.length, 2)
+})
+
+test('opened handle relies on records.open form and does not subscribe to primary formModelTransport', async () => {
+  let primaryFormSubscriber
+  const secondaryFormModel = {
+    fields: [{ id: 'f2', isRequired: true, name: 'secondaryField', readOnly: false, type: 'string' }],
+  }
+
+  const formModelTransport = {
+    subscribeFormModel: (listener) => {
+      primaryFormSubscriber = listener
+      return () => {
+        primaryFormSubscriber = undefined
+      }
+    },
+  }
+
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { form: secondaryFormModel, sessionId: 'session-secondary', snapshot: snapshot(1) },
+  }))
+
+  const simple = createSimpleClient({
+    context: recordContext,
+    formModelTransport,
+    recordsTransport,
+  })
+
+  const openedHandle = await simple.records.open({ appId: 'a', recordId: 'r', tableName: 't' })
+  const bridge = getRecordFormBridge(openedHandle)
+  assert.ok(bridge, 'Bridge should be created when form is present in records.open response')
+  assert.deepEqual(bridge.form, secondaryFormModel)
+
+  // Secondary bridge does not subscribe to the primary formModelTransport
+  assert.ok(!primaryFormSubscriber, 'Secondary handle must not subscribe to primary form stream')
+})
+
+test('binds opaque sessionId into managed document capability requests for record handles', async () => {
+  const previewRequests = []
+  const deleteRequests = []
+  const createHandleRequests = []
+  const decryptRequests = []
+
+  const capabilities = {
+    createDocumentHandle: async (req) => {
+      createHandleRequests.push(req)
+      return { file_hash: 'hash-1' }
+    },
+    decrypt: async (req) => {
+      decryptRequests.push(req)
+      return 'decrypted-secret'
+    },
+    deleteFile: async (req) => {
+      deleteRequests.push(req)
+    },
+    getDocumentPreview: async (req) => {
+      previewRequests.push(req)
+      return { url: 'https://preview.local/file' }
+    },
+  }
+
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: {
+      form: { fields: [] },
+      sessionId: 'session-scoped-123',
+      snapshot: snapshot(1),
+    },
+  }))
+
+  const simple = createSimpleClient({
+    capabilities,
+    context: recordContext,
+    recordsTransport,
+  })
+
+  const handle = await simple.records.open({ appId: 'app1', recordId: 'rec1', tableName: 'tbl1' })
+  const bridge = getRecordFormBridge(handle)
+  assert.ok(bridge?.capabilities)
+
+  // 1. getDocumentPreview carries sessionId
+  await bridge.capabilities.getDocumentPreview({ fieldName: 'avatar', fileHash: 'hash-abc' })
+  assert.equal(previewRequests.length, 1)
+  assert.deepEqual(previewRequests[0], {
+    fieldName: 'avatar',
+    fileHash: 'hash-abc',
+    sessionId: 'session-scoped-123',
+  })
+
+  // 2. deleteFile context carries sessionId
+  await bridge.capabilities.deleteFile({ context: { source: 'user' }, fileHash: 'hash-abc' })
+  assert.equal(deleteRequests.length, 1)
+  assert.deepEqual(deleteRequests[0], {
+    context: { sessionId: 'session-scoped-123', source: 'user' },
+    fileHash: 'hash-abc',
+  })
+
+  // 3. createDocumentHandle target carries sessionId
+  await bridge.capabilities.createDocumentHandle({
+    bytes: new ArrayBuffer(4),
+    lifecycle: 'record',
+    mime: 'text/plain',
+    name: 'test.txt',
+    target: { field: 'doc' },
+  })
+  assert.equal(createHandleRequests.length, 1)
+  assert.deepEqual(createHandleRequests[0].target, {
+    field: 'doc',
+    sessionId: 'session-scoped-123',
+  })
+
+  // 4. decrypt carries sessionId
+  const val = await bridge.capabilities.decrypt({
+    appId: 'app1',
+    fieldName: 'secret',
+    recordId: 'rec1',
+    tableName: 'tbl1',
+  })
+  assert.equal(val, 'decrypted-secret')
+  assert.equal(decryptRequests.length, 1)
+  assert.deepEqual(decryptRequests[0], {
+    appId: 'app1',
+    fieldName: 'secret',
+    recordId: 'rec1',
+    sessionId: 'session-scoped-123',
+    tableName: 'tbl1',
+  })
+})
+
+test('preserves createDocumentHandle requests that omit target for staged file handling', async () => {
+  const createHandleRequests = []
+  const capabilities = {
+    createDocumentHandle: async (req) => {
+      createHandleRequests.push(req)
+      return { file_hash: 'hash-staged' }
+    },
+    decrypt: async () => 'secret',
+    deleteFile: async () => {},
+    getDocumentPreview: async () => ({ url: 'https://preview.local/file' }),
+  }
+
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: {
+      form: { fields: [] },
+      sessionId: 'session-scoped-staged',
+      snapshot: snapshot(1),
+    },
+  }))
+
+  const simple = createSimpleClient({
+    capabilities,
+    context: recordContext,
+    recordsTransport,
+  })
+
+  const handle = await simple.records.open({ appId: 'app1', recordId: 'rec1', tableName: 'tbl1' })
+  const bridge = getRecordFormBridge(handle)
+  assert.ok(bridge?.capabilities)
+
+  const stagedRequest = {
+    bytes: new ArrayBuffer(8),
+    lifecycle: 'staged',
+    mime: 'text/plain',
+    name: 'staged.txt',
+  }
+
+  const result = await bridge.capabilities.createDocumentHandle(stagedRequest)
+  assert.deepEqual(result, { file_hash: 'hash-staged' })
+  assert.equal(createHandleRequests.length, 1)
+  assert.equal('target' in createHandleRequests[0], false, 'target must remain absent for staged handle requests')
+  assert.equal(createHandleRequests[0].target, undefined)
+  assert.deepEqual(createHandleRequests[0], stagedRequest)
+})
+
+test('requires and preserves deleteFile context while augmenting with sessionId', async () => {
+  const deleteRequests = []
+  const capabilities = {
+    createDocumentHandle: async () => ({ file_hash: 'hash-1' }),
+    decrypt: async () => 'secret',
+    deleteFile: async (req) => {
+      deleteRequests.push(req)
+    },
+    getDocumentPreview: async () => ({ url: 'https://preview.local/file' }),
+  }
+
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: {
+      form: { fields: [] },
+      sessionId: 'session-scoped-del',
+      snapshot: snapshot(1),
+    },
+  }))
+
+  const simple = createSimpleClient({
+    capabilities,
+    context: recordContext,
+    recordsTransport,
+  })
+
+  const handle = await simple.records.open({ appId: 'app1', recordId: 'rec1', tableName: 'tbl1' })
+  const bridge = getRecordFormBridge(handle)
+  assert.ok(bridge?.capabilities)
+
+  const deleteRequest = {
+    context: {
+      componentId: 'file-dropzone',
+      source: 'user-delete',
+    },
+    fileHash: 'hash-abc',
+  }
+
+  await bridge.capabilities.deleteFile(deleteRequest)
+  assert.equal(deleteRequests.length, 1)
+  assert.deepEqual(deleteRequests[0], {
+    context: {
+      componentId: 'file-dropzone',
+      sessionId: 'session-scoped-del',
+      source: 'user-delete',
+    },
+    fileHash: 'hash-abc',
+  })
+})
+
+test('connect negotiates records protocol capability at version 1', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: recordContext,
+        protocols: { records: 1 },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+
+    const simple = await connection
+    const openPromise = simple.records.open({ appId: 'app1', recordId: 'USR001', tableName: 'users' })
+
+    assert.equal(port.sent.length, 1)
+    const [msg] = port.sent
+    assert.equal(msg.type, 'SPACE_PROTOCOL_REQUEST')
+    assert.equal(msg.request.operation, 'records.open')
+    assert.equal(msg.request.protocol, 1)
+    assert.deepEqual(msg.request.payload, { appId: 'app1', recordId: 'USR001', tableName: 'users' })
+
+    port.emit({
+      response: {
+        ok: true,
+        protocol: 1,
+        requestId: msg.request.requestId,
+        result: { sessionId: 'session-connected', snapshot: snapshot(1) },
+      },
+      type: 'SPACE_PROTOCOL_RESPONSE',
+    })
+
+    const handle = await openPromise
+    assert.equal(handle.id, 'session-connected')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('connect does not enable records when records capability was not negotiated', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: recordContext,
+        protocols: { record: 1 },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+
+    const simple = await connection
+    await assert.rejects(
+      () => simple.records.open({ appId: 'app1', recordId: 'USR001', tableName: 'users' }),
+      error => error instanceof SpaceProtocolError
+        && error.code === 'unavailable'
+        && error.message === 'The records protocol is unavailable for this Space.',
+    )
+  }
+  finally {
+    restoreWindow()
+  }
 })

@@ -121,7 +121,7 @@ test('keeps document staging independent of record and task capabilities', async
     documentTransport: createTransport(succeed({ handle: stagedHandle })),
   })
 
-  await assert.rejects(() => simple.record(), isProtocolError('unavailable'))
+  await assert.rejects(() => simple.records.current(), isProtocolError('unavailable'))
   await assert.rejects(() => simple.tasks.reply({ content: 'Done.', taskId: 'TASK000042' }), isProtocolError('unavailable'))
   assert.deepEqual(await simple.documents.stage({ file: new File(['x'], 'x.pdf') }), { handle: stagedHandle })
 })

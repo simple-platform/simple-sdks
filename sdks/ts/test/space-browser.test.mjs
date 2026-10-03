@@ -124,7 +124,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -135,7 +135,8 @@ test('connects a Space without exposing embedded transport configuration', async
     })
 
     const simple = await connection
-    const primaryRecord = simple.record()
+    assert.equal('record' in simple, false)
+    const primaryRecord = simple.records.current()
     port.emit({
       response: primaryRecordResponse(port.sent[0].request.requestId),
       type: 'SPACE_PROTOCOL_RESPONSE',
@@ -262,7 +263,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -273,8 +274,9 @@ test('offers supported Space capabilities including document staging', async () 
     })
     const simple = await connection
     assert.deepEqual(simple.context, recordContext)
+    assert.equal('record' in simple, false)
     assert.equal(typeof simple.documents.stage, 'function')
-    const primaryRecord = simple.record()
+    const primaryRecord = simple.records.current()
 
     port.emit({
       response: primaryRecordResponse(port.sent[0].request.requestId),
@@ -282,6 +284,33 @@ test('offers supported Space capabilities including document staging', async () 
     })
 
     assert.equal((await primaryRecord).id, 'space-session-primary')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('SPACE_READY advertises supported protocol versions including records: [1]', () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    connect({ targetOrigin: 'https://acme.simple.lcl' })
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    const [readyMessage] = spaceWindow.parentMessages
+    assert.equal(readyMessage.targetOrigin, 'https://acme.simple.lcl')
+    assert.equal(readyMessage.message.type, 'SPACE_READY')
+    assert.deepEqual(readyMessage.message.protocols, {
+      action: [1],
+      document: [1],
+      form: [2],
+      header: [1],
+      record: [1],
+      records: [1],
+      tabs: [1],
+      task: [1],
+      toast: [1],
+    })
   }
   finally {
     restoreWindow()
@@ -297,7 +326,7 @@ test('keeps the host-selected UI Runtime descriptor private to the managed form 
   const simple = await connectWithHost(port, recordContext, { form: 2, record: 1 }, runtime)
   assert.equal(Object.hasOwn(simple.ui, 'runtime'), false)
 
-  const opening = simple.record()
+  const opening = simple.records.current()
   const response = primaryRecordResponse(port.sent.at(-1).request.requestId)
   response.result.form = { fields: [] }
   port.emit({ response, type: 'SPACE_PROTOCOL_RESPONSE' })
@@ -480,7 +509,7 @@ test('renders a managed form when its first metadata arrives after record.curren
   // Form configuration can finish loading before or after the Space asks for
   // its record. Keep the newest host model until RecordForm subscribes.
   port.emit({ form: initialFormUpdate, type: 'SPACE_RECORD_FORM_UPDATE' })
-  const recordRequest = simple.record()
+  const recordRequest = simple.records.current()
   const requestId = port.sent[0].request.requestId
   port.emit({ response: primaryRecordResponse(requestId), type: 'SPACE_PROTOCOL_RESPONSE' })
   const record = await recordRequest
