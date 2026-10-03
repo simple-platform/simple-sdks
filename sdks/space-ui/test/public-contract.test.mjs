@@ -35,6 +35,7 @@ test('publishes only the supported prop-driven UI Kit bridges', () => {
   assert.equal('RuntimeLoadError' in root, false)
   assert.equal(typeof react.StatusBadge, 'function')
   assert.equal(typeof react.RecordForm, 'function')
+  assert.equal(typeof react.RecordActivity, 'function')
   assert.equal('SimpleProvider' in react, false)
   assert.equal('useSimpleClient' in react, false)
 })
@@ -102,6 +103,7 @@ test('packs and imports every supported public entry point without private sourc
     assert.equal(typeof packedReact.StatusBadge, 'function')
     assert.equal(typeof packedRuntime.loadRuntime, 'function')
     assert.equal(typeof packedReact.RecordForm, 'function')
+    assert.equal(typeof packedReact.RecordActivity, 'function')
   }
   finally {
     await rm(destination, { force: true, recursive: true })

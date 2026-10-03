@@ -8,7 +8,8 @@ import {
   SpaceDataError,
   SpaceProtocolError,
 } from '../dist/space/index.js'
-import { getRecordFormBridge } from '../dist/space/internal.js'
+
+const getRecordFormBridge = record => record[Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')]
 
 class FakePort {
   onmessage = null
@@ -149,6 +150,36 @@ test('connects a Space without exposing embedded transport configuration', async
   }
 })
 
+test('opens a secondary session in a general Space only when records was negotiated', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, { kind: 'standalone' }, { records: 1 })
+  const target = { appId: 'app-a', recordId: 'rec-1', tableName: 'contacts' }
+  const opening = simple.records.open(target)
+
+  assert.equal(port.sent[0].request.operation, 'records.open')
+  assert.deepEqual(port.sent[0].request.payload, target)
+  port.emit({
+    response: {
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: port.sent[0].request.requestId,
+      result: {
+        form: { fields: [], recordId: target.recordId, tableId: 'table-1' },
+        sessionId: 'session-opened',
+        snapshot: primaryRecordResponse('unused').result.snapshot,
+      },
+    },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  })
+  assert.equal((await opening).id, 'session-opened')
+  await assert.rejects(() => simple.records.current(), error =>
+    error instanceof SpaceProtocolError && error.code === 'unavailable')
+
+  const oldHost = await connectWithHost(new FakePort(), { kind: 'standalone' }, {})
+  await assert.rejects(() => oldHost.records.open(target), error =>
+    error instanceof SpaceProtocolError && error.code === 'unavailable')
+})
+
 test('disables root viewport overscroll when connecting an embedded Space', async () => {
   const port = new FakePort()
   const spaceWindow = new FakeSpaceWindow()
@@ -173,10 +204,18 @@ test('disables root viewport overscroll when connecting an embedded Space', asyn
   }
 })
 
-test('keeps the managed-form bridge out of the supported Space entry point', async () => {
+test('keeps managed UI integration out of package exports', async () => {
   const publicSpace = await import('../dist/space/index.js')
 
   assert.equal('getRecordFormBridge' in publicSpace, false)
+  await assert.rejects(
+    () => import('@simpleplatform/sdk/space/internal'),
+    { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
+  )
+  await assert.rejects(
+    () => import('@simpleplatform/sdk/space/managed-ui'),
+    { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
+  )
   assert.equal('connectSpace' in publicSpace, false)
 })
 

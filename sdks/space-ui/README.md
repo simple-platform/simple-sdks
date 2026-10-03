@@ -7,7 +7,7 @@ workflow; use the Space SDK directly when you need to own the UI yourself.
 ## Status
 
 This package is in alpha. `StatusBadge` is the current simple component.
-Managed `RecordForm` is a pre-release interface and still requires deployed
+Managed `RecordForm` and `RecordActivity` are pre-release interfaces and still require deployed
 browser-parity approval. Record-header actions are exposed by the companion
 Space SDK as `simple.ui.header`; they are not a UI Kit export.
 Do not treat alpha APIs as a stable compatibility promise until they are
@@ -65,17 +65,21 @@ project.
 ### Runtime boundary
 
 The Simple host supplies the exact UI Runtime to the managed component bridge
-during the Space handshake. `<RecordForm />` loads it automatically; the runtime
+during the Space handshake. `<RecordForm />` and `<RecordActivity />` load it automatically; the runtime
 loader and URL are private implementation details, not supported Space APIs.
 Space authors should never choose or hard-code a runtime URL.
 
+The UI Kit reads host metadata and authorized callbacks from SDK-created record
+handles through a versioned symbol. Space authors use the `RecordForm` and
+`RecordActivity` components; there is no managed UI adapter package entry point.
+
 ### Framework support
 
-The managed `RecordForm` export is currently available only from
+The managed `RecordForm` and `RecordActivity` exports are currently available only from
 `@simpleplatform/ui-kit/react`. Simple's renderer itself runs inside the Space
 iframe, so React is not an architectural requirement for customer Spaces; the
-current limitation is that a public framework-neutral form element has not
-been shipped. The private runtime element is not a supported HTML API.
+current limitation is that a public framework-neutral form or activity element has not
+been shipped. The private runtime elements are not supported HTML APIs.
 
 The intended direction is to expose a public element from
 `@simpleplatform/ui-kit/elements` and make the React component a thin adapter
@@ -181,6 +185,89 @@ Simple and are not supported extension APIs:
 
 This boundary lets Simple improve complex field workflows without requiring
 customer Spaces to track internal form contracts.
+
+## RecordActivity
+
+`RecordActivity` is the managed component for displaying the platform activity
+stream (audit log changes and notes) for a record handle.
+
+```tsx
+import type { RecordHandle } from '@simpleplatform/sdk/space'
+import { connect } from '@simpleplatform/sdk/space'
+import { RecordActivity } from '@simpleplatform/ui-kit/react'
+import { useEffect, useState } from 'react'
+import '@simpleplatform/ui-kit/theme.css'
+
+const client = connect({ targetOrigin: new URL(document.referrer).origin })
+
+export function ActivityView() {
+  const [record, setRecord] = useState<RecordHandle | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void client
+      .then(simple => simple.record())
+      .then((value) => {
+        if (active)
+          setRecord(value)
+      })
+      .catch((reason: unknown) => {
+        if (active)
+          setError(reason instanceof Error ? reason : new Error('Could not load the record.'))
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (error)
+    return <p role="alert">{error.message}</p>
+
+  if (!record) {
+    return <p>Loading record…</p>
+  }
+
+  return <RecordActivity record={record} />
+}
+```
+
+| Prop     | Type           | Required | Purpose                                                            |
+| -------- | -------------- | -------- | ------------------------------------------------------------------ |
+| `record` | `RecordHandle` | Yes      | A record handle from `simple.record()` or `simple.records.open()`. |
+
+### Supported context and behavior
+
+`RecordActivity` accepts the route record in a Record Space or an opened record
+in a Record or standalone Space. The private record UI bridge supplies the target
+application ID, table ID, record ID, and fields. When rendered without this
+bridge or required identity metadata, it renders an accessible error alert with
+a retry action. Metadata refreshes update the mounted activity element in place
+so a note draft and the feed's pagination state are preserved.
+
+The managed activity stream provides:
+
+- **Audit changes**: Detailed change history for record fields, formatted with
+  field display names and human-readable diffs.
+- **Notes**: Chronological view of collaborator notes with author information
+  and timestamps, plus note composer functionality to submit new notes.
+- **Show more pagination**: Incremental loading of older audit events and notes
+  as users request more history.
+- **Loading and failures**: The activity panel shows skeleton rows while its
+  initial queries load. Runtime setup errors render an accessible alert with a
+  "Try again" action. Activity query failures show the panel's inline error
+  message; that state currently has no separate retry control.
+
+### Runtime boundary
+
+Like `RecordForm`, `RecordActivity` mounts the canonical `<simple-record-activity>`
+Web Component from the host-supplied Simple UI Runtime inside the Space iframe.
+It receives `applicationId`, `tableId`, `recordId`, `fields`, `graphql`, and the
+existing optional decrypt capability from the private record UI bridge. The
+runtime descriptor, loader, and underlying GraphQL operations are
+private implementation details and not customer extension points. This integration
+is pre-release and subject to deployed browser-parity approval.
 
 ## Build a custom form instead
 
