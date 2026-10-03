@@ -82,8 +82,9 @@ The intended direction is to expose a public element from
 over it. Vue, Svelte, or plain JavaScript could then pass a `RecordHandle` as an
 element property and use the same managed form. Until that element has a
 documented lifecycle, property, error, loading, and cleanup contract, non-React
-Spaces can use `@simpleplatform/sdk/space` to build their own controls around
-`simple.record()`; they cannot use the managed `RecordForm` directly.
+Spaces can use `@simpleplatform/sdk/space` to build custom controls with
+`simple.records.current()` or `simple.records.open()`. The managed `RecordForm`
+itself remains available only through the React entry point.
 
 ## RecordForm
 
@@ -106,7 +107,7 @@ export function App() {
   useEffect(() => {
     let active = true
     void client
-      .then(simple => simple.record())
+      .then(simple => simple.records.current())
       .then((value) => {
         if (active)
           setRecord(value)
@@ -147,9 +148,12 @@ The form also refreshes when the same `record` handle completes an
 form renders its initial snapshot and snapshots produced by commands.
 
 The platform remains the source of truth. `RecordForm` does not execute Record
-Behaviors or persist records directly; it renders the route-owned record
-session and calls the existing record commands. Simple's field implementations
-are not published as customer extension points. The browser runtime is
+Behaviors or persist records directly; it renders the managed record session
+and calls the existing record commands. It accepts both the route-owned handle
+from `simple.records.current()` and an opened handle from `simple.records.open()`.
+An opened record session stays available until the Space connection ends, even
+if its `RecordForm` is unmounted earlier. Simple's field implementations are
+not published as customer extension points. The browser runtime is
 inspectable, however; authorization and privileged operations must always be
 enforced by the host/server, not by keeping client implementation hidden.
 
@@ -185,7 +189,7 @@ the markup, controls, and local UI state; the platform still owns behavior
 execution, validation, authorization, and persistence.
 
 ```ts
-const record = await simple.record()
+const record = await simple.records.current()
 
 await record.update({ status: 'active' })
 

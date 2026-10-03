@@ -1,7 +1,7 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and tabs, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, and standalone document staging are implemented in the workspace. Fixture `0.0.2-local.31` is deployed and browser-verified. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling; SDK tests and desktop/mobile CDP checks pass. `connect({ targetOrigin })` is the sole browser bootstrap. `simple.tasks.create()` / `simple.tasks.reply()` depend on host task-protocol negotiation. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and managed-form host capabilities remain private.
-- **Last updated:** 2026-10-02
+- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and tabs, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, and standalone document staging are implemented in the workspace. Fixture `0.0.2-local.31` is deployed and browser-verified. Multi-record sessions are implemented and reviewed locally across the SDK, host, and fixture app; targeted checks pass, with browser and release validation still open. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling; SDK tests and desktop/mobile CDP checks pass. `connect({ targetOrigin })` is the sole browser bootstrap. `simple.tasks.create()` / `simple.tasks.reply()` depend on host task-protocol negotiation. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and managed-form host capabilities remain private.
+- **Last updated:** 2026-10-03
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -15,7 +15,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 1. Publish one TypeScript package: `@simpleplatform/sdk`.
 2. Keep Action/WASM and browser APIs in explicit, safe entry points.
-3. Provide a small framework-neutral Space client with clear nouns and verbs: `connect({ targetOrigin })` and `simple.record()`.
+3. Provide a small framework-neutral Space client with clear nouns and verbs: `connect({ targetOrigin })`, `simple.records.current()`, and `simple.records.open()`.
 4. Preserve the platform-owned record workflow for form records, including Record Behaviors, validation, documents, authorization enforcement, and submit state.
 5. Retain flexible application data access through a single SDK contract rather than copied bridge code.
 6. Use transport abstractions so an iframe MessagePort and a future portal-session transport can implement the same public contracts.
@@ -28,7 +28,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Providing subscriptions, live events, or public `dispose()` before there is a real event source.
 - Treating GraphQL mutation as a replacement for behavior-aware record updates.
 - Exposing host `RecordSession` instances, route internals, cookies, or credentials to a Space.
-- Publishing `simple.records.open()` or `record.close()` in the foundation release.
+- Publishing multi-record session access or `OpenedRecordHandle.close()` in the original foundation release.
 - Publishing form schemas, field metadata, field renderer replacement, or Record Behavior timing as a supported UI extension API.
 - Removing copied bridge support or modifying B&V Spaces without an approved migration plan.
 
@@ -36,8 +36,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 
 ### KISS
 
-- Keep the Space surface to namespaces a concrete capability requires: `simple.record()`, `simple.data`, `simple.documents`, and `simple.tasks`.
-- Use obvious method names: `connect`, `record`, `data.query`, `data.mutate`, `documents.stage`, `record.update`, `record.submit`, `tasks.create`, and `tasks.reply`.
+- Keep the Space surface to namespaces a concrete capability requires: `simple.records`, `simple.data`, `simple.documents`, and `simple.tasks`.
+- Use obvious method names: `connect`, `records.current`, `records.open`, `data.query`, `data.mutate`, `documents.stage`, `record.update`, `record.submit`, `record.close`, `tasks.create`, and `tasks.reply`.
 - Use a single bootstrap name, `connect({ targetOrigin })`; do not retain a `connectSpace` alias. Avoid subscriptions, lifecycle methods, or generic record abstractions until a concrete capability requires them.
 
 ### DRY
@@ -58,14 +58,14 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - `@simpleplatform/sdk` already owns the published TypeScript package and Action/WASM API.
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
-- The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake and currently exposes the route's primary record only.
-- Each public protocol capability has its own key in that handshake. The Space offers `action`, `document`, `form`, `header`, `record`, `task`, and `toast`; the host grants document staging, tasks, toasts, and actions independently of record access, and grants record/form/header only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository).
+- The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake. `record` provides the route record while the independently negotiated `records` protocol opens and closes host-managed secondary sessions.
+- Each public protocol capability has its own key in that handshake. The Space offers `action`, `document`, `form`, `header`, `record`, `records`, `tabs`, `task`, and `toast`; the host grants document staging, records, tasks, toasts, and actions independently of record access, and grants record/form/header/tabs only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository).
 - Before `action.run`, Spaces ran their own app's actions with a `fetch` of their own to `https://triggers.<parent host>/logic`. That needs the app to name a domain in its Space network permission, which the host turns into the iframe's CSP `connect-src` (`apps/platform_web/components/space-iframe.tsx`), so a Space broke on any other domain, and each Space resolved the endpoint itself. With `action.run`, the host makes the call on behalf of the Space without direct network requests.
 - Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities. Separately, `simple.documents.stage()` supports customer-owned upload workflows and returns an unattached staged handle. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to managed-form file bytes.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - A managed form may receive a private command-notification from its record handle when `update()` or `submit()` replaces the snapshot. This is a one-handle UI synchronization seam, not a public live subscription API; server/live events remain deferred.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
-- `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.record()` rejects with a structured `unavailable` error only when invoked.
+- `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment, and `simple.records.open()` is available whenever `recordsTransport` was negotiated; `simple.records.current()` and unnegotiated capabilities reject with a structured `unavailable` error only when invoked.
 - Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
 - The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
 
@@ -75,7 +75,8 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 @simpleplatform/sdk
 ├── package root                 Action/WASM API only
 ├── /space                      framework-neutral Space client
-│   ├── simple.record()          behavior-aware primary form record
+│   ├── simple.records.current() route-owned behavior-aware record
+│   ├── simple.records.open()    independently authorized record session
 │   ├── simple.data              flexible authorized application data
 │   ├── simple.documents         standalone staged document uploads
 │   ├── simple.tasks             tasks created from a task type, and replies
@@ -120,7 +121,7 @@ type SpaceContext
     }
 ```
 
-There is intentionally no inferred or `unknown` context variant. Context is descriptive page information, while `record()` remains the route-owned primary session with the shared behavior, validation, error, dirty-state, and header lifecycle.
+There is intentionally no inferred or `unknown` context variant. Context is descriptive page information, while `records.current()` remains the route-owned primary session with the shared behavior, validation, error, dirty-state, and header lifecycle.
 
 ## Ownership and security boundaries
 
@@ -147,7 +148,7 @@ import { connect } from '@simpleplatform/sdk/space'
 
 ```ts
 const simple = await connect({ targetOrigin })
-const record = await simple.record()
+const record = await simple.records.current()
 
 await record.update({ first_name: 'Ada' })
 const result = await record.submit()
@@ -155,6 +156,44 @@ const snapshot = record.snapshot()
 ```
 
 `record.update()` stages completed field values and returns the host's new snapshot. `record.submit()` runs the canonical platform workflow and returns `{ ok, snapshot }`; expected validation failures are results rather than bypassable client state.
+
+`simple.records.current()` is the sole route-current-record API (`simple.record()` is removed completely).
+Use `simple.records` for both the route-owned record and independently opened
+sessions.
+
+### Open another record session
+
+```ts
+const related = await simple.records.open({
+  appId: 'com.example.crm',
+  recordId: 'CON000123',
+  tableName: 'contacts',
+})
+
+await related.update({ status: 'active' })
+const result = await related.submit()
+```
+
+`appId`, `tableName`, and `recordId` are required. `appId` distinguishes
+same-named tables across applications; it does not grant access. The host
+resolves the exact target using the current user's existing authorization and
+returns the same generic `target_unavailable` error for missing and
+inaccessible records.
+
+The host creates the managed form and `RecordSession` through its existing
+record loading path. Each session owns its field state, behavior execution,
+errors, pending documents, and submit lifecycle. The SDK deduplicates
+concurrent and repeated opens of the same target within one connection and
+returns the same live `RecordHandle`. The host keeps opened sessions for the
+Space connection and disposes all of them when that connection ends. There is
+no per-record close method; unmounting UI does not end the session.
+
+Opening the exact route target rejects with `SpaceProtocolError` code
+`already_current`; use `simple.records.current()` for that record. The
+host aborts pending opens when the Space connection ends.
+
+Each handle's `submit()` persists one record independently. The SDK provides
+no atomic multi-record submission or implicit save ordering.
 
 In the embedded Space document, `connect()` sets the root element's
 `overscroll-behavior-y` to `none`. This suppresses vertical edge bounce at the
@@ -367,8 +406,7 @@ The action contract agreed with the host:
 - `SpaceProtocolError` represents malformed, invalid, unsupported, unavailable, denied, or closed record, task, and action protocol operations.
 - `SpaceProtocolError.details` is whatever the host sent, unchanged. For `task_rejected` it is the task channel's error, `{ code, category, message, pointers, details }` (see _Task refusals_). For `action_failed` it is `{ status, body }` (see _Actions_).
 - `SpaceDataError` represents unavailable/closed data transport or a host GraphQL failure.
-- The primary record belongs to the route and has no public close method.
-- Internal MessagePort teardown is implementation cleanup. Public `record.close()` begins only with secondary-record support.
+- Opened record sessions belong to the Space connection; internal MessagePort teardown cancels pending opens and disposes all secondary sessions.
 
 ## Code and package layout
 
@@ -394,7 +432,7 @@ simple-sdks/
 3. **Unify package and flexible data access — complete.** Publish the `@simpleplatform/sdk/space` subpaths, provide `simple.data`, and prove the deployed fixture can make a safe read without regressing the record API.
 4. **Tasks — implemented locally.** Negotiate `protocols.task`, send `task.create` / `task.reply`, and contract-test envelopes, input checks, and result validation. Managed RecordForm document operations remain private to the UI Kit/platform integration.
 5. **Actions run by the host — SDK side complete.** Negotiate `protocols.action`, send `action.run` with the action's name alone, and contract-test the envelope, the name, input, and timeout checks, and the pass-through of every host answer. The host side is a separate platform change.
-6. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
+6. **Secondary record sessions — implemented locally.** `simple.records.open({ appId, tableName, recordId })` returns a `RecordHandle` using a host-owned loader, authorization path, opaque session registry, and managed form. Sessions are disposed with the Space connection. SDK, host protocol, document binding, concurrent-open, cancellation, and fixture coverage are present; release checks remain.
 7. **Managed RecordForm — renderer boundary complete locally; capability parity in progress.** Extracted the shared private React renderer and layout, kept SDK renderer and transport details private, exposed only `<RecordForm record={record} />`, and made the platform form and iframe runtime use the same renderer artifact. Document, secret, and reference side-effect adapters still require end-to-end verification before this step is release-complete.
 8. **Record-Space header actions — complete locally.** Implemented `simple.ui.header.actions.set(actions)` with opaque iframe callbacks, platform-rendered loading, controlled `loading` / `disabled`, persisted View-Action override semantics, and teardown restoration.
 9. **Platform toast notifications — implemented locally.** Negotiate the `toast` capability independently of record context and expose `simple.ui.toast.show()` as a plain-text request to the platform-owned toast presenter.
@@ -470,7 +508,7 @@ secret decryption, and parent-frame navigation.
 
 ### Risks
 
-- **Record workflow bypass:** Documentation and SDK examples must keep record writes on `simple.record()`; host enforcement remains authoritative.
+- **Record workflow bypass:** Documentation and SDK examples must keep record writes on handles from `simple.records`; host enforcement remains authoritative.
 - **Transport drift:** New transports must satisfy existing contract tests rather than change the public client shape.
 - **Copied bridge migration:** Production Spaces use more capabilities than data access. Removing bridge handlers before a migration inventory would cause customer regressions.
 - **Versioned asset mismatch:** Deployment manifests must be built after their app version is written; otherwise the host can resolve a Space asset path that was never uploaded.
@@ -478,11 +516,10 @@ secret decryption, and parent-frame navigation.
 ### Open questions
 
 1. Which data operations will a future portal session permit, and how are those scopes declared per Space?
-2. What record-loader API and ownership model are needed for `simple.records.open()`?
-3. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
-4. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
-5. What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?
-6. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
+2. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
+3. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
+4. What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?
+5. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
 
@@ -679,3 +716,36 @@ secret decryption, and parent-frame navigation.
 - **Decision:** `connect()` sets `document.documentElement.style.overscrollBehaviorY` to `none` in the Space document.
 - **Reason:** The platform iframe is cross-origin, so host CSS cannot control the embedded root scroller. Applying the rule inside the SDK's existing browser bootstrap suppresses root-edge bounce without disabling normal scrolling or adding a new public API.
 - **Boundary:** This applies to Space documents that use the current SDK bootstrap. Existing immutable Space bundles must be rebuilt to include the updated SDK. The host iframe element's overscroll style alone did not stop the child document's edge bounce in Chrome.
+
+### 2026-10-02 — Add host-owned multi-record sessions
+
+- **Decision:** Expose `simple.records.current()` for the route record and `simple.records.open({ appId, tableName, recordId })` for an additional record. The opened handle extends `RecordHandle` with `close()`; `simple.record()` remains a deprecated alias for the current route record.
+- **Reason:** Space authors need to compose multiple records while retaining Simple's existing record behavior, validation, document, permission, and persistence workflows. A host-owned resolver and opaque session registry avoid creating a second form or trusting record coordinates after opening.
+- **Boundary:** Repeated exact-target opens share a handle/session. The route target returns `already_current`. Closing waits for in-flight commands and disposes the secondary form owner; Space teardown cancels pending opens and disposes all secondary sessions. The primary session remains page-owned. Each session submits independently; no multi-record transaction or live subscription is added.
+- **Validation:** SDK tests cover validation, deduplicated opens, close/reopen behavior, and operation ordering. Host tests cover target resolution, cross-app tuple identity, authorization-safe errors, document/session binding, concurrent opens, teardown cancellation, and route-target rejection. The `simple-apps` fixture demonstrates two managed forms and independent submit/close behavior.
+
+### 2026-10-02 — Clarify multi-record Space SDK contract
+
+- **Decision:** Remove `simple.record()` completely from the public `SimpleClient` interface and returned client (no alias). Keep `simple.records.current()` as the sole route-current-record API, preserving its structured `unavailable` error in general Space context. Allow `simple.records.open({ appId, tableName, recordId })` in both Record Space and general Space whenever `recordsTransport` was negotiated, returning structured `unavailable` only when that transport is absent. Remove `context` from `createRecordsClient` options.
+- **Reason:** Aligns the Space client with the standalone capabilities design principle. Standalone multi-record access should not depend on a record route or route context when secondary records transport is negotiated by the host. Removing the deprecated `simple.record()` alias completely establishes `simple.records` as the single explicit record namespace.
+- **Boundary:** `records.current()` continues to require a route-owned record view and rejects with `unavailable` in standalone context or when route record transport is absent. `records.open()` requires only negotiated `recordsTransport`.
+- **Supersedes:** The `simple.record()` deprecated alias from the 2026-10-02 multi-record sessions decision, and the restriction of `records.open()` to record Space context.
+
+### 2026-10-03 — Remove the old current-record API without an alias
+
+- **Decision:** Expose the route-owned record only through `simple.records.current()`; do not keep `simple.record()` as a compatibility alias. `simple.records.open({ appId, tableName, recordId })` works in Record and general Spaces when negotiated, while `current()` remains unavailable without Record Space context.
+- **Reason:** A single plural namespace keeps current and independently opened sessions together and makes the API consistent across Space types.
+
+### 2026-10-03 — Keep public Space API grammar consistent
+
+- **Decision:** Group related operations under a domain namespace and use explicit method verbs for the operation, following patterns such as `simple.data.query()`, `simple.records.current()` / `.open()`, `simple.actions.run()`, and `simple.ui.tabs.set()` / `.select()`. Use the noun that best describes the domain: plural for countable resource families such as `records`, `actions`, and `tasks`; singular for value or service namespaces such as `context` and `data`. Do not add a second root-level shortcut or compatibility alias for an operation in a domain namespace.
+- **Reason:** A consistent namespace-and-verb shape makes the public API easier to discover, keeps related operations cohesive, and leaves room to add operations without accumulating unrelated root methods. Consistency applies to API structure, not to forcing every domain noun into singular or plural.
+- **Boundary:** API methods may be present on the shared client while a host rejects context-specific operations with a structured `unavailable` error. For records, `current()` requires Record Space context; `open()` works in Record and general Spaces when the records capability is negotiated. Context-specific availability must not introduce a differently shaped API or an alias.
+- **Supersedes:** The earlier `simple.record()` root-level route-record accessor decision. The current record API is `simple.records.current()`; there is no `simple.record()` compatibility alias.
+
+### 2026-10-03 — Keep opened record lifetime at the Space connection boundary
+
+- **Decision:** `simple.records.open()` returns a `RecordHandle`; do not add `close()` to the handle or a `records.close` protocol operation. The host disposes all opened sessions when the Space connection ends.
+- **Reason:** Per-handle cleanup adds a second lifetime API and requires callers to coordinate shared handles. Space connection teardown already provides a clear owner and deterministic cleanup boundary.
+- **Boundary:** Repeated opens of the same target reuse the same handle for the life of the Space connection. Unmounting a `RecordForm` removes its UI but does not dispose the session. Explicit per-record disposal can be reconsidered if a concrete long-lived Space use case requires it.
+- **Supersedes:** The 2026-10-02 `OpenedRecordHandle.close()` design and the `records.close` operation.

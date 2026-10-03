@@ -49,7 +49,7 @@ Action/WASM API, so Action code never imports browser globals by accident.
 import { connect } from '@simpleplatform/sdk/space'
 
 const simple = await connect({ targetOrigin: new URL(document.referrer).origin })
-const record = await simple.record()
+const record = await simple.records.current()
 
 await record.update({ first_name: 'Ada' }) // Stages values and runs update Behavior.
 const result = await record.submit() // Runs submit Behavior, then persists on success.
@@ -65,11 +65,52 @@ Connect once when the Space starts and reuse the returned client. One embedded i
 does not provide a referrer, supply the host origin from the Space's trusted
 configuration.
 
-`record()` returns the platform-owned record for the current record
-page. Its handle exposes immutable snapshots, `update(values)`, and `submit()`.
-The host enforces permissions and runs Record Behaviors; the Space only renders
-the returned state. Snapshots may also include `formInfo` for behavior-produced
-form-level guidance.
+`simple.records.current()` returns the platform-owned record for the current
+record page. Its handle exposes immutable snapshots, `update(values)`, and
+`submit()`. The host enforces permissions and runs Record Behaviors; the Space
+only renders the returned state. Snapshots may also include `formInfo` for
+behavior-produced form-level guidance.
+
+### Open another managed record
+
+`simple.records.open()` requests an independently managed record by its
+application, table, and record IDs in both Record Space and general Space. The
+host resolves and authorizes the target; the supplied IDs identify a record but
+do not grant access. The target uses the table's standard form.
+
+```ts
+const related = await simple.records.open({
+  appId: 'com.example.crm',
+  recordId: 'CON000123',
+  tableName: 'contacts',
+})
+
+if (simple.context.kind === 'record') {
+  const current = await simple.records.current()
+  // A Space can render <RecordForm record={current} /> and
+  // <RecordForm record={related} /> at the same time.
+}
+
+await related.update({ status: 'active' })
+const result = await related.submit()
+if (!result.ok)
+  console.log(related.snapshot().errors)
+```
+
+Each handle has independent values, validation, behavior, and submit state.
+Each `submit()` saves only that handle; multiple records are not an atomic
+transaction. Opening the same target more than once in one Space connection
+returns the same live handle and session. The host disposes opened sessions
+when the Space connection ends; there is no per-record close method. Opening
+the route-owned record itself rejects with `already_current`; use
+`simple.records.current()` for it.
+`open()` requires a host that negotiated the records capability; when that
+transport is absent, `open()` returns a structured `unavailable` error. In
+general Space context, `records.current()` remains unavailable while `open()`
+succeeds whenever records transport was negotiated. An older host may still
+support `current()` through the existing `record` capability while lacking
+`open()`. Missing and inaccessible records return the same generic
+`target_unavailable` error.
 
 ### Managed record UI and header actions (pre-release)
 
@@ -200,9 +241,12 @@ The two exact context forms are `{ kind: 'standalone' }` and
 `connect({ targetOrigin })` with `SpaceProtocolError` code `invalid_response`.
 
 `connect({ targetOrigin })` works in any embedded Space, including standalone dashboards
-and tools. In a non-record Space, `simple.data` remains available while
-`simple.record()` rejects with `SpaceProtocolError` code `unavailable`
-and explains that the Space must be configured as a record view.
+and tools. In a non-record Space, `simple.data` remains available and
+`simple.records.open()` succeeds whenever the records capability was negotiated,
+while `simple.records.current()` rejects with `SpaceProtocolError` code
+`unavailable` and explains that the current record requires a record view.
+In an older host, `records.current()` can remain available through the `record`
+capability while `records.open()` requires the newer `records` capability.
 
 When `connect()` runs in the Space document, it disables vertical root
 overscroll bounce. Normal scrolling inside the Space remains enabled.
@@ -211,9 +255,10 @@ Each capability beyond `simple.data` is negotiated with the host when the Space
 connects. A capability the host did not negotiate rejects with
 `SpaceProtocolError` code `unavailable` when it is called, and sends nothing.
 
-The same `connect({ targetOrigin })` and `simple.record()` vocabulary is reserved for future
-publicly hosted Spaces. That transport and its authentication model are not
-implemented yet; authors should not add portal-specific connection code now.
+The same `connect({ targetOrigin })` and `simple.records.current()` vocabulary is
+reserved for future publicly hosted Spaces. That transport and its
+authentication model are not implemented yet; authors should not add
+portal-specific connection code now.
 
 ### Space data access
 

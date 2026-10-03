@@ -44,10 +44,11 @@ export interface RecordFormCapabilities {
     appId: string
     fieldName: string
     recordId: string
+    sessionId?: string
     tableName: string
   }) => Promise<string>
   deleteFile: (request: { context: Record<string, string>, fileHash: string }) => Promise<void>
-  getDocumentPreview: (request: { fieldName: string, fileHash: string }) => Promise<{ bytes: ArrayBuffer, mimeType: string } | { url: string }>
+  getDocumentPreview: (request: { fieldName: string, fileHash: string, sessionId?: string }) => Promise<{ bytes: ArrayBuffer, mimeType: string } | { url: string }>
   navigate: (path: string) => Promise<void>
   showToast?: (options: SpaceToastOptions) => void
 }
@@ -137,9 +138,45 @@ export function initRecordFormLifecycle(
   const snapshotListeners = new Set<ManagedRecordFormSnapshotListener>()
   const submitPreparations = new Set<RecordFormSubmitPreparation>()
 
+  const boundCapabilities: RecordFormCapabilities | undefined = capabilities
+    ? {
+        ...capabilities,
+        createDocumentHandle: request =>
+          capabilities.createDocumentHandle(
+            request.target
+              ? {
+                  ...request,
+                  target: {
+                    ...request.target,
+                    sessionId: record.id,
+                  },
+                }
+              : request,
+          ),
+        decrypt: request =>
+          capabilities.decrypt({
+            ...request,
+            sessionId: record.id,
+          }),
+        deleteFile: request =>
+          capabilities.deleteFile({
+            ...request,
+            context: {
+              ...request.context,
+              sessionId: record.id,
+            },
+          }),
+        getDocumentPreview: request =>
+          capabilities.getDocumentPreview({
+            ...request,
+            sessionId: record.id,
+          }),
+      }
+    : undefined
+
   const bridge: RecordFormBridge = {
     blurField: fieldName => setActiveField('record.blur', fieldName),
-    capabilities,
+    capabilities: boundCapabilities,
     focusField: fieldName => setActiveField('record.focus', fieldName),
     get form() {
       return currentForm

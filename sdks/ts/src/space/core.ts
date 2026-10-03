@@ -10,6 +10,7 @@ import type {
   CurrentRecordRequest,
   CurrentRecordResult,
   RecordHandle,
+  SimpleRecordsClient,
 } from './record.js'
 import type { SimpleTasksClient } from './tasks.js'
 import type {
@@ -24,7 +25,7 @@ import type {
 import { createActionsClient } from './actions.js'
 import { createDocumentsClient } from './documents.js'
 import { deepFreeze, invalidResponse, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
-import { isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
+import { createRecordsClient, isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
 import { createTasksClient } from './tasks.js'
 import { createHeaderClient, createTabsClient, createToastClient, validateSpaceToastOptions } from './ui.js'
 
@@ -57,16 +58,22 @@ export type {
   RecordFormModelTransport,
   UiRuntimeDescriptor,
 } from './record-form.js'
+export { RECORDS_PROTOCOL_VERSION } from './record.js'
 export type {
   CurrentRecordRequest,
   CurrentRecordResult,
+  OpenRecordOptions,
   RecordErrorSnapshot,
   RecordFieldSnapshot,
   RecordFormError,
   RecordHandle,
+  RecordOpenRequest,
+  RecordOpenResult,
+  RecordReference,
   RecordSnapshot,
   RecordSubmitResult,
   RecordUpdateResult,
+  SimpleRecordsClient,
 } from './record.js'
 export type {
   JsonObject,
@@ -128,12 +135,8 @@ export interface SimpleClient {
   context: SpaceContext
   data: SimpleDataClient
   documents: SimpleDocumentsClient
-  /** Opens the primary record provided by the current record Space. */
-  record: () => Promise<RecordHandle>
-  /** @deprecated Use simple.record(). */
-  records: {
-    current: () => Promise<RecordHandle>
-  }
+  /** Record session capabilities for the current Space. */
+  records: SimpleRecordsClient
   tasks: SimpleTasksClient
   ui: {
     header: SimpleHeaderClient
@@ -153,6 +156,8 @@ export interface SimpleClientOptions {
   formModelTransport?: RecordFormModelTransport
   headerTransport?: SpaceHeaderTransport
   nextRequestId?: () => string
+  /** Present only when the host negotiated the records protocol. */
+  recordsTransport?: SpaceTransport
   runtime?: UiRuntimeDescriptor
   tabsTransport?: SpaceTabsTransport
   taskTransport?: SpaceTransport
@@ -170,6 +175,7 @@ export function createSimpleClient({
   formModelTransport,
   headerTransport,
   nextRequestId = createRequestId,
+  recordsTransport,
   runtime,
   tabsTransport,
   taskTransport,
@@ -221,6 +227,15 @@ export function createSimpleClient({
     )
   }
 
+  const records = createRecordsClient({
+    capabilities: recordFormCapabilities,
+    currentRecord: record,
+    graphql: (document, variables) => executeData(dataTransport, document, variables),
+    nextRequestId,
+    recordsTransport,
+    runtime,
+  })
+
   return {
     actions: createActionsClient(actionTransport, nextRequestId),
     context: immutableContext,
@@ -229,8 +244,7 @@ export function createSimpleClient({
       query: (document, variables) => executeData(dataTransport, document, variables),
     },
     documents: createDocumentsClient(documentTransport, nextRequestId),
-    record,
-    records: { current: record },
+    records,
     tasks: createTasksClient(taskTransport, nextRequestId),
     ui: {
       header: createHeaderClient(immutableContext.kind === 'record', headerTransport),

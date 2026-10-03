@@ -143,7 +143,7 @@ test('keeps tasks independent of the record protocol', async () => {
     taskTransport,
   })
 
-  await assert.rejects(() => simple.record(), isProtocolError('unavailable'))
+  await assert.rejects(() => simple.records.current(), isProtocolError('unavailable'))
   assert.deepEqual(await simple.tasks.create({ input: {}, taskTypeId: 'TTY000003', title: 'Plan' }), createdTask)
 })
 

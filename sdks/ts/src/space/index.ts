@@ -8,6 +8,7 @@ import {
   isSpaceContext,
   MANAGED_RECORD_FORM_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
+  RECORDS_PROTOCOL_VERSION,
   SpaceDataError,
   SpaceProtocolError,
   TABS_PROTOCOL_VERSION,
@@ -15,7 +16,7 @@ import {
 } from './core.js'
 import { isObjectRecord } from './protocol.js'
 
-export { HEADER_ACTIONS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
+export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
@@ -26,10 +27,14 @@ export type {
   HeaderActionType,
   JsonObject,
   JsonValue,
+  OpenRecordOptions,
   RecordErrorSnapshot,
   RecordFieldSnapshot,
   RecordFormError,
   RecordHandle,
+  RecordOpenRequest,
+  RecordOpenResult,
+  RecordReference,
   RecordSnapshot,
   RecordSubmitResult,
   RecordUpdateResult,
@@ -40,6 +45,7 @@ export type {
   SimpleDocumentsClient,
   SimpleHeaderActionsClient,
   SimpleHeaderClient,
+  SimpleRecordsClient,
   SimpleTabsClient,
   SimpleTasksClient,
   SimpleToastClient,
@@ -130,6 +136,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
       const transport: BrowserSpaceTransport = createMessagePortTransport(port, targetOrigin)
       const protocols = event.data.protocols
       const hasRecord = protocols?.record === PROTOCOL_VERSION
+      const hasRecords = protocols?.records === RECORDS_PROTOCOL_VERSION
       resolve(createSimpleClient({
         actionTransport: protocols?.action === PROTOCOL_VERSION ? transport : undefined,
         capabilities: transport.capabilities,
@@ -138,6 +145,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
+        recordsTransport: hasRecords ? transport : undefined,
         runtime: event.data.runtime,
         tabsTransport: hasRecord && protocols?.tabs === TABS_PROTOCOL_VERSION ? transport : undefined,
         taskTransport: protocols?.task === PROTOCOL_VERSION ? transport : undefined,
@@ -154,6 +162,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
+        records: [RECORDS_PROTOCOL_VERSION],
         tabs: [TABS_PROTOCOL_VERSION],
         task: [PROTOCOL_VERSION],
         toast: [TOAST_PROTOCOL_VERSION],
@@ -176,7 +185,7 @@ function isOrigin(targetOrigin: string): boolean {
 
 function isInitializationMessage(value: unknown): value is {
   context: unknown
-  protocols?: { action?: unknown, document?: unknown, form?: unknown, header?: unknown, record?: unknown, tabs?: unknown, task?: unknown, toast?: unknown }
+  protocols?: { action?: unknown, document?: unknown, form?: unknown, header?: unknown, record?: unknown, records?: unknown, tabs?: unknown, task?: unknown, toast?: unknown }
   runtime?: UiRuntimeDescriptor
   type: 'INIT_RPC'
 } {
