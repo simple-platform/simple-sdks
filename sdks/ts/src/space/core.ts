@@ -224,6 +224,7 @@ export function createSimpleClient({
       (document, variables) => executeData(dataTransport, document, variables),
       recordFormCapabilities,
       formModelTransport,
+      immutableContext.applicationId,
     )
   }
 

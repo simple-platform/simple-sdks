@@ -1,5 +1,6 @@
 import type { ProtocolRequest, SpaceTransport } from './protocol.js'
 import type {
+  ManagedRecordFormField,
   ManagedRecordFormModel,
   RecordFormCapabilities,
   RecordFormLifecycle,
@@ -64,6 +65,22 @@ export interface RecordHandle {
   update: (values: Readonly<Record<string, unknown>>) => Promise<RecordUpdateResult>
 }
 
+export interface RecordUiMetadata {
+  fields: readonly ManagedRecordFormField[]
+  recordId?: string
+  tableId?: string
+  tableName?: string
+}
+
+/** Shared identity and transport context for managed record UI components. */
+export interface RecordUiBridge {
+  applicationId?: string
+  capabilities?: RecordFormCapabilities
+  graphql: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
+  metadata?: RecordUiMetadata
+  runtime?: UiRuntimeDescriptor
+  subscribeMetadata: (listener: (metadata: RecordUiMetadata) => void) => () => void
+}
 export const RECORDS_PROTOCOL_VERSION = 1 as const
 
 export interface RecordReference {
@@ -239,12 +256,14 @@ export class ProtocolRecordHandle implements RecordHandle {
     graphql: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>,
     capabilities: RecordFormCapabilities | undefined,
     formModelTransport: RecordFormModelTransport | undefined,
+    applicationId?: string,
   ) {
     this.id = sessionId
     this.#nextRequestId = nextRequestId
     this.#snapshot = immutableSnapshot(snapshot)
     this.#transport = transport
     this.#formLifecycle = initRecordFormLifecycle(this, {
+      applicationId,
       capabilities,
       form,
       formModelTransport,
@@ -377,6 +396,7 @@ export function createRecordsClient({
       graphql,
       capabilities,
       undefined,
+      validated.appId,
     )
   }
 

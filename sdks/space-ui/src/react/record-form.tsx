@@ -4,6 +4,7 @@ import { getRecordFormBridge } from '@simpleplatform/sdk/space/internal'
 import { useEffect, useRef, useState } from 'react'
 
 import { loadRuntime, RuntimeLoadError } from '../runtime.js'
+import { waitForElementMount } from './mount-boundary.js'
 
 interface RecordFormProps {
   record: RecordHandle
@@ -26,7 +27,6 @@ type LoadState
     | { kind: 'loading' }
     | { kind: 'ready' }
 
-const MOUNT_TIMEOUT_MS = 15_000
 const FORM_READY_EVENT = 'simple-record-form-ready'
 const FORM_ERROR_EVENT = 'simple-record-form-error'
 
@@ -101,10 +101,18 @@ function RecordFormInstance({ record }: RecordFormProps) {
         element.registerSubmitPreparation = bridge.registerSubmitPreparation
         element.record = record
         element.subscribe = bridge.subscribe
-        const ready = waitForFormMount(element, mountController.signal, (error) => {
-          failed = true
-          if (!disposed)
-            setState({ error, kind: 'error' })
+        const ready = waitForElementMount({
+          element,
+          errorEventName: FORM_ERROR_EVENT,
+          fallbackErrorMessage: 'The RecordForm could not be rendered.',
+          onPostMountError: (error) => {
+            failed = true
+            if (!disposed)
+              setState({ error, kind: 'error' })
+          },
+          readyEventName: FORM_READY_EVENT,
+          signal: mountController.signal,
+          timeoutMessage: 'The RecordForm did not become ready in time.',
         })
         containerRef.current.replaceChildren(element)
         disposeMount = await ready
@@ -155,80 +163,6 @@ function RecordFormInstance({ record }: RecordFormProps) {
       ref={containerRef}
     />
   )
-}
-
-function waitForFormMount(element: HTMLElement, signal: AbortSignal, onMountError: (error: Error) => void): Promise<() => void> {
-  return new Promise((resolve, reject) => {
-    let isReady = false
-    let isSettled = false
-    let isCleaned = false
-    let timeout: ReturnType<typeof setTimeout>
-
-    const onReady = () => {
-      if (isSettled)
-        return
-      isReady = true
-      isSettled = true
-      clearTimeout(timeout)
-      element.removeEventListener(FORM_READY_EVENT, onReady)
-      resolve(cleanup)
-    }
-
-    const onError = (event: Event) => {
-      const detail = (event as CustomEvent<{ message?: unknown }>).detail
-      const message = typeof detail?.message === 'string' ? detail.message : 'The RecordForm could not be rendered.'
-      const error = new Error(message)
-
-      if (isReady) {
-        cleanup()
-        onMountError(error)
-        return
-      }
-
-      if (isSettled)
-        return
-
-      isSettled = true
-      cleanup()
-      onMountError(error)
-      resolve(cleanup)
-    }
-
-    const onAbort = () => {
-      if (!isSettled) {
-        failBeforeReady(new DOMException('RecordForm mount was cancelled.', 'AbortError'))
-      }
-      else {
-        cleanup()
-      }
-    }
-
-    function cleanup() {
-      if (isCleaned)
-        return
-      isCleaned = true
-      clearTimeout(timeout)
-      element.removeEventListener(FORM_READY_EVENT, onReady)
-      element.removeEventListener(FORM_ERROR_EVENT, onError)
-      signal.removeEventListener('abort', onAbort)
-    }
-
-    function failBeforeReady(error: Error) {
-      if (isSettled)
-        return
-      isSettled = true
-      cleanup()
-      reject(error)
-    }
-
-    timeout = setTimeout(() => {
-      failBeforeReady(new Error('The RecordForm did not become ready in time.'))
-    }, MOUNT_TIMEOUT_MS)
-
-    element.addEventListener(FORM_READY_EVENT, onReady, { once: true })
-    element.addEventListener(FORM_ERROR_EVENT, onError)
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
 }
 
 export type { RecordFormProps }
