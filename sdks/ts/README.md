@@ -449,6 +449,58 @@ refused `reply()` arrives the same way, with the service's own code in
 `reply()` again with the same arguments resends the kept message rather than
 posting it twice.
 
+#### Starting a task after other tasks
+
+To make a task wait for others, create the others first, then list them under
+`_metadata.start_after` in the new task's `input`:
+
+```typescript
+const terms = await simple.tasks.create({ input: { packet: 'DOC000001' }, taskTypeId: 'TTY000003', title: 'Read the terms' })
+const parties = await simple.tasks.create({ input: { packet: 'DOC000001' }, taskTypeId: 'TTY000004', title: 'Read the parties' })
+
+const { task: summary } = await simple.tasks.create({
+  input: {
+    _metadata: {
+      start_after: [
+        { task_id: terms.task.id }, // Waits until this task has completed.
+        { on: ['approved', 'declined'], task_id: parties.task.id }, // Waits until it is in either state.
+      ],
+    },
+    packet: 'DOC000001',
+  },
+  taskTypeId: 'TTY000009',
+  title: 'Summarise the packet',
+})
+```
+
+- `_metadata` is reserved. The platform owns it, its shape is fixed, and a member
+  it does not know is refused. A task type's input schema must not declare it:
+  the rest of `input` is checked against that schema as if `_metadata` were not
+  there. It counts toward the 32,768-byte limit.
+- `start_after` is a list of entries `{ task_id, on }`. `task_id` names an
+  existing task, and each task may be listed once. `on` is optional and names
+  states of the listed task's own task type that end it (a state that maps to
+  `completed`, `cancelled`, or `failed`). Left out, it means the states that map
+  to `completed`.
+- The new task is created `queued`, and nothing runs for it and no model is
+  called until every listed task has ended in a state its entry allows. There
+  is no time limit. A listed task that has only stopped and is `waiting` keeps
+  the new task waiting; reply to that task to carry it on.
+- If a listed task ends in a state its entry does not allow, or no longer
+  exists, the platform cancels the new task. Create another one.
+- When the new task runs, its doer, the AI that does the work, is given the
+  `read-task-output` tool. The tool reads a listed task's status and output,
+  and only for the listed tasks. The platform adds it by itself; the task type
+  does not need to declare it.
+- A create the platform refuses rejects as described above, with
+  `error.code` `task_rejected` and `details.code` `TASK_INPUT_INVALID`.
+  `details.pointers` points at the member: `/input/_metadata/start_after/1/task_id`
+  for a task that does not exist, or `/input/_metadata/start_after/1/on/0` for a
+  name that is not an end state of that task's type.
+- A platform release that predates this does not know the key: a task type with
+  a closed input schema refuses it, and one with an open schema starts the task
+  at once.
+
 ### Space actions
 
 `simple.actions.run()` runs an action of the Space's own app where the app
