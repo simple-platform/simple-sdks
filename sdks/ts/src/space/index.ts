@@ -10,11 +10,12 @@ import {
   PROTOCOL_VERSION,
   SpaceDataError,
   SpaceProtocolError,
+  TABS_PROTOCOL_VERSION,
   TOAST_PROTOCOL_VERSION,
 } from './core.js'
 import { isObjectRecord } from './protocol.js'
 
-export { SpaceDataError, SpaceProtocolError }
+export { HEADER_ACTIONS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
@@ -32,16 +33,22 @@ export type {
   RecordSnapshot,
   RecordSubmitResult,
   RecordUpdateResult,
+  SetTabsOptions,
   SimpleActionsClient,
   SimpleClient,
   SimpleDataClient,
   SimpleDocumentsClient,
+  SimpleHeaderActionsClient,
   SimpleHeaderClient,
+  SimpleTabsClient,
   SimpleTasksClient,
   SimpleToastClient,
   SpaceContext,
   SpaceDataErrorPayload,
   SpaceProtocolErrorPayload,
+  SpaceTab,
+  SpaceTabsSelectionEvent,
+  SpaceTabsTransport,
   SpaceToastOptions,
   SpaceToastVariant,
   StagedDocumentHandle,
@@ -54,6 +61,13 @@ export type {
 
 interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
+  document: {
+    documentElement: {
+      style: {
+        overscrollBehaviorY: string
+      }
+    }
+  }
   parent: {
     postMessage: (message: unknown, targetOrigin: string) => void
   }
@@ -86,6 +100,9 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
       message: 'The Space SDK requires a browser window.',
     }))
   }
+
+  // The host cannot style a cross-origin frame's viewport, where edge bounce occurs.
+  window.document.documentElement.style.overscrollBehaviorY = 'none'
 
   return new Promise((resolve, reject) => {
     const onMessage = (event: SpaceMessageEvent) => {
@@ -122,6 +139,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
         runtime: event.data.runtime,
+        tabsTransport: hasRecord && protocols?.tabs === TABS_PROTOCOL_VERSION ? transport : undefined,
         taskTransport: protocols?.task === PROTOCOL_VERSION ? transport : undefined,
         toastTransport: protocols?.toast === TOAST_PROTOCOL_VERSION ? transport : undefined,
         transport: hasRecord ? transport : undefined,
@@ -136,6 +154,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
+        tabs: [TABS_PROTOCOL_VERSION],
         task: [PROTOCOL_VERSION],
         toast: [TOAST_PROTOCOL_VERSION],
       },
@@ -157,7 +176,7 @@ function isOrigin(targetOrigin: string): boolean {
 
 function isInitializationMessage(value: unknown): value is {
   context: unknown
-  protocols?: { action?: unknown, document?: unknown, form?: unknown, header?: unknown, record?: unknown, task?: unknown, toast?: unknown }
+  protocols?: { action?: unknown, document?: unknown, form?: unknown, header?: unknown, record?: unknown, tabs?: unknown, task?: unknown, toast?: unknown }
   runtime?: UiRuntimeDescriptor
   type: 'INIT_RPC'
 } {

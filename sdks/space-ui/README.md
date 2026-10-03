@@ -207,7 +207,7 @@ A Record Space can replace persisted System **View Actions** in the platform
 header while it is mounted.
 
 ```ts
-simple.ui.header.setActions([
+simple.ui.header.actions.set([
   {
     icon: 'phone',
     id: 'start-call',
@@ -220,7 +220,7 @@ simple.ui.header.setActions([
 ])
 ```
 
-`setActions()` accepts actions in display order. Each action has:
+`actions.set()` accepts actions in display order. Each action has:
 
 ```ts
 interface HeaderAction {
@@ -241,7 +241,7 @@ work that started outside the click handler.
 
 ```tsx
 useEffect(() => {
-  simple.ui.header.setActions([
+  simple.ui.header.actions.set([
     {
       disabled: syncing,
       id: 'sync',
@@ -254,8 +254,8 @@ useEffect(() => {
 }, [simple, syncing])
 ```
 
-Calling `setActions([])` intentionally renders no main actions. While a custom
-Record Space is active, `setActions()` completely replaces the platform
+Calling `actions.set([])` intentionally renders no main actions. While a custom
+Record Space is active, `actions.set()` completely replaces the platform
 `Update` button and persisted View Actions; the platform does not guess whether
 your Space contains a form. The default actions return when the Space iframe
 unloads or the user selects the standard view.
@@ -266,7 +266,7 @@ Delete, view recovery, or navigation. If a Space needs a save workflow, expose
 it explicitly and call the record-level `record.submit()` command:
 
 ```ts
-simple.ui.header.setActions([
+simple.ui.header.actions.set([
   {
     id: 'save-and-start-call',
     label: 'Save and start call',
@@ -299,6 +299,63 @@ automatic toast, modal, or button error presentation. Catch failures and call
 `simple.ui.toast.show()` when the Space should provide user-facing feedback.
 `record.submit()` stays headless, and inline field/form messages remain the
 source of detailed validation guidance.
+
+## Record Space tabs
+
+A Record Space can declare tabs in the platform header:
+
+```tsx
+import { useEffect, useState } from 'react'
+
+export function MyRecordSpace({ simple }) {
+  const [activeTab, setActiveTab] = useState<string | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+
+    simple.ui.tabs.set({
+      onChange: (tabId) => {
+        if (mounted)
+          setActiveTab(tabId)
+      },
+      tabs: [
+        { default: true, icon: 'layout-dashboard', id: 'overview', title: 'Overview' },
+        { badge: 2, icon: 'history', id: 'timeline', title: 'Timeline' },
+        { badge: 'Beta', icon: 'settings', id: 'settings', title: 'Settings' },
+      ],
+    }).then(({ selectedTabId }) => {
+      if (mounted)
+        setActiveTab(selectedTabId)
+    })
+
+    return () => {
+      mounted = false
+    }
+  }, [simple])
+
+  return <div>{activeTab === 'overview' ? <OverviewView /> : <OtherView />}</div>
+}
+```
+
+Tabs declaration accepts up to 32 tabs and requires an `onChange` callback. An
+empty declaration clears the current tab strip and returns `selectedTabId: null`.
+Each tab requires an `id` (matching `^[a-z0-9][a-z0-9_-]{0,63}$`) and a non-blank `title`
+(up to 80 characters), and accepts optional `default: true`, kebab-case Lucide
+`icon`, and a string (up to 20 characters) or finite non-negative integer `badge`.
+If no tab sets `default: true`, the first tab defaults to active.
+
+Programmatic selection uses `simple.ui.tabs.select(tabId)`, which resolves only
+after host acknowledgement:
+
+```ts
+await simple.ui.tabs.select('timeline')
+```
+
+Selection and URL routing remain host-owned. Host selection events use
+`SPACE_UI_TABS_SELECTION_CHANGED` correlated by `registrationRequestId` and trigger
+the iframe-local `onChange` callback. Calling `select()` with the currently active
+tab resolves immediately without wire traffic; selecting an inactive tab reaches
+the `onChange` callback once, deduplicating the response and event.
 
 ## Multiple records
 

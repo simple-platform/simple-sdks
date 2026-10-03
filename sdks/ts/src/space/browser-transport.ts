@@ -1,7 +1,7 @@
 import type { GraphQLVariables, SpaceDataTransport } from './core.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
 import type { RecordFormCapabilities } from './record-form.js'
-import type { HeaderAction, SpaceHeaderTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
+import type { HeaderAction, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
   SpaceDataError,
   SpaceProtocolError,
@@ -12,12 +12,13 @@ import {
 } from './record-form.js'
 
 export interface MessagePortLike {
+  close?: () => void
   onmessage: null | ((event: { data: unknown }) => void)
   postMessage: (message: unknown, transfer?: ArrayBuffer[]) => void
   start?: () => void
 }
 
-export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderTransport, SpaceToastTransport, SpaceTransport {
+export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
   capabilities: RecordFormCapabilities
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
 }
@@ -37,6 +38,13 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
     responseType: string
     resolve: (value: unknown) => void
   }>()
+  const tabListeners = new Set<(event: SpaceTabsSelectionEvent) => void>()
+  let isPortClosed = false
+  if (typeof (port as unknown as EventTarget).addEventListener === 'function') {
+    (port as unknown as EventTarget).addEventListener('close', () => {
+      isPortClosed = true
+    })
+  }
 
   port.onmessage = (event) => {
     const message = event.data
@@ -124,8 +132,26 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
       return
     }
 
-    if (envelope.type !== 'GRAPHQL_RESPONSE' || typeof envelope.id !== 'string')
+    if (envelope.type !== 'GRAPHQL_RESPONSE' || typeof envelope.id !== 'string') {
+      if (envelope.type === 'SPACE_UI_TABS_SELECTION_CHANGED') {
+        const candidate = envelope as Partial<{ registrationRequestId: unknown, selectedTabId: unknown }>
+        if (typeof candidate.registrationRequestId === 'string' && typeof candidate.selectedTabId === 'string') {
+          const event: SpaceTabsSelectionEvent = {
+            registrationRequestId: candidate.registrationRequestId,
+            selectedTabId: candidate.selectedTabId,
+          }
+          for (const listener of tabListeners) {
+            try {
+              listener(event)
+            }
+            catch {
+              // Callback errors must not break transport
+            }
+          }
+        }
+      }
       return
+    }
 
     const request = pendingData.get(envelope.id)
     if (!request)
@@ -165,6 +191,7 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
         })
       })
     },
+    isClosed: () => isPortClosed || Boolean((port as { closed?: boolean }).closed),
     request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
       return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
         const abort = () => {
@@ -203,6 +230,12 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
     },
     subscribeFormModel: (listener: (form: unknown) => void) => {
       return formModelManager.subscribeFormModel(listener)
+    },
+    subscribeTabSelected: (listener: (event: SpaceTabsSelectionEvent) => void) => {
+      tabListeners.add(listener)
+      return () => {
+        tabListeners.delete(listener)
+      }
     },
   }
 }

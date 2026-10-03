@@ -92,6 +92,37 @@ export function readResponse<TResult>(
   return response.result
 }
 
+/**
+ * Sends a request and waits at most `waitMs` for its answer. After that it
+ * rejects with `timeout` and aborts the transport's wait, so the request is
+ * not kept pending on a port the host may no longer read.
+ */
+export async function requestWithin<TResult>(
+  transport: SpaceTransport,
+  request: ProtocolRequest,
+  waitMs: number,
+): Promise<ProtocolResponse<TResult>> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const error = new SpaceProtocolError({
+        code: 'timeout',
+        message: `The Space host did not answer ${request.operation} within ${waitMs} milliseconds, so its outcome is unknown.`,
+      })
+      controller.abort(error)
+      reject(error)
+    }, waitMs)
+  })
+
+  try {
+    return await Promise.race([transport.request<TResult>(request, undefined, controller.signal), expired])
+  }
+  finally {
+    clearTimeout(timer)
+  }
+}
+
 export function deepFreeze<T>(value: T): T {
   if (!value || typeof value !== 'object' || Object.isFrozen(value))
     return value

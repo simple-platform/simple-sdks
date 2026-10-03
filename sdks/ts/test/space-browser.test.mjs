@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { PROTOCOL_VERSION } from '../dist/space/core.js'
+import { DEFAULT_TABS_TIMEOUT_MS, PROTOCOL_VERSION } from '../dist/space/core.js'
 import {
   connect,
   SpaceDataError,
@@ -49,6 +49,11 @@ function replaceGlobal(name, value) {
 class FakeSpaceWindow {
   listeners = new Set()
   parentMessages = []
+  document = {
+    documentElement: {
+      style: { overscrollBehaviorX: 'auto', overscrollBehaviorY: 'auto' },
+    },
+  }
 
   parent = {
     postMessage: (message, targetOrigin) => this.parentMessages.push({ message, targetOrigin }),
@@ -119,7 +124,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -137,6 +142,30 @@ test('connects a Space without exposing embedded transport configuration', async
     })
 
     assert.equal((await primaryRecord).id, 'space-session-primary')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('disables root viewport overscroll when connecting an embedded Space', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+
+    assert.equal(spaceWindow.document.documentElement.style.overscrollBehaviorY, 'none')
+    assert.equal(spaceWindow.document.documentElement.style.overscrollBehaviorX, 'auto')
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, protocols: { record: 1 }, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+
+    assert.deepEqual((await connection).context, recordContext)
   }
   finally {
     restoreWindow()
@@ -233,7 +262,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -282,12 +311,13 @@ test('keeps the host-selected UI Runtime descriptor private to the managed form 
 test('keeps header callbacks inside the Space while sending only button state to the host', async () => {
   const port = new FakePort()
   const simple = await connectWithHost(port, recordContext, { header: 1, record: 1 })
+  assert.equal('setActions' in simple.ui.header, false)
   let completeAction
   const actionCompletion = new Promise((resolve) => {
     completeAction = resolve
   })
 
-  simple.ui.header.setActions([{
+  simple.ui.header.actions.set([{
     disabled: false,
     icon: 'phone',
     id: 'start-call',
@@ -320,6 +350,70 @@ test('keeps header callbacks inside the Space while sending only button state to
     actionId: 'start-call',
     invocationId: 'invoke-1',
     ok: true,
+    type: 'SPACE_HEADER_ACTION_RESULT',
+  })
+})
+
+test('actions.set rejects with structured unavailable errors in standalone context or when host capability is absent', async () => {
+  const standalonePort = new FakePort()
+  const standalone = await connectWithHost(standalonePort, { kind: 'standalone' }, { header: 1 })
+  assert.equal('setActions' in standalone.ui.header, false)
+  assert.throws(
+    () => standalone.ui.header.actions.set([]),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'Header actions are available only when this Space is configured as a record view.',
+  )
+
+  const unsupportedPort = new FakePort()
+  const unsupported = await connectWithHost(unsupportedPort, recordContext, { record: 1 })
+  assert.equal('setActions' in unsupported.ui.header, false)
+  assert.throws(
+    () => unsupported.ui.header.actions.set([]),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'The header-action bridge is unavailable for this record Space.',
+  )
+})
+
+test('actions.set retains loading state and handles callback failures', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, recordContext, { header: 1, record: 1 })
+
+  simple.ui.header.actions.set([{
+    disabled: true,
+    id: 'refresh',
+    label: 'Refreshing…',
+    loading: true,
+    onClick: () => {
+      throw new Error('Action failed to execute.')
+    },
+  }])
+
+  assert.deepEqual(port.sent.at(-1), {
+    actions: [{
+      disabled: true,
+      icon: undefined,
+      id: 'refresh',
+      label: 'Refreshing…',
+      loading: true,
+      type: undefined,
+    }],
+    type: 'SPACE_HEADER_ACTIONS_SET',
+  })
+
+  port.emit({
+    actionId: 'refresh',
+    invocationId: 'invoke-fail',
+    type: 'SPACE_HEADER_ACTION_INVOKE',
+  })
+  await new Promise(resolve => setImmediate(resolve))
+
+  assert.deepEqual(port.sent.at(-1), {
+    actionId: 'refresh',
+    error: 'Action failed to execute.',
+    invocationId: 'invoke-fail',
+    ok: false,
     type: 'SPACE_HEADER_ACTION_RESULT',
   })
 })
@@ -706,6 +800,131 @@ test('delivers a failed action over a real MessagePort with its status and body 
     assert.equal(error.code, 'action_failed')
     assert.equal(error.message, 'The action failed.')
     assert.deepEqual(error.details, sent.details)
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
+test('routes tab registration, selection, and selected events over a real MessageChannel', { timeout: 5000 }, async () => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+  const events = []
+  const hostReceived = []
+
+  hostPort.onmessage = ({ data }) => {
+    hostReceived.push(data)
+    if (data.type === 'SPACE_PROTOCOL_REQUEST') {
+      if (data.request.operation === 'ui.tabs.set') {
+        hostPort.postMessage({
+          response: {
+            ok: true,
+            protocol: PROTOCOL_VERSION,
+            requestId: data.request.requestId,
+            result: { selectedTabId: 'tab-1' },
+          },
+          type: 'SPACE_PROTOCOL_RESPONSE',
+        })
+      }
+      else if (data.request.operation === 'ui.tabs.select') {
+        hostPort.postMessage({
+          response: {
+            ok: true,
+            protocol: PROTOCOL_VERSION,
+            requestId: data.request.requestId,
+            result: { selectedTabId: data.request.payload.tabId },
+          },
+          type: 'SPACE_PROTOCOL_RESPONSE',
+        })
+      }
+    }
+  }
+
+  try {
+    const simple = await connectWithHost(spacePort, recordContext, { record: 1, tabs: 1 })
+
+    const { selectedTabId } = await simple.ui.tabs.set({
+      onChange: tabId => events.push(tabId),
+      tabs: [
+        { id: 'tab-1', title: 'Tab 1' },
+        { id: 'tab-2', title: 'Tab 2' },
+      ],
+    })
+
+    const registrationRequestId = hostReceived[0].request.requestId
+    assert.equal(selectedTabId, 'tab-1')
+    assert.deepEqual(hostReceived[0], {
+      request: {
+        operation: 'ui.tabs.set',
+        payload: {
+          tabs: [
+            { default: true, id: 'tab-1', title: 'Tab 1' },
+            { id: 'tab-2', title: 'Tab 2' },
+          ],
+        },
+        protocol: 1,
+        requestId: registrationRequestId,
+      },
+      type: 'SPACE_PROTOCOL_REQUEST',
+    })
+
+    // Host emits canonical tab selected event correlated to registrationRequestId
+    hostPort.postMessage({
+      registrationRequestId,
+      selectedTabId: 'tab-2',
+      type: 'SPACE_UI_TABS_SELECTION_CHANGED',
+    })
+    await new Promise(resolve => setImmediate(resolve))
+
+    assert.deepEqual(events, ['tab-2'])
+
+    // Programmatic select over MessagePort includes registrationRequestId and updates onChange
+    await simple.ui.tabs.select('tab-1')
+    assert.equal(hostReceived.length, 2)
+    assert.deepEqual(hostReceived[1], {
+      request: {
+        operation: 'ui.tabs.select',
+        payload: {
+          registrationRequestId,
+          tabId: 'tab-1',
+        },
+        protocol: 1,
+        requestId: hostReceived[1].request.requestId,
+      },
+      type: 'SPACE_PROTOCOL_REQUEST',
+    })
+    assert.deepEqual(events, ['tab-2', 'tab-1'])
+
+    // Subsequent host event for the same tab does not duplicate callback
+    hostPort.postMessage({
+      registrationRequestId,
+      selectedTabId: 'tab-1',
+      type: 'SPACE_UI_TABS_SELECTION_CHANGED',
+    })
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(events, ['tab-2', 'tab-1'])
+  }
+  finally {
+    spacePort.close()
+    hostPort.close()
+  }
+})
+
+test('ends a tab request with timeout when the host has closed its port', { timeout: 5000 }, async (t) => {
+  const { port1: spacePort, port2: hostPort } = new MessageChannel()
+
+  try {
+    const simple = await connectWithHost(spacePort, recordContext, { record: 1, tabs: 1 })
+    hostPort.close()
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+
+    const setPromise = simple.ui.tabs.set({
+      onChange: () => {},
+      tabs: [{ id: 'tab-1', title: 'Tab 1' }],
+    })
+    t.mock.timers.tick(DEFAULT_TABS_TIMEOUT_MS)
+
+    await assert.rejects(setPromise, error => error instanceof SpaceProtocolError && error.code === 'timeout')
   }
   finally {
     spacePort.close()

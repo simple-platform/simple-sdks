@@ -129,8 +129,9 @@ test('keeps data available outside a record Space and explains why record access
       && error.message === 'The current record is available only when this Space is configured as a record view.',
   )
 
+  assert.equal('setActions' in simple.ui.header, false)
   assert.throws(
-    () => simple.ui.header.setActions([]),
+    () => simple.ui.header.actions.set([]),
     error => error instanceof SpaceProtocolError
       && error.code === 'unavailable'
       && error.message === 'Header actions are available only when this Space is configured as a record view.',
@@ -139,8 +140,9 @@ test('keeps data available outside a record Space and explains why record access
 
 test('requires a negotiated header bridge and validates declarative header actions', () => {
   const simple = createSimpleClient({ context: recordContext })
+  assert.equal('setActions' in simple.ui.header, false)
   assert.throws(
-    () => simple.ui.header.setActions([]),
+    () => simple.ui.header.actions.set([]),
     error => error instanceof SpaceProtocolError
       && error.code === 'unavailable'
       && error.message === 'The header-action bridge is unavailable for this record Space.',
@@ -151,23 +153,24 @@ test('requires a negotiated header bridge and validates declarative header actio
     context: recordContext,
     headerTransport: { setActions: actions => published.push(actions) },
   })
+  assert.equal('setActions' in bridgedSimple.ui.header, false)
   const action = { id: 'sync', label: 'Sync', onClick: () => {} }
-  bridgedSimple.ui.header.setActions([action])
+  bridgedSimple.ui.header.actions.set([action])
   assert.deepEqual(published, [[action]])
   assert.throws(
-    () => bridgedSimple.ui.header.setActions([{ id: 'sync', label: 'Again', onClick: () => {} }, { id: 'sync', label: 'Duplicate', onClick: () => {} }]),
+    () => bridgedSimple.ui.header.actions.set([{ id: 'sync', label: 'Again', onClick: () => {} }, { id: 'sync', label: 'Duplicate', onClick: () => {} }]),
     /Header action ids must be unique/,
   )
   assert.throws(
-    () => bridgedSimple.ui.header.setActions([{ disabled: 'no', id: 'sync', label: 'Sync', onClick: () => {} }]),
+    () => bridgedSimple.ui.header.actions.set([{ disabled: 'no', id: 'sync', label: 'Sync', onClick: () => {} }]),
     /Header action disabled must be a boolean/,
   )
   assert.throws(
-    () => bridgedSimple.ui.header.setActions([{ icon: 42, id: 'sync', label: 'Sync', onClick: () => {} }]),
+    () => bridgedSimple.ui.header.actions.set([{ icon: 42, id: 'sync', label: 'Sync', onClick: () => {} }]),
     /Header action icon must be a string/,
   )
   assert.throws(
-    () => bridgedSimple.ui.header.setActions([{ id: 'sync', label: 'Sync', loading: 'yes', onClick: () => {} }]),
+    () => bridgedSimple.ui.header.actions.set([{ id: 'sync', label: 'Sync', loading: 'yes', onClick: () => {} }]),
     /Header action loading must be a boolean/,
   )
 })
