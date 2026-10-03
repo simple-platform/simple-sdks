@@ -8,7 +8,8 @@ import {
   SpaceDataError,
   SpaceProtocolError,
 } from '../dist/space/index.js'
-import { getRecordFormBridge } from '../dist/space/internal.js'
+
+const getRecordFormBridge = record => record[Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')]
 
 class FakePort {
   onmessage = null
@@ -203,10 +204,18 @@ test('disables root viewport overscroll when connecting an embedded Space', asyn
   }
 })
 
-test('keeps the managed-form bridge out of the supported Space entry point', async () => {
+test('keeps managed UI integration out of package exports', async () => {
   const publicSpace = await import('../dist/space/index.js')
 
   assert.equal('getRecordFormBridge' in publicSpace, false)
+  await assert.rejects(
+    () => import('@simpleplatform/sdk/space/internal'),
+    { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
+  )
+  await assert.rejects(
+    () => import('@simpleplatform/sdk/space/managed-ui'),
+    { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' },
+  )
   assert.equal('connectSpace' in publicSpace, false)
 })
 

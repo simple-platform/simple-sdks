@@ -1,11 +1,9 @@
 import type { RecordHandle } from '@simpleplatform/sdk/space'
-import type { RecordUiBridge } from '@simpleplatform/sdk/space/internal'
-
-import { getRecordUiBridge } from '@simpleplatform/sdk/space/internal'
 import { useEffect, useRef, useState } from 'react'
 
 import { loadRuntime, RuntimeLoadError } from '../runtime.js'
 import { waitForElementMount } from './mount-boundary.js'
+import { getManagedRecordBridge } from './record-bridge.js'
 
 interface RecordActivityProps {
   record: RecordHandle
@@ -14,7 +12,7 @@ interface RecordActivityProps {
 interface RuntimeRecordActivityElement extends HTMLElement {
   applicationId?: string
   decrypt?: (request: { appId: string, fieldName: string, recordId: string, tableName: string }) => Promise<string>
-  fields?: NonNullable<RecordUiBridge['metadata']>['fields']
+  fields?: unknown
   graphql?: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
   recordId?: string
   tableId?: string
@@ -41,7 +39,7 @@ function RecordActivityInstance({ record }: RecordActivityProps) {
   const elementRef = useRef<RuntimeRecordActivityElement | undefined>(undefined)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
-  const bridge = getRecordUiBridge(record)
+  const bridge = getManagedRecordBridge(record)
   const [metadata, setMetadata] = useState(() => bridge?.metadata)
   const metadataRef = useRef(metadata)
   const isErrorVisibleRef = useRef(false)

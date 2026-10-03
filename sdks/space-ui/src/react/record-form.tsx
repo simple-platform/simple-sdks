@@ -1,10 +1,10 @@
 import type { RecordHandle } from '@simpleplatform/sdk/space'
 
-import { getRecordFormBridge } from '@simpleplatform/sdk/space/internal'
 import { useEffect, useRef, useState } from 'react'
 
 import { loadRuntime, RuntimeLoadError } from '../runtime.js'
 import { waitForElementMount } from './mount-boundary.js'
+import { getManagedRecordBridge } from './record-bridge.js'
 
 interface RecordFormProps {
   record: RecordHandle
@@ -42,7 +42,7 @@ function RecordFormInstance({ record }: RecordFormProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
-  const bridge = getRecordFormBridge(record)
+  const bridge = getManagedRecordBridge(record)
   const [formModel, setFormModel] = useState<unknown>(() => bridge?.form)
   const formModelRef = useRef(formModel)
   formModelRef.current = formModel

@@ -50,7 +50,7 @@ export type {
   SpaceProtocolErrorPayload,
   SpaceTransport,
 } from './protocol.js'
-export { getRecordFormBridge, MANAGED_RECORD_FORM_PROTOCOL_VERSION } from './record-form.js'
+export { MANAGED_RECORD_FORM_PROTOCOL_VERSION } from './record-form.js'
 export type {
   ManagedRecordFormField,
   ManagedRecordFormModel,

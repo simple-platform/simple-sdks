@@ -69,6 +69,10 @@ during the Space handshake. `<RecordForm />` and `<RecordActivity />` load it au
 loader and URL are private implementation details, not supported Space APIs.
 Space authors should never choose or hard-code a runtime URL.
 
+The UI Kit reads host metadata and authorized callbacks from SDK-created record
+handles through a versioned symbol. Space authors use the `RecordForm` and
+`RecordActivity` components; there is no managed UI adapter package entry point.
+
 ### Framework support
 
 The managed `RecordForm` and `RecordActivity` exports are currently available only from

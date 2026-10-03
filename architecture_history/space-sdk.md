@@ -100,14 +100,16 @@ Future public portal
 The browser adapter multiplexes protocol operations, GraphQL, header actions, and platform-toast requests over one dedicated `MessagePort`. It does not make the public record API dependent on the iframe protocol; another adapter can satisfy the same transport interfaces later.
 
 `@simpleplatform/ui-kit/react` is an optional React presentation layer. Its
-managed `RecordForm` and `RecordActivity` components use a private host/UI-Kit
-transport when rendered inside a Record Space. The first-party platform body
+managed `RecordForm` and `RecordActivity` components read a versioned symbol
+property on SDK-created record handles to receive host-supplied metadata and
+callbacks. This integration works for route and
+opened records. The first-party platform body
 consumes the same canonical form and activity implementations directly, rather
 than maintaining Space-only renderers. `<RecordActivity record={record} />` reuses
 the host runtime element `<simple-record-activity>` with properties `applicationId`,
-`tableId`, `recordId`, `fields`, `formModel`, `graphql`, and the existing optional
-decrypt capability resolved from the private record bridge and managed form
-model. The React wrapper loads the host runtime and listens for the private
+`tableId`, `recordId`, `fields`, `graphql`, and the existing optional
+decrypt capability resolved from the managed record adapter. The React wrapper
+loads the host runtime and listens for the private
 element's ready/error lifecycle events; the host defines the element in
 `simple/apps/platform_web/lib/space-runtime/private-record-activity-entry.tsx`
 and registers it through the `private-ui-runtime-entry.tsx` bundle entry.
@@ -778,7 +780,7 @@ secret decryption, and parent-frame navigation.
 
 - **Decision:** Expose `<RecordActivity record={record} />` from `@simpleplatform/ui-kit/react`. The component mounts the private host UI runtime element `<simple-record-activity>` inside the Space iframe, passing `applicationId`, `tableId`, `recordId`, `fields`, `graphql`, and the existing optional decrypt capability from the common private `RecordUiBridge`. `applicationId` comes from the target record's bridge; table ID comes from private record UI metadata, with field metadata as a fallback. Generic framework-neutral Activity SDK APIs remain deferred and no new Activity wire operation was added.
 - **Reason:** Record Spaces require the canonical record activity stream (field change audits, collaborator notes, note composition, and "show more" pagination) without manually orchestrating GraphQL queries or duplicating platform activity presentation. The Activity hooks use the existing MessagePort GraphQL bridge, while secret reveal requests use the existing host decrypt capability. The local deployed fixture verifies browser parity for feed loading, note creation, and tab switching.
-- **Boundary:** The public UI Kit React package adds the managed `RecordActivity` component; the Space SDK adds no lower-level Activity data operations or wire protocol messages. Activity stream querying, pagination, and note creation remain private to `<simple-record-activity>`. Record and form metadata remain private and validated with `isManagedRecordFormModel`, and are exposed only via `@simpleplatform/sdk/space/internal`. Generic framework-neutral Activity SDK APIs remain deferred.
+- **Boundary:** The public UI Kit React package adds the managed `RecordActivity` component; the Space SDK adds no lower-level Activity data operations or wire protocol messages. Activity stream querying, pagination, and note creation remain private to `<simple-record-activity>`. At the time of this decision, record and form metadata were exposed to the UI Kit via `@simpleplatform/sdk/space/internal`; the later symbol-boundary decision below supersedes that package path. Generic framework-neutral Activity SDK APIs remain deferred.
 
 ### 2026-10-03 — Validate managed RecordActivity in the local browser
 
@@ -797,3 +799,9 @@ secret decryption, and parent-frame navigation.
 - **Decision:** Keep the private Activity element mounted when record UI metadata changes. Update its table, record, and field properties in place; report missing table or record identity as an accessible error instead of leaving the component in a permanent loading state.
 - **Reason:** Recreating the Activity root on a form metadata refresh discarded the note draft, scroll position, and pagination state even though the record session had not changed.
 - **Boundary:** `RecordActivity` continues to expose only `record`; its metadata subscription and element updates remain private. The shared mount helper rejects pre-readiness element errors and continues to observe post-readiness failures.
+
+### 2026-10-03 — Keep managed UI integration out of SDK package exports
+
+- **Decision:** Remove the exported `@simpleplatform/sdk/space/internal` path while managed components are pre-release. SDK-created record handles carry their managed UI bridge on a non-enumerable property keyed by the versioned `Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')`. The UI Kit reads that property through its own unexported helper. No managed UI adapter is added to the SDK package exports or public `RecordHandle` type.
+- **Reason:** Any exported package subpath becomes a public contract, whatever its name. The symbol lets the separately bundled SDK and UI Kit share the bridge without adding a customer-facing import path or framework concepts to the Space API.
+- **Boundary:** The symbol key and bridge shape remain a cross-package implementation dependency and need coordinated changes and tests. They do not provide secrecy or authorization: customer code can inspect symbols, while the host and server continue to enforce access. The versioned key lets an incompatible bridge fail as unavailable. Package-export tests reject both the former `internal` path and the briefly considered `managed-ui` path.

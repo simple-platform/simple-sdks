@@ -82,20 +82,7 @@ export interface RecordFormLifecycleOptions {
   setActiveField: (operation: 'record.blur' | 'record.focus', fieldName: string) => Promise<void>
 }
 
-const recordUiBridges = new WeakMap<object, RecordFormBridge>()
-
-/**
- * Private lookup used only by the UI Kit bridge.
- * @internal
- */
-export function getRecordFormBridge(record: RecordHandle): RecordFormBridge | undefined {
-  return recordUiBridges.get(record as object)
-}
-
-/** Private lookup for managed record UI that does not need form controls. */
-export function getRecordUiBridge(record: RecordHandle): RecordUiBridge | undefined {
-  return recordUiBridges.get(record as object)
-}
+const MANAGED_RECORD_UI_SYMBOL = Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')
 
 export function isManagedRecordFormModel(value: unknown): value is ManagedRecordFormModel {
   if (!isObjectRecord(value) || !Array.isArray(value.fields))
@@ -258,7 +245,7 @@ export function initRecordFormLifecycle(
       }
     },
   }
-  recordUiBridges.set(record as object, bridge)
+  Object.defineProperty(record, MANAGED_RECORD_UI_SYMBOL, { value: bridge })
 
   return {
     notifySnapshot: (snapshot: RecordSnapshot) => {

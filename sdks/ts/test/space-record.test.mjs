@@ -4,13 +4,13 @@ import test from 'node:test'
 
 import {
   createSimpleClient,
-  getRecordFormBridge,
   PROTOCOL_VERSION,
   RECORDS_PROTOCOL_VERSION,
   SpaceProtocolError,
 } from '../dist/space/core.js'
 import { connect } from '../dist/space/index.js'
-import { getRecordUiBridge } from '../dist/space/internal.js'
+
+const getRecordFormBridge = record => record[Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')]
 
 const recordContext = {
   applicationId: 'dev.simple.system',
@@ -391,10 +391,14 @@ test('publishes record metadata updates through the shared UI bridge', async () 
     transport,
   })
   const record = await simple.records.current()
-  const bridge = getRecordUiBridge(record)
+  const bridge = getRecordFormBridge(record)
+  const descriptor = Object.getOwnPropertyDescriptor(record, Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1'))
   const observed = []
   const unsubscribe = bridge.subscribeMetadata(metadata => observed.push(metadata))
 
+  assert.equal(descriptor?.value, bridge)
+  assert.equal(descriptor?.enumerable, false)
+  assert.equal(descriptor?.writable, false)
   assert.deepEqual(bridge.metadata, {
     fields: [],
     recordId: 'record-1',
