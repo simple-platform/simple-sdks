@@ -14,8 +14,10 @@ import type {
 import type { SimpleTasksClient } from './tasks.js'
 import type {
   SimpleHeaderClient,
+  SimpleTabsClient,
   SimpleToastClient,
   SpaceHeaderTransport,
+  SpaceTabsTransport,
   SpaceToastOptions,
   SpaceToastTransport,
 } from './ui.js'
@@ -24,7 +26,7 @@ import { createDocumentsClient } from './documents.js'
 import { deepFreeze, invalidResponse, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
 import { isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
 import { createTasksClient } from './tasks.js'
-import { createHeaderClient, createToastClient, validateSpaceToastOptions } from './ui.js'
+import { createHeaderClient, createTabsClient, createToastClient, validateSpaceToastOptions } from './ui.js'
 
 export type {
   ActionFailedDetails,
@@ -76,14 +78,27 @@ export type {
   TaskReplyResult,
   TaskStatus,
 } from './tasks.js'
-export { HEADER_ACTIONS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION } from './ui.js'
+export { DEFAULT_TABS_TIMEOUT_MS, HEADER_ACTIONS_PROTOCOL_VERSION, LUCIDE_ICON_NAME, TAB_ID, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION, validateTabs } from './ui.js'
 export type {
   HeaderAction,
   HeaderActionType,
+  SetTabsOptions,
+  SimpleHeaderActionsClient,
   SimpleHeaderClient,
+  SimpleTabsClient,
   SimpleToastClient,
+  SpaceTab,
+  SpaceTabsSelectionEvent,
+  SpaceTabsTransport,
   SpaceToastOptions,
   SpaceToastVariant,
+  TabsSelectPayload,
+  TabsSelectRequest,
+  TabsSelectResult,
+  TabsSetPayload,
+  TabsSetRequest,
+  TabsSetResult,
+  WireTab,
 } from './ui.js'
 
 export type SpaceContext
@@ -122,6 +137,7 @@ export interface SimpleClient {
   tasks: SimpleTasksClient
   ui: {
     header: SimpleHeaderClient
+    tabs: SimpleTabsClient
     toast: SimpleToastClient
   }
 }
@@ -138,6 +154,7 @@ export interface SimpleClientOptions {
   headerTransport?: SpaceHeaderTransport
   nextRequestId?: () => string
   runtime?: UiRuntimeDescriptor
+  tabsTransport?: SpaceTabsTransport
   taskTransport?: SpaceTransport
   toastTransport?: SpaceToastTransport
   transport?: SpaceTransport
@@ -154,6 +171,7 @@ export function createSimpleClient({
   headerTransport,
   nextRequestId = createRequestId,
   runtime,
+  tabsTransport,
   taskTransport,
   toastTransport,
   transport,
@@ -216,6 +234,7 @@ export function createSimpleClient({
     tasks: createTasksClient(taskTransport, nextRequestId),
     ui: {
       header: createHeaderClient(immutableContext.kind === 'record', headerTransport),
+      tabs: createTabsClient(immutableContext.kind === 'record', tabsTransport, nextRequestId),
       toast: createToastClient(toastTransport),
     },
   }

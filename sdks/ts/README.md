@@ -89,7 +89,7 @@ Record Spaces can replace the platform main actions in the header while
 mounted:
 
 ```ts
-simple.ui.header.setActions([
+simple.ui.header.actions.set([
   {
     id: 'start-call',
     label: 'Start call',
@@ -99,7 +99,7 @@ simple.ui.header.setActions([
 ])
 ```
 
-Promise-returning callbacks show button loading automatically. `setActions([])`
+Promise-returning callbacks show button loading automatically. `actions.set([])`
 renders no main actions. While a custom Record Space is active, this replaces
 the platform `Update` button and persisted View Actions; those defaults return
 when the Space unloads or the user selects the standard view. The full
@@ -132,6 +132,49 @@ Titles are limited to 160 characters and descriptions to 1,000. The supported
 variants are `default` and `destructive`. React content and toast action
 callbacks are not sent across the iframe boundary.
 
+### Record Space tabs
+
+Record Spaces can declare tabs in the platform record header:
+
+```ts
+const { selectedTabId } = await simple.ui.tabs.set({
+  onChange: (tabId) => {
+    console.log(`Active tab changed to ${tabId}`)
+  },
+  tabs: [
+    { icon: 'layout-dashboard', id: 'overview', title: 'Overview' },
+    { badge: 3, icon: 'message-square', id: 'messages', title: 'Messages' },
+    { badge: 'New', icon: 'file-text', id: 'documents', title: 'Documents' },
+  ],
+})
+
+// Programmatically select a declared tab
+await simple.ui.tabs.select('messages')
+```
+
+Tabs are configured with up to 32 tabs and a required `onChange` callback. An
+empty list clears the current declaration and resolves with
+`{ selectedTabId: null }`.
+Each tab requires an `id` (1–64 characters matching `^[a-z0-9][a-z0-9_-]{0,63}$`)
+and a non-blank `title` (up to 80 characters), with optional `default: true`,
+optional kebab-case Lucide `icon`, and optional `badge` (non-blank text up to 20
+characters or a finite non-negative integer). At most one tab may set `default: true`;
+if none is specified, the first tab defaults to active.
+
+The host negotiates `protocols.tabs: [1]` and owns selection and URL state.
+Registration uses `ui.tabs.set`, which assigns a `registrationRequestId` and
+acknowledges the initial `selectedTabId` without firing `onChange`. Host-to-Space
+selection changes are delivered via canonical `SPACE_UI_TABS_SELECTION_CHANGED` with
+`{ registrationRequestId, selectedTabId }` and routed to `onChange`. Events for
+superseded registrations are dropped immediately.
+
+Programmatic selection uses `ui.tabs.select`, sending `{ registrationRequestId, tabId }`.
+Selecting the already-active tab resolves immediately without wire traffic.
+Selecting an inactive declared tab resolves after host acknowledgement and reaches
+the `onChange` callback once, deduplicating the response and event. Both methods fail
+with structured `SpaceProtocolError` code `'unavailable'` outside a record Space or
+when the tabs capability was not negotiated.
+
 ### Space context
 
 `simple.context` is explicit host-provided page context. It is never inferred
@@ -160,6 +203,9 @@ The two exact context forms are `{ kind: 'standalone' }` and
 and tools. In a non-record Space, `simple.data` remains available while
 `simple.record()` rejects with `SpaceProtocolError` code `unavailable`
 and explains that the Space must be configured as a record view.
+
+When `connect()` runs in the Space document, it disables vertical root
+overscroll bounce. Normal scrolling inside the Space remains enabled.
 
 Each capability beyond `simple.data` is negotiated with the host when the Space
 connects. A capability the host did not negotiate rejects with

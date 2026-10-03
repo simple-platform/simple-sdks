@@ -1,13 +1,16 @@
-import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
+import type { ProtocolRequest, SpaceTransport } from './protocol.js'
 import type { JsonValue } from './tasks.js'
 import {
   invalidRequest,
   isObjectRecord,
   PROTOCOL_VERSION,
   readResponse,
+  requestWithin,
   SpaceProtocolError,
 } from './protocol.js'
 import { isJsonValue } from './tasks.js'
+
+export { requestWithin }
 
 export interface ActionRunOptions {
   /**
@@ -68,37 +71,6 @@ const MAX_TIMER_MS = 2_147_483_647
 export function actionWaitMs(timeoutMs: number | undefined): number {
   const hostTimeoutMs = Math.max(timeoutMs ?? DEFAULT_ACTION_TIMEOUT_MS, 0)
   return Math.min(hostTimeoutMs + ACTION_ANSWER_GRACE_MS, MAX_TIMER_MS)
-}
-
-/**
- * Sends a request and waits at most `waitMs` for its answer. After that it
- * rejects with `timeout` and aborts the transport's wait, so the request is
- * not kept pending on a port the host may no longer read.
- */
-export async function requestWithin<TResult>(
-  transport: SpaceTransport,
-  request: ProtocolRequest,
-  waitMs: number,
-): Promise<ProtocolResponse<TResult>> {
-  const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const expired = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      const error = new SpaceProtocolError({
-        code: 'timeout',
-        message: `The Space host did not answer ${request.operation} within ${waitMs} milliseconds, so its outcome is unknown.`,
-      })
-      controller.abort(error)
-      reject(error)
-    }, waitMs)
-  })
-
-  try {
-    return await Promise.race([transport.request<TResult>(request, undefined, controller.signal), expired])
-  }
-  finally {
-    clearTimeout(timer)
-  }
 }
 
 /**

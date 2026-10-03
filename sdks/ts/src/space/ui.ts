@@ -2,6 +2,28 @@ import { SpaceProtocolError } from './protocol.js'
 
 export const HEADER_ACTIONS_PROTOCOL_VERSION = 1 as const
 export const TOAST_PROTOCOL_VERSION = 1 as const
+export {
+  createTabsClient,
+  DEFAULT_TABS_TIMEOUT_MS,
+  LUCIDE_ICON_NAME,
+  TAB_ID,
+  TABS_PROTOCOL_VERSION,
+  validateTabs,
+} from './tabs.js'
+export type {
+  SetTabsOptions,
+  SimpleTabsClient,
+  SpaceTab,
+  SpaceTabsSelectionEvent,
+  SpaceTabsTransport,
+  TabsSelectPayload,
+  TabsSelectRequest,
+  TabsSelectResult,
+  TabsSetPayload,
+  TabsSetRequest,
+  TabsSetResult,
+  WireTab,
+} from './tabs.js'
 
 export type HeaderActionType = 'destructive' | 'outline' | 'primary' | 'secondary'
 
@@ -21,8 +43,12 @@ export interface HeaderAction {
   type?: HeaderActionType
 }
 
+export interface SimpleHeaderActionsClient {
+  set: (actions: readonly HeaderAction[]) => void
+}
+
 export interface SimpleHeaderClient {
-  setActions: (actions: readonly HeaderAction[]) => void
+  actions: SimpleHeaderActionsClient
 }
 
 export interface SpaceHeaderTransport {
@@ -115,22 +141,24 @@ export function createHeaderClient(
   headerTransport?: SpaceHeaderTransport,
 ): SimpleHeaderClient {
   return {
-    setActions(actions) {
-      if (!isRecordSpace) {
-        throw new SpaceProtocolError({
-          code: 'unavailable',
-          message: 'Header actions are available only when this Space is configured as a record view.',
-        })
-      }
+    actions: {
+      set(actions) {
+        if (!isRecordSpace) {
+          throw new SpaceProtocolError({
+            code: 'unavailable',
+            message: 'Header actions are available only when this Space is configured as a record view.',
+          })
+        }
 
-      if (!headerTransport) {
-        throw new SpaceProtocolError({
-          code: 'unavailable',
-          message: 'The header-action bridge is unavailable for this record Space.',
-        })
-      }
+        if (!headerTransport) {
+          throw new SpaceProtocolError({
+            code: 'unavailable',
+            message: 'The header-action bridge is unavailable for this record Space.',
+          })
+        }
 
-      headerTransport.setActions(validateHeaderActions(actions))
+        headerTransport.setActions(validateHeaderActions(actions))
+      },
     },
   }
 }

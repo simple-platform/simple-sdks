@@ -1,6 +1,6 @@
 # Embedded Space SDK Architecture
 
-- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header-action override, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, and standalone document staging are implemented. `connect({ targetOrigin })` is the sole browser bootstrap. `simple.tasks.create()` / `simple.tasks.reply()` depend on host task-protocol negotiation. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and managed-form host capabilities remain private.
+- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and tabs, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, and standalone document staging are implemented in the workspace. Fixture `0.0.2-local.31` is deployed and browser-verified. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling; SDK tests and desktop/mobile CDP checks pass. `connect({ targetOrigin })` is the sole browser bootstrap. `simple.tasks.create()` / `simple.tasks.reply()` depend on host task-protocol negotiation. The public SDK exposes only the opaque form bridge; renderer, field registry, behavior scheduler, and managed-form host capabilities remain private.
 - **Last updated:** 2026-10-02
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
@@ -66,6 +66,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - A managed form may receive a private command-notification from its record handle when `update()` or `submit()` replaces the snapshot. This is a one-handle UI synchronization seam, not a public live subscription API; server/live events remain deferred.
 - Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment; `simple.record()` rejects with a structured `unavailable` error only when invoked.
+- Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
 - The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
 
 ## Target architecture
@@ -79,8 +80,9 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 │   ├── simple.documents         standalone staged document uploads
 │   ├── simple.tasks             tasks created from a task type, and replies
 │   ├── simple.actions           the Space's own app's actions, run by the host
-│   ├── simple.ui.header         record-space header action delegation
-│   └── simple.ui.toast.show()   platform-owned toast presentation
+│   ├── simple.ui.header.actions.set()  record-space header action delegation
+│   ├── simple.ui.tabs.set/select()     record-space tabs and navigation
+│   └── simple.ui.toast.show()          platform-owned toast presentation
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
 
 Embedded Space
@@ -88,6 +90,7 @@ Embedded Space
     ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, document, task, and action commands
     ├── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
     ├── SPACE_HEADER_ACTIONS_SET / INVOKE   -> platform-owned header actions
+    ├── SPACE_UI_TABS_SELECTION_CHANGED     -> host-owned record tab selection
     └── SPACE_TOAST_SHOW                    -> platform-owned toast presenter
 
 Future public portal
@@ -153,6 +156,12 @@ const snapshot = record.snapshot()
 
 `record.update()` stages completed field values and returns the host's new snapshot. `record.submit()` runs the canonical platform workflow and returns `{ ok, snapshot }`; expected validation failures are results rather than bypassable client state.
 
+In the embedded Space document, `connect()` sets the root element's
+`overscroll-behavior-y` to `none`. This suppresses vertical edge bounce at the
+document boundary while leaving normal page and nested-element scrolling
+available. No host protocol or public option is needed because only code inside
+the cross-origin Space document can control its root viewport.
+
 ### Managed React record form — implemented locally
 
 ```tsx
@@ -174,7 +183,7 @@ the shell; this does not add a public renderer or editor-registry API.
 ### Record-Space header actions — implemented, pending reviewed release
 
 ```ts
-simple.ui.header.setActions([
+simple.ui.header.actions.set([
   {
     icon: 'phone',
     id: 'start-call',
@@ -185,9 +194,9 @@ simple.ui.header.setActions([
 ])
 ```
 
-`setActions()` replaces active System View Actions for the mounted Record
+`actions.set()` replaces active System View Actions for the mounted Record
 Space. It accepts actions in display order; callback promises automatically
-drive platform-rendered button loading. `setActions([])` intentionally shows no
+drive platform-rendered button loading. `actions.set([])` intentionally shows no
 Space actions, and iframe teardown restores the persisted View Actions. The
 platform retains Delete, recovery, navigation, and other overflow controls.
 
@@ -210,6 +219,33 @@ the negotiated `toast` protocol; title and description are limited to 160 and
 1,000 characters. The platform validates the message and invokes its existing
 toast presenter. Toast rendering, theme, React content, and action callbacks
 remain platform-owned.
+
+### Record-Space tabs — implemented
+
+```ts
+const { selectedTabId } = await simple.ui.tabs.set({
+  onChange: (tabId) => {
+    // iframe-local callback triggered when active tab changes
+  },
+  tabs: [
+    { default: true, icon: 'layout-dashboard', id: 'overview', title: 'Overview' },
+    { badge: 3, icon: 'message-square', id: 'messages', title: 'Messages' },
+  ],
+})
+
+await simple.ui.tabs.select('messages')
+```
+
+The Space offers `protocols.tabs: [1]` in `SPACE_READY`. When the host confirms `protocols.tabs: 1` in `INIT_RPC` for a Record Space, the tabs bridge is enabled. In standalone context or when tabs capability is absent, `simple.ui.tabs.set` and `simple.ui.tabs.select` reject with `SpaceProtocolError` code `'unavailable'`.
+
+Wire messages:
+
+- Registration: versioned request `operation: 'ui.tabs.set'` carrying `payload: { tabs: WireTab[] }`. Wire tab format: `{ id: string, title: string, default?: true, icon?: string, badge?: string | number }`. The requestId acts as the registration identity (`registrationRequestId`). The host acknowledges with `SPACE_PROTOCOL_RESPONSE` containing `result: { selectedTabId: string | null }`. The `onChange` callback is required and is not invoked on the initial registration response.
+- Selection: versioned request `operation: 'ui.tabs.select'` carrying `payload: { registrationRequestId: string, tabId: string }`. The host acknowledges with `SPACE_PROTOCOL_RESPONSE` containing `result: { selectedTabId: string }`. Programmatic selection reaches the `onChange` callback once after host acknowledgement/event, deduplicating the response and event. Calling `select()` with the already-active tab resolves immediately without sending a wire message.
+- Host selection event: canonical type `SPACE_UI_TABS_SELECTION_CHANGED` carrying `{ registrationRequestId: string, selectedTabId: string }` delivered over the MessagePort. When received, the SDK routes the event to `onChange(tabId)` if `registrationRequestId` matches the active registration.
+- Validation bounds: up to 32 tabs; an empty declaration clears the tab strip and returns `selectedTabId: null`. IDs match `^[a-z0-9][a-z0-9_-]{0,63}$`; titles are non-blank and at most 80 characters; text badges are non-blank and at most 20 characters; numeric badges are finite non-negative integers; icons are kebab-case Lucide icon names. Multiple defaults and duplicate IDs are rejected. If no tab specifies `default: true`, the first tab defaults to active.
+- Bound and timeouts: Requests are bounded by `DEFAULT_TABS_TIMEOUT_MS = 10_000` (10 seconds), after which they reject with `timeout`.
+- Superseded registrations: When `set()` begins, the pending registration identity and callback are installed immediately and events from older registrations are dropped. Only the latest acknowledged registration commits its selected state. Late responses from older sets are ignored. Callback errors are caught so transport delivery is never interrupted.
 
 ### Flexible application data
 
@@ -360,10 +396,11 @@ simple-sdks/
 5. **Actions run by the host — SDK side complete.** Negotiate `protocols.action`, send `action.run` with the action's name alone, and contract-test the envelope, the name, input, and timeout checks, and the pass-through of every host answer. The host side is a separate platform change.
 6. **Secondary records — deferred.** Do not add preparatory runtime code or publish `simple.records.open()` / `record.close()` until this work is explicitly resumed with a concrete host and authorization design.
 7. **Managed RecordForm — renderer boundary complete locally; capability parity in progress.** Extracted the shared private React renderer and layout, kept SDK renderer and transport details private, exposed only `<RecordForm record={record} />`, and made the platform form and iframe runtime use the same renderer artifact. Document, secret, and reference side-effect adapters still require end-to-end verification before this step is release-complete.
-8. **Record-Space header actions — complete locally.** Implemented `simple.ui.header.setActions(actions)` with opaque iframe callbacks, platform-rendered loading, controlled `loading` / `disabled`, persisted View-Action override semantics, and teardown restoration.
+8. **Record-Space header actions — complete locally.** Implemented `simple.ui.header.actions.set(actions)` with opaque iframe callbacks, platform-rendered loading, controlled `loading` / `disabled`, persisted View-Action override semantics, and teardown restoration.
 9. **Platform toast notifications — implemented locally.** Negotiate the `toast` capability independently of record context and expose `simple.ui.toast.show()` as a plain-text request to the platform-owned toast presenter.
 10. **Production bridge migration — inventory complete; capability work required.** The copied-bridge inventory below identifies the supported migration groups and the intentionally deferred capabilities that currently block end-to-end rewrites. Do not retire copied bridge code before its needed replacement ships and a per-Space rollback plan is approved.
 11. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
+12. **Record-Space tabs — complete in the SDK workspace.** Implemented `simple.ui.tabs.set({ tabs, onChange })` and `simple.ui.tabs.select(tabId)` with `protocols.tabs: [1]`, bounded acknowledgement, input/response validation, canonical event routing via `SPACE_UI_TABS_SELECTION_CHANGED`, and registrationRequestId correlation for superseded registrations. SDK contract and MessageChannel tests pass; the host implementation and integrated fixture are maintained in their respective repositories.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -623,3 +660,22 @@ secret decryption, and parent-frame navigation.
 - **Reason:** A single explicit bootstrap keeps the public API simple while making host selection visible to Space authors and leaving room for future hosting arrangements. Existing Spaces also depend on staged document uploads, so removing the API broke a shipped workflow; preserving the existing platform upload path restores compatibility without exposing managed RecordForm internals.
 - **Boundary:** The SDK transfers file bytes to the host and validates the returned handle. The platform remains responsible for storage and authorization. Managed RecordForm's upload, promotion, deletion, and preview lifecycle stays on its private adapter; standalone staging is a separate opt-in capability.
 - **Supersedes:** The 2026-09-20 decision to infer the host origin and temporarily keep `connectSpace(options)`, and the 2026-09-29 decision to remove public document staging.
+
+### 2026-10-02 — Rename header actions to simple.ui.header.actions.set
+
+- **Decision:** Rename the public Record Space header-action API from `simple.ui.header.setActions(actions)` to `simple.ui.header.actions.set(actions)` with no compatibility alias.
+- **Reason:** Groups header action controls under an explicit `actions` namespace on `simple.ui.header` for Part 1 of the record Space tabs project, establishing consistent sub-capability grouping.
+- **Boundary:** Private wire message types (`SPACE_HEADER_ACTIONS_SET`, `SPACE_HEADER_ACTION_INVOKE`, `SPACE_HEADER_ACTION_RESULT`) and MessagePort transport semantics remain unchanged. Button loading, status, and rendering remain host-owned while action callbacks remain iframe-local.
+- **Supersedes:** The public method signature in the 2026-09-20 header-action decision (`simple.ui.header.setActions`).
+
+### 2026-10-02 — Record Space tabs contract
+
+- **Decision:** Expose `simple.ui.tabs.set({ tabs, onChange })` returning `Promise<{ selectedTabId: string | null }>` and `simple.ui.tabs.select(tabId)` returning `Promise<void>`. Negotiate `protocols.tabs: [1]` in Record Space context. Registration and selection use versioned `SPACE_PROTOCOL_REQUEST` operations `ui.tabs.set` and `ui.tabs.select`. The host owns selection and URL state, and selection events route to iframe-local `onChange(tabId)` via `SPACE_UI_TABS_SELECTION_CHANGED` correlated by `registrationRequestId`.
+- **Reason:** Record Spaces require standard tabbed navigation rendered by the platform host without duplicating tab UI inside the iframe or coupling the platform to iframe React nodes.
+- **Boundary:** Tab presentation, URL synchronisation, and selection state remain platform-owned. The SDK validates tab definitions (up to 32 tabs, with empty declarations clearing the strip; IDs matching `^[a-z0-9][a-z0-9_-]{0,63}$`, non-blank titles up to 80 chars, non-blank text badges up to 20 chars or finite non-negative numeric badges, kebab-case Lucide icons, and single default) before sending, applies a 10-second request timeout, correlates events using `registrationRequestId`, drops events from superseded registrations or closed transports, and reports callback errors without interrupting transport. The platform host implementation is maintained in `simple/architecture_history/record-space-tabs.md`.
+
+### 2026-10-02 — Suppress vertical edge bounce in embedded Spaces
+
+- **Decision:** `connect()` sets `document.documentElement.style.overscrollBehaviorY` to `none` in the Space document.
+- **Reason:** The platform iframe is cross-origin, so host CSS cannot control the embedded root scroller. Applying the rule inside the SDK's existing browser bootstrap suppresses root-edge bounce without disabling normal scrolling or adding a new public API.
+- **Boundary:** This applies to Space documents that use the current SDK bootstrap. Existing immutable Space bundles must be rebuilt to include the updated SDK. The host iframe element's overscroll style alone did not stop the child document's edge bounce in Chrome.
