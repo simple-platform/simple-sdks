@@ -112,6 +112,28 @@ support `current()` through the existing `record` capability while lacking
 `open()`. Missing and inaccessible records return the same generic
 `target_unavailable` error.
 
+`simple.records.current()` is a compatibility alias for `simple.record()`.
+To work with another record, use `simple.records.open()` with its exact target:
+
+```ts
+const related = await simple.records.open({
+  appId: 'dev.simple.ui_fixtures',
+  recordId: 'UIF000002',
+  tableName: 'ui_fixture_records',
+})
+await related.update({ status: 'Ready' })
+const saved = await related.submit()
+```
+
+Opened handles have the same behavior-aware update and submit workflow as the
+route record. The host authorizes the target, owns an independent session, and
+reuses it for repeated opens of the same target during one Space connection.
+It disposes opened sessions when that connection closes; there is no public
+`close()` method. `records.open()` is available in Record and standalone Spaces
+when the host negotiates the `records` capability. If that capability is absent,
+the call rejects with `SpaceProtocolError` code `unavailable`. The route record
+cannot be opened again as a secondary session (`already_current`).
+
 ### Managed record UI and header actions (pre-release)
 
 The companion UI Kit currently implements a managed React form for Record

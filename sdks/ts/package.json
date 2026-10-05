@@ -57,10 +57,6 @@
       "types": "./dist/space/index.d.ts",
       "default": "./dist/space/index.js"
     },
-    "./space/internal": {
-      "types": "./dist/space/internal.d.ts",
-      "default": "./dist/space/internal.js"
-    },
     "./worker": "./dist/worker-override.js",
     "./package.json": "./package.json"
   },

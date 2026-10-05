@@ -1,4 +1,4 @@
-import type { RecordHandle, RecordSnapshot } from './record.js'
+import type { RecordHandle, RecordSnapshot, RecordUiBridge, RecordUiMetadata } from './record.js'
 import type { SpaceToastOptions } from './ui.js'
 import { deepFreeze, invalidResponse, isObjectRecord } from './protocol.js'
 
@@ -26,6 +26,7 @@ export interface ManagedRecordFormField {
 export interface ManagedRecordFormModel {
   fields: readonly ManagedRecordFormField[]
   recordId?: string
+  tableId?: string
   tableName?: string
 }
 
@@ -53,14 +54,11 @@ export interface RecordFormCapabilities {
   showToast?: (options: SpaceToastOptions) => void
 }
 
-export interface RecordFormBridge {
-  capabilities?: RecordFormCapabilities
+export interface RecordFormBridge extends RecordUiBridge {
   blurField: (fieldName: string) => Promise<void>
   focusField: (fieldName: string) => Promise<void>
   form: unknown
-  graphql: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
   registerSubmitPreparation: (preparation: RecordFormSubmitPreparation) => () => void
-  runtime?: UiRuntimeDescriptor
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
   subscribe: (listener: ManagedRecordFormSnapshotListener) => () => void
 }
@@ -75,6 +73,7 @@ export interface RecordFormLifecycle {
 }
 
 export interface RecordFormLifecycleOptions {
+  applicationId?: string
   capabilities?: RecordFormCapabilities
   form?: ManagedRecordFormModel
   formModelTransport?: RecordFormModelTransport
@@ -83,18 +82,13 @@ export interface RecordFormLifecycleOptions {
   setActiveField: (operation: 'record.blur' | 'record.focus', fieldName: string) => Promise<void>
 }
 
-const recordFormBridges = new WeakMap<object, RecordFormBridge>()
-
-/**
- * Private lookup used only by the UI Kit bridge.
- * @internal
- */
-export function getRecordFormBridge(record: RecordHandle): RecordFormBridge | undefined {
-  return recordFormBridges.get(record as object)
-}
+const MANAGED_RECORD_UI_SYMBOL = Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')
 
 export function isManagedRecordFormModel(value: unknown): value is ManagedRecordFormModel {
   if (!isObjectRecord(value) || !Array.isArray(value.fields))
+    return false
+
+  if (value.tableId !== undefined && typeof value.tableId !== 'string')
     return false
 
   return value.fields.every((field) => {
@@ -113,6 +107,17 @@ export function isManagedRecordFormModel(value: unknown): value is ManagedRecord
   })
 }
 
+function deriveTableId(target: readonly ManagedRecordFormField[] | ManagedRecordFormModel): string | undefined {
+  const fields = 'fields' in target ? target.fields : target
+  if ('fields' in target && typeof target.tableId === 'string' && target.tableId.trim().length > 0)
+    return target.tableId.trim()
+  for (const field of fields) {
+    if (typeof field?.tableId === 'string' && field.tableId.trim().length > 0)
+      return field.tableId.trim()
+  }
+  return undefined
+}
+
 export function immutableManagedRecordForm(form: ManagedRecordFormModel): ManagedRecordFormModel {
   return deepFreeze(structuredClone(form))
 }
@@ -128,15 +133,42 @@ export function initRecordFormLifecycle(
   record: RecordHandle,
   options: RecordFormLifecycleOptions,
 ): RecordFormLifecycle | undefined {
-  const { capabilities, form, formModelTransport, graphql, runtime, setActiveField } = options
+  const { applicationId, capabilities, form, formModelTransport, graphql, runtime, setActiveField } = options
   if (!form && !formModelTransport)
     return undefined
 
   let currentForm = form ? immutableManagedRecordForm(form) : undefined
   let stopTransportSubscription: (() => void) | undefined
   const formListeners = new Set<(form: unknown) => void>()
+  const metadataListeners = new Set<(metadata: RecordUiMetadata) => void>()
   const snapshotListeners = new Set<ManagedRecordFormSnapshotListener>()
   const submitPreparations = new Set<RecordFormSubmitPreparation>()
+  let currentMetadata = currentForm ? recordUiMetadata(currentForm) : undefined
+
+  const publishFormModel = (updatedForm: unknown) => {
+    if (!isManagedRecordFormModel(updatedForm))
+      return
+
+    currentForm = immutableManagedRecordForm(updatedForm)
+    currentMetadata = recordUiMetadata(currentForm)
+    for (const formListener of formListeners)
+      formListener(currentForm)
+    for (const metadataListener of metadataListeners)
+      metadataListener(currentMetadata)
+  }
+
+  const startFormModelSubscription = () => {
+    if (!stopTransportSubscription && formModelTransport && (formListeners.size > 0 || metadataListeners.size > 0)) {
+      stopTransportSubscription = formModelTransport.subscribeFormModel(publishFormModel)
+    }
+  }
+
+  const stopFormModelSubscription = () => {
+    if (formListeners.size === 0 && metadataListeners.size === 0) {
+      stopTransportSubscription?.()
+      stopTransportSubscription = undefined
+    }
+  }
 
   const boundCapabilities: RecordFormCapabilities | undefined = capabilities
     ? {
@@ -175,6 +207,7 @@ export function initRecordFormLifecycle(
     : undefined
 
   const bridge: RecordFormBridge = {
+    applicationId,
     blurField: fieldName => setActiveField('record.blur', fieldName),
     capabilities: boundCapabilities,
     focusField: fieldName => setActiveField('record.focus', fieldName),
@@ -182,6 +215,9 @@ export function initRecordFormLifecycle(
       return currentForm
     },
     graphql,
+    get metadata() {
+      return currentMetadata
+    },
     registerSubmitPreparation: (preparation) => {
       submitPreparations.add(preparation)
       return () => submitPreparations.delete(preparation)
@@ -193,27 +229,23 @@ export function initRecordFormLifecycle(
     },
     subscribeFormModel: (listener) => {
       formListeners.add(listener)
-      if (formListeners.size === 1) {
-        stopTransportSubscription = formModelTransport?.subscribeFormModel((updatedForm) => {
-          if (!isManagedRecordFormModel(updatedForm))
-            return
-
-          currentForm = immutableManagedRecordForm(updatedForm)
-          for (const formListener of formListeners)
-            formListener(currentForm)
-        })
-      }
+      startFormModelSubscription()
 
       return () => {
         formListeners.delete(listener)
-        if (formListeners.size === 0) {
-          stopTransportSubscription?.()
-          stopTransportSubscription = undefined
-        }
+        stopFormModelSubscription()
+      }
+    },
+    subscribeMetadata: (listener) => {
+      metadataListeners.add(listener)
+      startFormModelSubscription()
+      return () => {
+        metadataListeners.delete(listener)
+        stopFormModelSubscription()
       }
     },
   }
-  recordFormBridges.set(record as object, bridge)
+  Object.defineProperty(record, MANAGED_RECORD_UI_SYMBOL, { value: bridge })
 
   return {
     notifySnapshot: (snapshot: RecordSnapshot) => {
@@ -230,6 +262,16 @@ export function initRecordFormLifecycle(
       return values
     },
   }
+}
+
+function recordUiMetadata(form: ManagedRecordFormModel): RecordUiMetadata {
+  const tableId = deriveTableId(form)
+  return Object.freeze({
+    fields: form.fields,
+    ...(form.recordId ? { recordId: form.recordId } : {}),
+    ...(tableId ? { tableId } : {}),
+    ...(form.tableName ? { tableName: form.tableName } : {}),
+  })
 }
 
 export interface FormModelSubscriptionManager {

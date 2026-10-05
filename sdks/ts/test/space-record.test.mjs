@@ -4,12 +4,13 @@ import test from 'node:test'
 
 import {
   createSimpleClient,
-  getRecordFormBridge,
   PROTOCOL_VERSION,
   RECORDS_PROTOCOL_VERSION,
   SpaceProtocolError,
 } from '../dist/space/core.js'
 import { connect } from '../dist/space/index.js'
+
+const getRecordFormBridge = record => record[Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')]
 
 const recordContext = {
   applicationId: 'dev.simple.system',
@@ -95,6 +96,133 @@ test('keeps records.current as the primary-record API and ensures simple.record 
     protocol: 1,
     requestId: 'request-compatibility',
   }])
+})
+
+test('opens and reuses a target session by its complete record reference', async () => {
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: {
+      form: { fields: [], recordId: request.payload.recordId, tableId: 'table-1' },
+      sessionId: `session-${request.payload.appId}-${request.payload.recordId}`,
+      snapshot: snapshot(1),
+    },
+  }))
+  let requestNumber = 0
+  const simple = createSimpleClient({
+    context: recordContext,
+    nextRequestId: () => `request-${++requestNumber}`,
+    recordsTransport,
+  })
+  const target = { appId: 'app-a', recordId: 'rec-1', tableName: 'contacts' }
+
+  const [first, concurrent] = await Promise.all([simple.records.open(target), simple.records.open(target)])
+  const repeated = await simple.records.open(target)
+  const otherApp = await simple.records.open({ ...target, appId: 'app-b' })
+
+  assert.strictEqual(first, concurrent)
+  assert.strictEqual(first, repeated)
+  assert.notStrictEqual(first, otherApp)
+  assert.equal(first.id, 'session-app-a-rec-1')
+  assert.equal(getRecordFormBridge(first).applicationId, 'app-a')
+  assert.equal(getRecordFormBridge(otherApp).applicationId, 'app-b')
+  assert.deepEqual(recordsTransport.requests.map(request => ({ operation: request.operation, payload: request.payload })), [
+    { operation: 'records.open', payload: target },
+    { operation: 'records.open', payload: { ...target, appId: 'app-b' } },
+  ])
+})
+
+test('updates and submits an opened session through its negotiated records transport', async () => {
+  const recordsTransport = createTransport((request) => {
+    if (request.operation === 'records.open') {
+      return {
+        ok: true,
+        protocol: PROTOCOL_VERSION,
+        requestId: request.requestId,
+        result: {
+          form: { fields: [], recordId: request.payload.recordId, tableId: 'table-1' },
+          sessionId: 'session-opened',
+          snapshot: snapshot(1),
+        },
+      }
+    }
+
+    return {
+      ok: true,
+      protocol: PROTOCOL_VERSION,
+      requestId: request.requestId,
+      result: {
+        ok: true,
+        snapshot: request.operation === 'record.update'
+          ? snapshot(2, { status: 'ready' })
+          : snapshot(3, { status: 'ready' }),
+      },
+    }
+  })
+  const requestIds = ['request-open', 'request-update', 'request-submit']
+  const simple = createSimpleClient({ nextRequestId: () => requestIds.shift(), recordsTransport })
+  const target = { appId: 'app-a', recordId: 'rec-1', tableName: 'contacts' }
+
+  const record = await simple.records.open(target)
+  const update = await record.update({ status: 'ready' })
+  const submit = await record.submit()
+
+  assert.deepEqual(recordsTransport.requests.map(({ operation, payload }) => ({ operation, payload })), [
+    { operation: 'records.open', payload: target },
+    { operation: 'record.update', payload: { sessionId: 'session-opened', values: { status: 'ready' } } },
+    { operation: 'record.submit', payload: { sessionId: 'session-opened' } },
+  ])
+  assert.deepEqual(update.snapshot, snapshot(2, { status: 'ready' }))
+  assert.deepEqual(submit.snapshot, snapshot(3, { status: 'ready' }))
+  assert.deepEqual(record.snapshot(), snapshot(3, { status: 'ready' }))
+})
+
+test('refuses unavailable or malformed record opens before publishing a handle', async () => {
+  const target = { appId: 'app-a', recordId: 'rec-1', tableName: 'contacts' }
+  const unavailable = createSimpleClient({ context: recordContext })
+  await assert.rejects(() => unavailable.records.open(target), error =>
+    error instanceof SpaceProtocolError && error.code === 'unavailable')
+
+  const recordsTransport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: { sessionId: '', snapshot: snapshot(1) },
+  }))
+  const simple = createSimpleClient({ recordsTransport })
+  await assert.rejects(() => simple.records.open({ ...target, appId: ' ' }), error =>
+    error instanceof SpaceProtocolError && error.code === 'invalid_request')
+  assert.equal(recordsTransport.requests.length, 0)
+  await assert.rejects(() => simple.records.open(target), error =>
+    error instanceof SpaceProtocolError && error.code === 'invalid_response')
+})
+
+test('preserves host refusal codes and retries a failed open', async () => {
+  let attempts = 0
+  const recordsTransport = createTransport((request) => {
+    attempts += 1
+    return attempts === 1
+      ? {
+          error: { code: 'target_unavailable', message: 'The requested record is unavailable.' },
+          ok: false,
+          protocol: PROTOCOL_VERSION,
+          requestId: request.requestId,
+        }
+      : {
+          ok: true,
+          protocol: PROTOCOL_VERSION,
+          requestId: request.requestId,
+          result: { sessionId: 'session-after-retry', snapshot: snapshot(1) },
+        }
+  })
+  const simple = createSimpleClient({ recordsTransport })
+  const target = { appId: 'app-a', recordId: 'rec-1', tableName: 'contacts' }
+
+  await assert.rejects(() => simple.records.open(target), error =>
+    error instanceof SpaceProtocolError && error.code === 'target_unavailable')
+  assert.equal((await simple.records.open(target)).id, 'session-after-retry')
+  assert.equal(recordsTransport.requests.length, 2)
 })
 
 test('keeps flexible GraphQL reads and writes under simple.data', async () => {
@@ -236,6 +364,58 @@ test('routes private RecordForm toasts through the same platform toast transport
     { title: 'Saved' },
   ])
   assert.equal(getRecordFormBridge(record).capabilities.originalCapability, true)
+})
+
+test('publishes record metadata updates through the shared UI bridge', async () => {
+  let publishFormModel
+  const transport = createTransport(request => ({
+    ok: true,
+    protocol: PROTOCOL_VERSION,
+    requestId: request.requestId,
+    result: {
+      form: { fields: [], recordId: 'record-1', tableId: 'table-1', tableName: 'contacts' },
+      sessionId: 'session-primary',
+      snapshot: snapshot(1),
+    },
+  }))
+  const simple = createSimpleClient({
+    context: recordContext,
+    formModelTransport: {
+      subscribeFormModel: (listener) => {
+        publishFormModel = listener
+        return () => {
+          publishFormModel = undefined
+        }
+      },
+    },
+    transport,
+  })
+  const record = await simple.records.current()
+  const bridge = getRecordFormBridge(record)
+  const descriptor = Object.getOwnPropertyDescriptor(record, Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1'))
+  const observed = []
+  const unsubscribe = bridge.subscribeMetadata(metadata => observed.push(metadata))
+
+  assert.equal(descriptor?.value, bridge)
+  assert.equal(descriptor?.enumerable, false)
+  assert.equal(descriptor?.writable, false)
+  assert.deepEqual(bridge.metadata, {
+    fields: [],
+    recordId: 'record-1',
+    tableId: 'table-1',
+    tableName: 'contacts',
+  })
+  assert.equal(typeof bridge.blurField, 'function')
+
+  publishFormModel({ fields: [], recordId: 'record-2', tableId: 'table-2', tableName: 'companies' })
+  unsubscribe()
+  assert.deepEqual(observed, [{
+    fields: [],
+    recordId: 'record-2',
+    tableId: 'table-2',
+    tableName: 'companies',
+  }])
+  assert.equal(publishFormModel, undefined)
 })
 
 test('does not expose a RecordForm bridge when the host omits form metadata', async () => {

@@ -251,5 +251,5 @@ async function createRecord(runtime, options = {}) {
     formModelTransport: subscribeFormModel ? { subscribeFormModel } : undefined,
     runtime,
     transport,
-  }).record()
+  }).records.current()
 }
