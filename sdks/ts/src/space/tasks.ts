@@ -33,6 +33,15 @@ export interface TaskCreateInput {
   /**
    * The typed input the task type declares for its tasks. It is always a JSON
    * object, even when the task type needs nothing: then it is `{}`.
+   *
+   * `_metadata` at its root is reserved for the platform and is not part of the
+   * task type's input. To start the task only after other tasks have ended, list
+   * them: `{ _metadata: { start_after: [{ task_id, on? }] } }`. `on` names states
+   * of the listed task's own task type that end it; left out, the states that map
+   * to `completed`. The task waits, with no model call, until every listed task
+   * has ended in a state its entry allows, and is cancelled if one ends in a
+   * state its entry does not allow. Its doer is given the `read-task-output`
+   * tool for the listed tasks. See "Space tasks" in the README.
    */
   input: JsonObject
   /** The ID of the task type the task is created from. */
