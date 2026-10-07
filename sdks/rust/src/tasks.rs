@@ -83,7 +83,7 @@ mod tests {
                     "input": { "invoice_id": "INV000017" },
                 })
             );
-            Ok(json!({ "task": { "id": "TASK000042", "revision": 1, "status": "open" } }))
+            Ok(json!({ "task": { "id": "TASK000042", "revision": 0, "status": "queued" } }))
         });
 
         let result = create(
@@ -98,8 +98,8 @@ mod tests {
             CreateResult {
                 task: Task {
                     id: "TASK000042".to_string(),
-                    revision: 1,
-                    status: "open".to_string(),
+                    revision: 0,
+                    status: "queued".to_string(),
                 },
             }
         );
