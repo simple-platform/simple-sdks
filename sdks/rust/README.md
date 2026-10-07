@@ -342,6 +342,22 @@ holds it, with the accepted grammar in the message.
 The AI module works on unstructured data: a document handle, a piece of text, or
 an object you already hold.
 
+The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribe_pages` selects the reader for scanned pages; omission or `Transcription::Standard` preserves the default behavior.
+`Transcription::Precise` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
+
+```rust
+use simpleplatform_sdk::ai::{self, TranscribePagesOptions, Transcription};
+
+let read = ai::transcribe_pages(
+    &document_handle,
+    None,
+    TranscribePagesOptions {
+        transcription: Some(Transcription::Precise),
+        ..Default::default()
+    },
+)?;
+```
+
 #### Extract Structured Data
 
 The schema is the contract the answer is held to, and the type parameter is what

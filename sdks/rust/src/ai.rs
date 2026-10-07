@@ -277,6 +277,18 @@ pub struct DocumentInput {
     pub deliver_as: Option<Delivery>,
 }
 
+/// The reader used for scanned pages; omission or `Standard` preserves the default.
+/// `Precise` costs more and suits exact characters (codes, part numbers); text pages are unaffected.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Transcription {
+    /// Use the standard reader.
+    Standard,
+    /// Use the higher-cost precise reader.
+    Precise,
+}
+
 /// What any operation may be told, beyond the inputs that define it.
 ///
 /// Every member has a default, so a call that wants one thing changed says that
@@ -292,6 +304,10 @@ pub struct DocumentInput {
 /// ```
 #[derive(Clone, Debug)]
 pub struct Options {
+    /// Selects the reader for scanned pages; omission or `Standard` preserves the default.
+    /// `Precise` costs more and suits exact characters (codes, part numbers); text pages are unaffected.
+    pub transcription: Option<Transcription>,
+
     /// Which size of model to run on. Unset leaves the choice to the platform.
     pub model: Option<Model>,
 
@@ -323,6 +339,7 @@ impl Default for Options {
     /// Reasoning on, and every other choice left to the platform.
     fn default() -> Options {
         Options {
+            transcription: None,
             model: None,
             system_prompt: None,
             temperature: None,
@@ -412,6 +429,10 @@ pub struct Transcript {
 /// the platform's own accuracy-first effort.
 #[derive(Clone, Debug, Default)]
 pub struct TranscribePagesOptions {
+    /// Selects the reader for scanned pages; omission or `Standard` preserves the default.
+    /// `Precise` costs more and suits exact characters (codes, part numbers); text pages are unaffected.
+    pub transcription: Option<Transcription>,
+
     /// Whether to run the operation again rather than answer from its kept
     /// result. A page already read is still served from its kept read, which
     /// is tied to this version of the file and to the platform's instructions.
@@ -853,6 +874,7 @@ pub fn transcribe_pages(
     // The same universal options every other caller of the operation sends,
     // since the whole map is part of the key a kept result is found under.
     let options = Options {
+        transcription: options.transcription,
         regenerate: options.regenerate,
         timeout: options.timeout,
         ..Options::default()
@@ -1083,6 +1105,10 @@ fn payload(
     let mut universal = Map::new();
 
     universal.insert("reasoning".to_string(), Value::Bool(options.reasoning));
+
+    if let Some(transcription) = options.transcription {
+        universal.insert("transcription".to_string(), json!(transcription));
+    }
 
     if let Some(budget) = options.reasoning_budget {
         universal.insert("reasoning_budget".to_string(), Value::from(budget));
@@ -1543,6 +1569,166 @@ fn transcribe_prompt(wanted: &TranscribeOptions) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transcription_posts_exact_options_on_all_four_calls() {
+        for transcription in [
+            None,
+            Some(Transcription::Standard),
+            Some(Transcription::Precise),
+        ] {
+            for operation in ["extract", "summarize", "transcribe", "transcribe_pages"] {
+                let session = testing::install(move |_name, _params| {
+                    Ok(
+                        json!({ "data": if operation == "summarize" { json!("summary") } else { json!({ "pages": [] }) } }),
+                    )
+                });
+                let options = Options {
+                    transcription,
+                    ..Default::default()
+                };
+                match operation {
+                    "extract" => {
+                        let _: Execution<Value> = extract(
+                            json!(stored()),
+                            "Read it.",
+                            json!({ "type": "object" }),
+                            options,
+                        )
+                        .unwrap();
+                    }
+                    "summarize" => {
+                        summarize(json!(stored()), "Read it.", options).unwrap();
+                    }
+                    "transcribe" => {
+                        transcribe(
+                            json!({ "file_hash": "abc", "mime_type": "audio/wav" }),
+                            TranscribeOptions {
+                                include_transcript: true,
+                                ..Default::default()
+                            },
+                            options,
+                        )
+                        .unwrap();
+                    }
+                    _ => {
+                        transcribe_pages(
+                            &stored(),
+                            None,
+                            TranscribePagesOptions {
+                                transcription,
+                                ..Default::default()
+                            },
+                        )
+                        .unwrap();
+                    }
+                }
+                let expected = match transcription {
+                    None => json!({ "reasoning": true }),
+                    Some(Transcription::Standard) => {
+                        json!({ "reasoning": true, "transcription": "standard" })
+                    }
+                    Some(Transcription::Precise) => {
+                        json!({ "reasoning": true, "transcription": "precise" })
+                    }
+                };
+                assert_eq!(session.calls().len(), 1);
+                assert_eq!(session.calls()[0].name, ORCHESTRATOR);
+                assert_eq!(session.calls()[0].params["options"], expected);
+                assert_eq!(session.calls()[0].params["regenerate"], json!(false));
+            }
+        }
+    }
+
+    #[test]
+    fn transcription_preserves_existing_options_and_adds_only_its_wire_key() {
+        for operation in ["extract", "summarize", "transcribe", "transcribe_pages"] {
+            let session = testing::install(move |_name, _params| {
+                Ok(
+                    json!({ "data": if operation == "summarize" { json!("summary") } else { json!({ "pages": [] }) } }),
+                )
+            });
+            for transcription in [None, Some(Transcription::Precise)] {
+                let options = Options {
+                    transcription,
+                    reasoning: false,
+                    reasoning_budget: Some(2048),
+                    temperature: Some(0.25),
+                    regenerate: true,
+                    timeout: Some(Duration::from_secs(90)),
+                    ..Default::default()
+                };
+                match operation {
+                    "extract" => {
+                        let _: Execution<Value> = extract(
+                            json!(stored()),
+                            "Read it.",
+                            json!({ "type": "object" }),
+                            options,
+                        )
+                        .unwrap();
+                    }
+                    "summarize" => {
+                        summarize(json!(stored()), "Read it.", options).unwrap();
+                    }
+                    "transcribe" => {
+                        transcribe(
+                            json!({ "file_hash": "abc", "mime_type": "audio/wav" }),
+                            TranscribeOptions {
+                                include_transcript: true,
+                                ..Default::default()
+                            },
+                            options,
+                        )
+                        .unwrap();
+                    }
+                    _ => {
+                        transcribe_pages(
+                            &stored(),
+                            None,
+                            TranscribePagesOptions {
+                                transcription,
+                                regenerate: true,
+                                timeout: Some(Duration::from_secs(90)),
+                            },
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            let calls = session.calls();
+            let expected = if operation == "transcribe_pages" {
+                json!({ "reasoning": true })
+            } else {
+                json!({ "reasoning": false, "reasoning_budget": 2048, "temperature": 0.25 })
+            };
+            assert_eq!(calls[0].params["options"], expected);
+            let mut precise = calls[0].params.clone();
+            precise["options"]["transcription"] = json!("precise");
+            assert_eq!(calls[1].params, precise);
+        }
+    }
+
+    #[test]
+    fn transcription_refuses_invalid_values_before_any_host_call() {
+        let session = testing::install(|_name, _params| Ok(answered()));
+        for value in [
+            json!("other"),
+            json!(""),
+            Value::Null,
+            json!(0),
+            json!(false),
+            json!({}),
+            json!([]),
+        ] {
+            let error = serde_json::from_value::<Transcription>(value).unwrap_err();
+            if error.to_string().contains("unknown variant") {
+                assert!(error.to_string().contains("standard"));
+                assert!(error.to_string().contains("precise"));
+            }
+        }
+        assert!(session.calls().is_empty());
+    }
+
     use serde_json::json;
 
     use super::*;
@@ -1673,6 +1859,7 @@ mod tests {
             json!({ "type": "object" }),
             Options {
                 model: Some(Model::Xl),
+                transcription: None,
                 system_prompt: Some("You are an auditor.".to_string()),
                 temperature: Some(0.25),
                 reasoning: false,
@@ -2355,6 +2542,7 @@ mod tests {
             TranscribePagesOptions {
                 regenerate: true,
                 timeout: Some(Duration::from_secs(90)),
+                transcription: None,
             },
         )
         .unwrap();
