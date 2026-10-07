@@ -665,6 +665,13 @@ an editor with TSDoc support recognizes it instead of flagging it as unknown.
 
 The AI module provides powerful capabilities for working with unstructured data.
 
+The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribePages` selects the reader for scanned pages; omission or `'standard'` preserves the default behavior.
+`'precise'` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
+
+```typescript
+const read = await transcribePages(documentHandle, { transcription: 'precise' }, request.context)
+```
+
 #### Extract Structured Data
 
 Extract structured information from documents, text, or images using AI:
