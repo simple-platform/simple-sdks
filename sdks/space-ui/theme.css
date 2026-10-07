@@ -10,32 +10,47 @@
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Local fallback values for the StatusBadge alpha, not the future token contract. */
+  /* StatusBadge defaults follow the platform palette and remain Space-overridable. */
   --simple-status-badge-font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   --simple-status-badge-font-size: 0.75rem;
   --simple-status-badge-font-weight: 500;
-  --simple-status-badge-line-height: 1.25;
-  --simple-status-badge-min-height: 2rem;
+  --simple-status-badge-line-height: 1rem;
+  --simple-status-badge-min-height: 1.5rem;
   --simple-status-badge-padding-inline: 0.5rem;
   --simple-status-badge-radius: 9999px;
 
-  --simple-status-badge-neutral-background: #f8fafc;
-  --simple-status-badge-neutral-border: #cbd5e1;
-  --simple-status-badge-neutral-foreground: #475569;
+  --simple-status-badge-neutral-background: hsl(var(--secondary, 210 40% 98%));
+  --simple-status-badge-neutral-border: hsl(var(--border, 213 27% 84%));
+  --simple-status-badge-neutral-foreground: hsl(var(--secondary-foreground, 215 19% 35%));
 
-  --simple-status-badge-info-background: #e0f2fe;
-  --simple-status-badge-info-border: #0369a1;
-  --simple-status-badge-info-foreground: #075985;
+  --simple-status-badge-info-background: hsl(214 95% 93%);
+  --simple-status-badge-info-border: hsl(214 95% 75%);
+  --simple-status-badge-info-foreground: hsl(221 83% 35%);
 
-  --simple-status-badge-success-background: #dcfce7;
-  --simple-status-badge-success-border: #15803d;
-  --simple-status-badge-success-foreground: #166534;
+  --simple-status-badge-success-background: hsl(142 76% 90%);
+  --simple-status-badge-success-border: hsl(142 76% 65%);
+  --simple-status-badge-success-foreground: hsl(142 72% 25%);
 
-  --simple-status-badge-warning-background: #fef3c7;
-  --simple-status-badge-warning-border: #b45309;
-  --simple-status-badge-warning-foreground: #92400e;
+  --simple-status-badge-warning-background: hsl(38 92% 90%);
+  --simple-status-badge-warning-border: hsl(38 92% 65%);
+  --simple-status-badge-warning-foreground: hsl(28 80% 25%);
 
-  --simple-status-badge-danger-background: #fee2e2;
-  --simple-status-badge-danger-border: #b91c1c;
-  --simple-status-badge-danger-foreground: #991b1b;
+  --simple-status-badge-danger-background: hsl(0 84% 95%);
+  --simple-status-badge-danger-border: hsl(0 84% 75%);
+  --simple-status-badge-danger-foreground: hsl(0 72% 35%);
+}
+
+.dark {
+  --simple-status-badge-info-background: hsl(214 60% 25%);
+  --simple-status-badge-info-border: hsl(214 70% 45%);
+  --simple-status-badge-info-foreground: hsl(214 95% 90%);
+  --simple-status-badge-success-background: hsl(142 45% 22%);
+  --simple-status-badge-success-border: hsl(142 50% 38%);
+  --simple-status-badge-success-foreground: hsl(142 65% 85%);
+  --simple-status-badge-warning-background: hsl(38 55% 24%);
+  --simple-status-badge-warning-border: hsl(38 65% 42%);
+  --simple-status-badge-warning-foreground: hsl(38 90% 85%);
+  --simple-status-badge-danger-background: hsl(0 45% 24%);
+  --simple-status-badge-danger-border: hsl(0 55% 42%);
+  --simple-status-badge-danger-foreground: hsl(0 85% 88%);
 }
