@@ -38,6 +38,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
 | **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
+| **Tasks** | `@simpleplatform/sdk/tasks` | Creating tasks from server actions |
 | **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
@@ -935,6 +936,25 @@ const config = await settings.get(
 
 console.log(config.api_key) // "sk_live_..."
 console.log(config.max_retries) // 3
+```
+
+### Tasks Module
+
+Create a task from a server action. It is assigned to the user the action runs
+as. The platform makes the task and first-message ids. If an action must not
+start the same work twice, check its own record before creating the task.
+
+On refusal, the task service's message begins with its code, such as
+`TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+
+```typescript
+import * as tasks from '@simpleplatform/sdk/tasks'
+
+const { task } = await tasks.create({
+  input: { invoice_id: 'INV000017' },
+  taskTypeId: 'TTY000003',
+  title: 'Review the invoice'
+}, request.context)
 ```
 
 ### Storage Module
