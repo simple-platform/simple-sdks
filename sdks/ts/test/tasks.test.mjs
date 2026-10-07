@@ -35,7 +35,7 @@ function install(answer) {
 
 test('creates a task with exactly the contract request and returns the task', async () => {
   const calls = install(() => ({
-    data: { task: { id: 'TASK000042', revision: 1, status: 'open' } },
+    data: { task: { id: 'TASK000042', revision: 0, status: 'queued' } },
     ok: true,
   }))
 
@@ -43,7 +43,7 @@ test('creates a task with exactly the contract request and returns the task', as
     input: { invoice_id: 'INV000017' },
     taskTypeId: 'TTY000003',
     title: 'Review the invoice',
-  }, context), { task: { id: 'TASK000042', revision: 1, status: 'open' } })
+  }, context), { task: { id: 'TASK000042', revision: 0, status: 'queued' } })
   assert.deepEqual(calls, [{
     name: 'action:tasks/create',
     params: {
@@ -81,4 +81,25 @@ test('surfaces the task service refusal message unchanged', async () => {
     tasks.create({ input: {}, taskTypeId: 'TTY000003', title: 'Review' }, context),
     error => error instanceof Error && error.message === 'TASK_INPUT_INVALID: /title',
   )
+})
+
+test('refuses successful replies that do not contain a task summary', async () => {
+  for (const data of [
+    undefined,
+    null,
+    [],
+    {},
+    { task: null },
+    { task: [] },
+    { task: {} },
+    { task: { id: 42, revision: 0, status: 'queued' } },
+    { task: { id: 'TASK000042', revision: '0', status: 'queued' } },
+    { task: { id: 'TASK000042', revision: 0, status: false } },
+  ]) {
+    install(() => ({ data, ok: true }))
+    await assert.rejects(
+      tasks.create({ input: {}, taskTypeId: 'TTY000003', title: 'Review' }, context),
+      /Task creation response was not understood/,
+    )
+  }
 })

@@ -946,6 +946,12 @@ start the same work twice, check its own record before creating the task.
 
 On refusal, the task service's message begins with its code, such as
 `TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+**What is not yet true.** Not every service refusal keeps its internal code.
+Input/schema (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`), assignee
+(`TASK_ASSIGNEE_INVALID`), and other public refusals retain their codes.
+Unlisted internal refusals, including an unknown task type
+(`TASK_RELATION_NOT_FOUND`), arrive as `TASK_RUNTIME_REMOTE_FAILURE`, just as
+on the page path. A malformed successful reply throws an ordinary `Error`.
 
 ```typescript
 import * as tasks from '@simpleplatform/sdk/tasks'
@@ -956,6 +962,9 @@ const { task } = await tasks.create({
   title: 'Review the invoice'
 }, request.context)
 ```
+
+The result is `{ task: { id: 'TASK000042', revision: 0, status: 'queued' } }`.
+A new task starts at revision 0, also returned by the page's `tasks.create`.
 
 ### Storage Module
 

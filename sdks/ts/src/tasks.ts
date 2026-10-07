@@ -32,5 +32,13 @@ export async function create(
     throw new Error(response.error?.message ?? 'Task creation failed')
   }
 
-  return response.data as { task: { id: string, revision: number, status: string } }
+  const data = response.data as { task?: { id?: unknown, revision?: unknown, status?: unknown } } | null | undefined
+  if (data === null || typeof data !== 'object' || Array.isArray(data)
+    || data.task === null || typeof data.task !== 'object' || Array.isArray(data.task)
+    || typeof data.task.id !== 'string' || typeof data.task.revision !== 'number'
+    || typeof data.task.status !== 'string') {
+    throw new Error('Task creation response was not understood')
+  }
+
+  return { task: { id: data.task.id, revision: data.task.revision, status: data.task.status } }
 }
