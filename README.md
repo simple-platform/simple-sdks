@@ -268,6 +268,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/) w
 For SDK-specific changes, use component names:
 
 - `feat(sdk-ts):` TypeScript SDK features
+- `feat(space-sdk):` Space SDK features (`sdks/ts/src/space`, part of the TypeScript SDK package)
 - `feat(sdk-rust):` Rust SDK features
 - `fix(sdk-go):` Go SDK fixes
 - `docs(sdk-py):` Python SDK documentation
@@ -287,6 +288,10 @@ git commit -m "refactor(sdk-go): delete deprecated utilities"
 namespace — `v1.2.3-ts` for TypeScript, `v1.2.3-rust` for Rust. A commit that
 touches only `sdks/ts` cannot publish the crate, and a commit that touches only
 `sdks/rust` cannot publish the npm package.
+
+In the TypeScript lane a `feat` under `sdk-ts` or `space-sdk` is a minor, and
+the changelog lists both scopes. A major is cut only by a commit whose subject
+says `(sdk-ts)!: release the next major`.
 
 ---
 

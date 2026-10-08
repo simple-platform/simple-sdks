@@ -576,10 +576,16 @@ secret decryption, and parent-frame navigation.
 1. Which data operations will a future portal session permit, and how are those scopes declared per Space?
 2. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
 3. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
-4. What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?
+4. ~~What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?~~ Answered 2026-10-08: see "Release the Space SDK in the TypeScript SDK's lane" below.
 5. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
+
+### 2026-10-08 — Release the Space SDK in the TypeScript SDK's lane
+
+- **Decision:** `@simpleplatform/sdk/space` has no lane of its own. It ships in `@simpleplatform/sdk` and is versioned by that package's lane in `release.yml`, which now reads the scope `space-sdk` beside `sdk-ts`: a `feat` under either is a minor, and the changelog lists both. A major is still cut only by a commit subject that says `(sdk-ts)!: release the next major`. Version 3.0.0 is that release; its upgrade note is in `sdks/ts/README.md`.
+- **Reason:** One package has one version. Read as `sdk-ts` alone, every Space SDK feature after 2.5.0 counted as a patch and was missing from the changelog, and one of those changes renamed how a Space connects (`connectSpace` to `connect`). A patch carrying that rename would have reached every app on `^2.5.0` at its next install.
+- **Compatibility:** each Space call that needs host support says what it does on a host without it (`unavailable`, or ignored for `navigation.open`). The UI Kit (`sdks/space-ui`) is a separate package and is not released by this lane.
 
 ### 2026-10-07 — Add independent Record-Space header status and tab count tones
 
