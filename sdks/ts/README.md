@@ -38,6 +38,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
 | **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
+| **Tasks** | `@simpleplatform/sdk/tasks` | Creating tasks from server actions |
 | **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
@@ -977,6 +978,34 @@ const config = await settings.get(
 console.log(config.api_key) // "sk_live_..."
 console.log(config.max_retries) // 3
 ```
+
+### Tasks Module
+
+Create a task from a server action. It is assigned to the user the action runs
+as. The platform makes the task and first-message ids. If an action must not
+start the same work twice, check its own record before creating the task.
+
+On refusal, the task service's message begins with its code, such as
+`TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+**What is not yet true.** Not every service refusal keeps its internal code.
+Input/schema (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`), assignee
+(`TASK_ASSIGNEE_INVALID`), and other public refusals retain their codes.
+Unlisted internal refusals, including an unknown task type
+(`TASK_RELATION_NOT_FOUND`), arrive as `TASK_RUNTIME_REMOTE_FAILURE`, just as
+on the page path. A malformed successful reply throws an ordinary `Error`.
+
+```typescript
+import * as tasks from '@simpleplatform/sdk/tasks'
+
+const { task } = await tasks.create({
+  input: { invoice_id: 'INV000017' },
+  taskTypeId: 'TTY000003',
+  title: 'Review the invoice'
+}, request.context)
+```
+
+The result is `{ task: { id: 'TASK000042', revision: 0, status: 'queued' } }`.
+A new task starts at revision 0, also returned by the page's `tasks.create`.
 
 ### Storage Module
 
