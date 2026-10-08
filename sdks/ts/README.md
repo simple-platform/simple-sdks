@@ -25,6 +25,10 @@ One of those changes renamed how a Space connects, which is why this is a major.
 | `ConnectSpaceOptions`                                      | `ConnectOptions`                                                                                         |
 | `SpaceWindowLike`, `SpaceMessageEvent`                     | No longer exported. A test declares its own.                                                             |
 
+**A test that builds the client by hand** adds what the client gained, or it
+stops type checking: `navigation`, `ui`, and `open` beside `current` under
+`records` (for example `records: { current: vi.fn(), open: vi.fn() }`).
+
 **Two behaviours change with no change in your code:**
 
 - `connect()` sets `overscroll-behavior-y: none` on the Space's root element,
