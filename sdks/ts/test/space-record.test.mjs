@@ -309,6 +309,49 @@ test('requires a negotiated header bridge and validates declarative header actio
   )
 })
 
+test('sets and clears a negotiated header status and refuses invalid values', () => {
+  const unavailable = createSimpleClient({ context: recordContext })
+  assert.throws(
+    () => unavailable.ui.header.status.set({ label: 'Ready', tone: 'success' }),
+    error => error instanceof SpaceProtocolError
+      && error.code === 'unavailable'
+      && error.message === 'The header-status bridge is unavailable for this record Space.',
+  )
+
+  const published = []
+  const simple = createSimpleClient({
+    context: recordContext,
+    headerStatusTransport: { setStatus: status => published.push(status) },
+  })
+  simple.ui.header.status.set({ description: 'The record is ready.', label: 'Ready', tone: 'success' })
+  simple.ui.header.status.set({ description: '', label: 'Ready', tone: 'neutral' })
+  simple.ui.header.status.set(null)
+  assert.deepEqual(published, [
+    { description: 'The record is ready.', label: 'Ready', tone: 'success' },
+    { description: '', label: 'Ready', tone: 'neutral' },
+    null,
+  ])
+
+  for (const status of [
+    null,
+    'Ready',
+    [],
+    {},
+    { label: 42, tone: 'neutral' },
+    { label: '', tone: 'neutral' },
+    { label: ' '.repeat(2), tone: 'neutral' },
+    { label: 'x'.repeat(81), tone: 'neutral' },
+    { label: 'Ready' },
+    { label: 'Ready', tone: 'primary' },
+    { description: 42, label: 'Ready', tone: 'neutral' },
+  ].slice(1)) {
+    assert.throws(
+      () => simple.ui.header.status.set(status),
+      error => error instanceof SpaceProtocolError && error.code === 'invalid_request',
+    )
+  }
+})
+
 test('shows platform toasts in any Space through the negotiated host bridge', () => {
   const unavailable = createSimpleClient({})
   assert.throws(

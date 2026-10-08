@@ -1,7 +1,11 @@
-import { SpaceProtocolError } from './protocol.js'
+import type { SpaceStatusTone } from './status.js'
+import { invalidRequest, isObjectRecord, SpaceProtocolError } from './protocol.js'
+import { SPACE_STATUS_TONES } from './status.js'
 
 export const HEADER_ACTIONS_PROTOCOL_VERSION = 1 as const
+export const HEADER_STATUS_PROTOCOL_VERSION = 1 as const
 export const TOAST_PROTOCOL_VERSION = 1 as const
+export type { SpaceStatusTone } from './status.js'
 export {
   createTabsClient,
   DEFAULT_TABS_TIMEOUT_MS,
@@ -47,12 +51,27 @@ export interface SimpleHeaderActionsClient {
   set: (actions: readonly HeaderAction[]) => void
 }
 
+export interface SpaceHeaderStatus {
+  description?: string
+  label: string
+  tone: SpaceStatusTone
+}
+
+export interface SimpleHeaderStatusClient {
+  set: (status: SpaceHeaderStatus | null) => void
+}
+
 export interface SimpleHeaderClient {
   actions: SimpleHeaderActionsClient
+  status: SimpleHeaderStatusClient
 }
 
 export interface SpaceHeaderTransport {
   setActions: (actions: readonly HeaderAction[]) => void
+}
+
+export interface SpaceHeaderStatusTransport {
+  setStatus: (status: SpaceHeaderStatus | null) => void
 }
 
 export type SpaceToastVariant = 'default' | 'destructive'
@@ -139,6 +158,7 @@ export function validateSpaceToastOptions(options: SpaceToastOptions): SpaceToas
 export function createHeaderClient(
   isRecordSpace: boolean,
   headerTransport?: SpaceHeaderTransport,
+  headerStatusTransport?: SpaceHeaderStatusTransport,
 ): SimpleHeaderClient {
   return {
     actions: {
@@ -160,6 +180,48 @@ export function createHeaderClient(
         headerTransport.setActions(validateHeaderActions(actions))
       },
     },
+    status: {
+      set(status) {
+        if (!isRecordSpace) {
+          throw new SpaceProtocolError({
+            code: 'unavailable',
+            message: 'Header status is available only when this Space is configured as a record view.',
+          })
+        }
+
+        if (!headerStatusTransport) {
+          throw new SpaceProtocolError({
+            code: 'unavailable',
+            message: 'The header-status bridge is unavailable for this record Space.',
+          })
+        }
+
+        headerStatusTransport.setStatus(validateHeaderStatus(status))
+      },
+    },
+  }
+}
+
+export function validateHeaderStatus(status: SpaceHeaderStatus | null): SpaceHeaderStatus | null {
+  if (status === null)
+    return null
+
+  if (!isObjectRecord(status))
+    throw invalidRequest('Header status must be an object or null.')
+
+  if (typeof status.label !== 'string' || !status.label.trim() || status.label.length > 80)
+    throw invalidRequest('Header status label must be a non-empty string of at most 80 characters.')
+
+  if (typeof status.tone !== 'string' || !SPACE_STATUS_TONES.includes(status.tone as SpaceStatusTone))
+    throw invalidRequest(`Header status tone must be one of: ${SPACE_STATUS_TONES.join(', ')}.`)
+
+  if (status.description !== undefined && typeof status.description !== 'string')
+    throw invalidRequest('Header status description must be a string.')
+
+  return {
+    ...(status.description === undefined ? {} : { description: status.description }),
+    label: status.label,
+    tone: status.tone as SpaceStatusTone,
   }
 }
 
