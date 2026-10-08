@@ -10,6 +10,49 @@ Install the SDK using [pnpm](https://pnpm.io):
 pnpm add @simpleplatform/sdk
 ```
 
+## Upgrading from 2.x to 3
+
+Version 3 is the first release that carries the Space calls added after 2.5.0.
+One of those changes renamed how a Space connects, which is why this is a major.
+
+**A Space changes these names:**
+
+| 2.x                                                        | 3                                                                                                        |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `import { connectSpace } from '@simpleplatform/sdk/space'` | `import { connect } from '@simpleplatform/sdk/space'`                                                    |
+| `await connectSpace({ targetOrigin })`                     | `await connect({ targetOrigin })`                                                                        |
+| `connectSpace({ targetOrigin, window: fake })` in a test   | `connect({ targetOrigin })`. It reads `globalThis.window`, so a test sets a browser-like global instead. |
+| `ConnectSpaceOptions`                                      | `ConnectOptions`                                                                                         |
+| `SpaceWindowLike`, `SpaceMessageEvent`                     | No longer exported. A test declares its own.                                                             |
+
+**Two behaviours change with no change in your code:**
+
+- `connect()` sets `overscroll-behavior-y: none` on the Space's root element,
+  so the page no longer bounces at its top and bottom edge. A Space that wants
+  the bounce sets the style back after it connects.
+- An AI call (`extract`, `summarize`, `transcribePages`) refuses a
+  `transcription` option other than `'standard'` or `'precise'`. Version 2
+  ignored any value. An Action is otherwise unchanged.
+
+**A platform that embeds Spaces** must send a well-formed handshake: a
+`runtime` that is not `{ url, version }` with an `http` or `https` URL is
+ignored and the connection stays pending, and a malformed `form` or `formInfo`
+on a record reply is refused as `invalid_response`. The Simple Platform already
+sends both correctly.
+
+**New in 3:**
+
+- For a Space: platform tabs (`simple.ui.tabs`, with a count and its tone),
+  header actions and a header status, platform toasts, `simple.records.open()`,
+  `simple.navigation.open()`, and the bridge the UI Kit's managed `RecordForm`
+  and `RecordActivity` use.
+- For an Action: `tasks.create()` from `@simpleplatform/sdk/tasks`, and the
+  `transcription` option on the AI calls.
+
+Each new Space call needs a platform that supports it. On an older platform
+tabs, the header, toasts and `records.open()` fail as `unavailable`, and
+`navigation.open()` is ignored. The section for each call below says so.
+
 ## Quick Start
 
 Create your first Simple Platform action:
@@ -113,7 +156,6 @@ support `current()` through the existing `record` capability while lacking
 `open()`. Missing and inaccessible records return the same generic
 `target_unavailable` error.
 
-`simple.records.current()` is a compatibility alias for `simple.record()`.
 To work with another record, use `simple.records.open()` with its exact target:
 
 ```ts
