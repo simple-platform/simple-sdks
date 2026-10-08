@@ -581,6 +581,12 @@ secret decryption, and parent-frame navigation.
 
 ## Decision history
 
+### 2026-10-08 — Give the UI Kit its own release lane
+
+- **Decision:** `@simpleplatform/ui-kit` (`sdks/space-ui`) is versioned and published by a third lane in `release.yml`, built like the other two: versions from `v<version>-kit` tags over `sdks/space-ui`, commits under the scope `sdk-ui` (written `space-ui` before the `sdk-` names were agreed; the lane reads both for the first release), a build-and-test job, a changelog, and a publish that waits for a deployment review. It is below 1.0 and follows the crate's rule: a `feat` or a `!` raises the minor, and 1.0.0 needs the subject `(sdk-ui) declares the API stable`.
+- **Reason:** Until now nothing published the kit, so every Space took it by folder path beside a built checkout of this repository, and could not build anywhere else.
+- **Boundary:** The kit is a second package on npm and is published with npm's token, so its publish job shares the `npmjs.org` environment and queue with the SDK's: on a run where both changed, one approval releases both. Its peer range names the SDK it needs (`^3.0.0`) and also `0.0.0`, the unversioned SDK of this workspace, so a folder link still installs cleanly.
+
 ### 2026-10-08 — Release the Space SDK in the TypeScript SDK's lane
 
 - **Decision:** `@simpleplatform/sdk/space` has no lane of its own. It ships in `@simpleplatform/sdk` and is versioned by that package's lane in `release.yml`, which now reads the scope `space-sdk` beside `sdk-ts`: a `feat` under either is a minor, and the changelog lists both. A major is still cut only by a commit subject that says `(sdk-ts)!: release the next major`. Version 3.0.0 is that release; its upgrade note is in `sdks/ts/README.md`.

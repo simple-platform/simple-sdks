@@ -13,6 +13,21 @@ Space SDK as `simple.ui.header`; they are not a UI Kit export.
 Do not treat alpha APIs as a stable compatibility promise until they are
 released with an explicit support policy.
 
+## Installation
+
+```bash
+pnpm add @simpleplatform/ui-kit @simpleplatform/sdk
+```
+
+The kit needs version 3 of `@simpleplatform/sdk`, and React 18.3 or 19 for its
+React bridges. Its peer range also accepts `0.0.0`, the number the SDK carries
+inside this repository, so a Space that links both packages by folder path
+installs without a warning.
+
+Releases are tagged `v<version>-kit`. The package is below 1.0: a breaking
+change raises the minor, and the default range `^0.1.0` never moves onto `0.2`
+by itself.
+
 ## Current component: StatusBadge
 
 ```tsx
