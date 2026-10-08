@@ -38,6 +38,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
 | **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
+| **Tasks** | `@simpleplatform/sdk/tasks` | Creating tasks from server actions |
 | **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
@@ -174,6 +175,24 @@ state without choosing UI; call `simple.ui.toast.show()` when the Space should
 also show a platform toast. `RecordForm` continues to display detailed field
 and form messages inline.
 
+A Record Space can also show one status beside the record title:
+
+```ts
+simple.ui.header.status.set({
+  description: 'A reviewer needs to check this record.',
+  label: 'Needs review',
+  tone: 'warning',
+})
+
+simple.ui.header.status.set(null) // Clear the status
+```
+
+The label is non-blank and limited to 80 characters. Tones are `neutral`,
+`info`, `success`, `warning`, and `danger`; the optional description is for
+screen readers. Hosts that do not negotiate `headerStatus` reject this call
+with an `unavailable` error. Header status is negotiated separately, so an
+older host can continue to support header actions without supporting status.
+
 ### Show a platform toast
 
 Any Space can show feedback with Simple's existing toast presenter and theme:
@@ -206,7 +225,7 @@ const { selectedTabId } = await simple.ui.tabs.set({
   },
   tabs: [
     { icon: 'layout-dashboard', id: 'overview', title: 'Overview' },
-    { badge: 3, icon: 'message-square', id: 'messages', title: 'Messages' },
+    { badge: 3, badgeTone: 'warning', icon: 'message-square', id: 'messages', title: 'Messages' },
     { badge: 'New', icon: 'file-text', id: 'documents', title: 'Documents' },
   ],
 })
@@ -221,8 +240,13 @@ empty list clears the current declaration and resolves with
 Each tab requires an `id` (1–64 characters matching `^[a-z0-9][a-z0-9_-]{0,63}$`)
 and a non-blank `title` (up to 80 characters), with optional `default: true`,
 optional kebab-case Lucide `icon`, and optional `badge` (non-blank text up to 20
-characters or a finite non-negative integer). At most one tab may set `default: true`;
-if none is specified, the first tab defaults to active.
+characters or a finite non-negative integer). A count can also set `badgeTone`
+to `neutral`, `info`, `success`, `warning`, or `danger`; without it, the count
+keeps its neutral appearance. At most one tab may set `default: true`; if none
+is specified, the first tab defaults to active.
+
+Older hosts that do not recognize `badgeTone` ignore it and display the count
+with the neutral appearance.
 
 The host negotiates `protocols.tabs: [1]` and owns selection and URL state.
 Registration uses `ui.tabs.set`, which assigns a `registrationRequestId` and
@@ -237,6 +261,24 @@ Selecting an inactive declared tab resolves after host acknowledgement and reach
 the `onChange` callback once, deduplicating the response and event. Both methods fail
 with structured `SpaceProtocolError` code `'unavailable'` outside a record Space or
 when the tabs capability was not negotiated.
+
+### Open a platform page
+
+Ask the host to open a host-relative platform path from any Space:
+
+```ts
+simple.navigation.open({ path: '/om/<application>/<table>/<record>' })
+simple.navigation.open({ path: '/tasks/<task>', target: 'new-tab' })
+```
+
+`'same-tab'` opens the path in the platform tab the Space is shown in (a Space
+cannot navigate its own frame); `'new-tab'` opens it in a new browser tab. The
+target defaults to `'same-tab'`.
+These are the platform's own names, not the browser's `_self` and `_blank`:
+the platform's navigation message already carried them, and they leave room
+for platform targets a browser has no name for.
+`open()` returns `void` as soon as the request is posted. The host gives no
+confirmation, and a host without the navigation handler ignores the message.
 
 ### Space context
 
@@ -936,6 +978,34 @@ const config = await settings.get(
 console.log(config.api_key) // "sk_live_..."
 console.log(config.max_retries) // 3
 ```
+
+### Tasks Module
+
+Create a task from a server action. It is assigned to the user the action runs
+as. The platform makes the task and first-message ids. If an action must not
+start the same work twice, check its own record before creating the task.
+
+On refusal, the task service's message begins with its code, such as
+`TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+**What is not yet true.** Not every service refusal keeps its internal code.
+Input/schema (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`), assignee
+(`TASK_ASSIGNEE_INVALID`), and other public refusals retain their codes.
+Unlisted internal refusals, including an unknown task type
+(`TASK_RELATION_NOT_FOUND`), arrive as `TASK_RUNTIME_REMOTE_FAILURE`, just as
+on the page path. A malformed successful reply throws an ordinary `Error`.
+
+```typescript
+import * as tasks from '@simpleplatform/sdk/tasks'
+
+const { task } = await tasks.create({
+  input: { invoice_id: 'INV000017' },
+  taskTypeId: 'TTY000003',
+  title: 'Review the invoice'
+}, request.context)
+```
+
+The result is `{ task: { id: 'TASK000042', revision: 0, status: 'queued' } }`.
+A new task starts at revision 0, also returned by the page's `tasks.create`.
 
 ### Storage Module
 

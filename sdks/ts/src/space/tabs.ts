@@ -1,4 +1,5 @@
 import type { ProtocolRequest, SpaceTransport } from './protocol.js'
+import type { SpaceStatusTone } from './status.js'
 import {
   invalidRequest,
   invalidResponse,
@@ -10,6 +11,7 @@ import {
   requestWithin,
   SpaceProtocolError,
 } from './protocol.js'
+import { SPACE_STATUS_TONES } from './status.js'
 
 export const TABS_PROTOCOL_VERSION = 1 as const
 export const DEFAULT_TABS_TIMEOUT_MS = 10_000
@@ -19,6 +21,7 @@ export const TAB_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 export interface SpaceTab {
   badge?: number | string
+  badgeTone?: SpaceStatusTone
   default?: boolean
   icon?: string
   id: string
@@ -47,6 +50,7 @@ export interface SpaceTabsTransport extends SpaceTransport {
 
 export interface WireTab {
   badge?: number | string
+  badgeTone?: SpaceStatusTone
   default?: true
   icon?: string
   id: string
@@ -139,6 +143,11 @@ export function validateTabs(options: SetTabsOptions): {
         throw invalidRequest(`Tab "${tab.id}" badge must be a non-empty string or a non-negative integer.`)
       }
     }
+
+    if (tab.badgeTone !== undefined
+      && (typeof tab.badgeTone !== 'string' || !SPACE_STATUS_TONES.includes(tab.badgeTone as SpaceStatusTone))) {
+      throw invalidRequest(`Tab "${tab.id}" badgeTone must be one of: ${SPACE_STATUS_TONES.join(', ')}.`)
+    }
   }
 
   if (defaultCount > 1)
@@ -148,6 +157,7 @@ export function validateTabs(options: SetTabsOptions): {
     const isDefault = Boolean(tab.default || (defaultCount === 0 && index === 0))
     return {
       ...(tab.badge !== undefined ? { badge: tab.badge } : {}),
+      ...(tab.badgeTone !== undefined ? { badgeTone: tab.badgeTone } : {}),
       ...(isDefault ? { default: true as const } : {}),
       ...(tab.icon !== undefined ? { icon: tab.icon } : {}),
       id: tab.id,
