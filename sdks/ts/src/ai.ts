@@ -190,6 +190,12 @@ export interface AICommonOptions {
    * If this timeout is exceeded, the promise will reject. Defaults to 30,000ms.
    */
   timeout?: number
+
+  /**
+   * Selects the reader for scanned pages; omission or `standard` preserves the default.
+   * `precise` costs more and suits exact characters (codes, part numbers); text pages are unaffected.
+   */
+  transcription?: 'standard' | 'precise'
 }
 
 /**
@@ -268,6 +274,12 @@ export interface AITranscribePagesOptions {
 
   /** (Optional) The maximum time in milliseconds to wait for the operation. */
   timeout?: number
+
+  /**
+   * Selects the reader for scanned pages; omission or `standard` preserves the default.
+   * `precise` costs more and suits exact characters (codes, part numbers); text pages are unaffected.
+   */
+  transcription?: 'standard' | 'precise'
 }
 
 /**
@@ -471,12 +483,18 @@ async function _executeAIOperation(
     systemPrompt,
     temperature,
     timeout,
+    transcription,
   } = options as Partial<AIExtractOptions>
+
+  if (transcription !== undefined && transcription !== 'standard' && transcription !== 'precise') {
+    throw new Error('The `transcription` option must be "standard" or "precise".')
+  }
 
   const processedInput = await _uploadPendingFiles(input, context)
 
   // 1. Construct the universal options payload for caching and execution.
   const universalOptions = {
+    ...(transcription !== undefined && { transcription }),
     ...(temperature !== undefined && { temperature }),
     ...(reasoningBudget !== undefined && { reasoningBudget }),
     ...({ reasoning }),
