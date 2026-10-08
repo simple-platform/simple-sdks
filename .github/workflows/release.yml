@@ -521,11 +521,18 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # THE TAG NAMES THE COMMIT THIS RUN BUILT.
+      #
+      # A publish waits on a review, and `main` moves while it waits. Naming the
+      # commit here puts the tag on the tree the package was built from, so the
+      # tag, the registry and the changelog describe one commit, and the next
+      # version is computed over exactly what came after it.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.ts-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
           body_path: changelog.md
           draft: false
@@ -751,11 +758,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.kit-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: UI Kit ${{ needs.version.outputs.kit-version }}
           body_path: kit-changelog.md
           draft: false
@@ -1054,11 +1064,14 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
         run: cargo publish --allow-dirty
 
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.rust-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: Rust SDK ${{ needs.version.outputs.rust-version }}
           body_path: rust-changelog.md
           draft: false
