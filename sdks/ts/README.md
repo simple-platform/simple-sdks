@@ -238,6 +238,24 @@ the `onChange` callback once, deduplicating the response and event. Both methods
 with structured `SpaceProtocolError` code `'unavailable'` outside a record Space or
 when the tabs capability was not negotiated.
 
+### Open a platform page
+
+Ask the host to open a host-relative platform path from any Space:
+
+```ts
+simple.navigation.open({ path: '/om/<application>/<table>/<record>' })
+simple.navigation.open({ path: '/tasks/<task>', target: 'new-tab' })
+```
+
+`'same-tab'` opens the path in the platform tab the Space is shown in (a Space
+cannot navigate its own frame); `'new-tab'` opens it in a new browser tab. The
+target defaults to `'same-tab'`.
+These are the platform's own names, not the browser's `_self` and `_blank`:
+the platform's navigation message already carried them, and they leave room
+for platform targets a browser has no name for.
+`open()` returns `void` as soon as the request is posted. The host gives no
+confirmation, and a host without the navigation handler ignores the message.
+
 ### Space context
 
 `simple.context` is explicit host-provided page context. It is never inferred
