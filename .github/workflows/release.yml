@@ -26,6 +26,73 @@ permissions:
   contents: read
 
 jobs:
+  # THE NEWEST PUSH IS THE ONE THAT WAITS FOR APPROVAL.
+  #
+  # Every lane computes its version from its own tags, so a run on a newer
+  # commit offers each release an older run was holding, built from a tree that
+  # contains it. From that moment the older offer is redundant, and this job
+  # withdraws it: every older run of this workflow on `main` that is still open
+  # is cancelled when a newer push starts its own.
+  #
+  # ONE KIND OF RUN IS LEFT ALONE: one that is publishing. A publish starts only
+  # once the review on its environment is approved, so a run with no approval
+  # has uploaded nothing and is cancelled whatever it is doing — versioning,
+  # building or waiting. A run that holds an approval is cancelled only when
+  # none of its jobs is under way: an upload that has begun is left to finish.
+  #
+  # No checkout and no third-party action. The job reads and cancels runs
+  # through the API with its own token, and it is the only job in this file
+  # that holds `actions: write`.
+  supersede:
+    name: Withdraw Superseded Runs
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel the older runs that are still open
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The workflow is named by the file this run was started from, so the
+          # name is not written down a second time here.
+          workflow="${GITHUB_WORKFLOW_REF%@*}"
+          workflow="${workflow##*/}"
+
+          older=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=push&per_page=100" \
+            --jq ".workflow_runs[] | select(.status != \"completed\" and .run_number < ${GITHUB_RUN_NUMBER}) | .id")
+
+          if [ -z "$older" ]; then
+            echo "No older run is open." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          for id in $older; do
+            approved=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approvals" \
+              --jq '[.[] | select(.state == "approved")] | length')
+
+            if [ "$approved" -gt 0 ]; then
+              under_way=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                --jq '[.jobs[] | select(.status != "completed" and .status != "waiting")] | length')
+
+              if [ "$under_way" -gt 0 ]; then
+                echo "Run ${id} is publishing an approved release. It is left to finish." >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+            fi
+
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" > /dev/null; then
+              echo "Run ${id} is cancelled. This run offers its releases from a newer commit." >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}" --jq .status)" = "completed" ]; then
+              echo "Run ${id} finished before it was cancelled." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Run ${id} is still open and was not cancelled." >&2
+              exit 1
+            fi
+          done
+
   version:
     name: Calculate Versions
     runs-on: ubuntu-latest
@@ -454,11 +521,18 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # THE TAG NAMES THE COMMIT THIS RUN BUILT.
+      #
+      # A publish waits on a review, and `main` moves while it waits. Naming the
+      # commit here puts the tag on the tree the package was built from, so the
+      # tag, the registry and the changelog describe one commit, and the next
+      # version is computed over exactly what came after it.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.ts-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
           body_path: changelog.md
           draft: false
@@ -684,11 +758,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.kit-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: UI Kit ${{ needs.version.outputs.kit-version }}
           body_path: kit-changelog.md
           draft: false
@@ -987,11 +1064,14 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
         run: cargo publish --allow-dirty
 
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.rust-version-tag }}
+          target_commitish: ${{ github.sha }}
           name: Rust SDK ${{ needs.version.outputs.rust-version }}
           body_path: rust-changelog.md
           draft: false
