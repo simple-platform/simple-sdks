@@ -1,5 +1,5 @@
 - **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and tabs, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, standalone document staging, and negotiated `simple.records.open()` are implemented in the workspace. Managed React `RecordActivity` is a local pre-release UI Kit component and is included in fixture `0.0.2-local.36`, deployed and installed in `acme::local`. Chrome CDP verified Activity reads, successful note posting, and Space-side tab switching: RecordForm rendered on Details while Activity was absent, then Activity returned on its tab. A host runtime test covers “Show more” pagination with 26 audit items. The earlier fixture `0.0.2-local.31` remains the deployment baseline for the SDK work described elsewhere in this history. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling. `connect({ targetOrigin })` is the sole browser bootstrap. The UI Kit uses a private layered record UI/form bridge; renderer, field registry, behavior scheduler, Activity stream query semantics, and managed-form/Activity host capabilities remain private. Generic framework-neutral Activity SDK APIs remain deferred; the records protocol is separate from Activity.
-- **Last updated:** 2026-10-03
+- **Last updated:** 2026-10-07
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -210,6 +210,24 @@ In the embedded Space document, `connect()` sets the root element's
 document boundary while leaving normal page and nested-element scrolling
 available. No host protocol or public option is needed because only code inside
 the cross-origin Space document can control its root viewport.
+
+### Open a platform page
+
+```ts
+simple.navigation.open({ path: '/om/<application>/<table>/<record>' })
+simple.navigation.open({ path: '/tasks/<task>', target: 'new-tab' })
+```
+
+`simple.navigation.open()` validates a host-relative path, resolves it against
+the explicit connection origin, and posts `NAVIGATE_REQUEST` with `{ url,
+target }` on the Space MessagePort. It is available in both record and
+standalone Spaces without protocol negotiation. The call returns `void` after
+posting; the host sends no reply, and older hosts may ignore the message. The
+SDK rejects non-HTTPS connected origins with `unavailable` because the host
+accepts only HTTPS navigation targets.
+`'same-tab'` opens the path in the platform tab the Space is shown in (a Space
+cannot navigate its own frame); `'new-tab'` opens it in a new browser tab. The
+target defaults to `'same-tab'`. The SDK sends the value to the host unchanged.
 
 ### Managed React record form — implemented locally
 
@@ -548,6 +566,18 @@ secret decryption, and parent-frame navigation.
 5. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
+
+### 2026-10-07 — Keep the platform's navigation target names
+
+- **Decision:** `NavigationTarget = 'same-tab' | 'new-tab'`, optional, default `'same-tab'`. The SDK sends the value to the host unchanged and refuses any other value, the browser's `_self` and `_blank` included.
+- **Reason:** The host's `NAVIGATE_REQUEST` message has carried `same-tab` and `new-tab` since May 2026. Using the same names in the public API leaves that contract untouched and gives one set of names from a Space to the platform page, with no mapping in between. The names say where a platform page opens, not which browsing context a link uses, so a later target a browser has no name for (a popup, the developer studio) fits beside them.
+- **Considered and not taken:** the browser's `_self` and `_blank` as the public names, mapped to the host's names inside the SDK. That put two sets of names on one message and tied the public API to link targets, which cannot name a platform-only target. Renaming the host's values instead would have broken a message that already exists.
+
+### 2026-10-07 — Add standalone host-page navigation
+
+- **Decision:** Expose `simple.navigation.open({ path, target? })` from the Space client and post the host's existing `NAVIGATE_REQUEST` envelope over the connected MessagePort. Default `target` to `same-tab`; support `new-tab` without protocol negotiation.
+- **Reason:** A sandboxed Space cannot navigate reliably through ordinary links, while applications should not copy the SDK's private MessagePort bridge to reach another platform page.
+- **Boundary:** The SDK accepts only a single-slash host-relative path, builds the URL from the explicit connected host origin, and refuses non-HTTPS origins as `unavailable`. This is a one-way request that returns `void`; the SDK cannot confirm host handling or the resulting navigation. Existing hosts without the handler may ignore it.
 
 ### 2026-08-09 — One package with explicit environment subpaths
 
