@@ -375,13 +375,53 @@ jobs:
           node-version: '25'
           package-manager-cache: false
 
+      # A RUN CAN BE ASKED TO PUBLISH A VERSION THAT IS ALREADY OUT.
+      #
+      # Every push to `main` computes the version its unreleased commits have
+      # earned, so two pushes ahead of one release compute the same number, and
+      # the second run still waits for its approval after the first has
+      # published. The registry refuses a version it holds, which made that
+      # second approval a failed run with nothing wrong behind it.
+      #
+      # So the registry and the tag are asked first: a version the registry
+      # holds is not uploaded again, and a tag that exists is not released
+      # again. They are asked separately because they are written separately. A
+      # run that uploaded and then stopped leaves a version with no tag, and
+      # without its tag this lane would compute that same version for every
+      # later commit; the release step still runs then, and finishes it.
+      #
+      # A registry that cannot be reached reads as "not published". The upload
+      # is then attempted, and the registry itself is the judge of it.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.ts-version }}
+          TAG: ${{ needs.version.outputs.ts-version-tag }}
+        run: |
+          if [ "$(npm view "@simpleplatform/sdk@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "@simpleplatform/sdk ${VERSION} is already on npm. It is not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Enable Corepack
+        if: steps.released.outputs.on-registry != 'true'
         run: corepack enable
 
       - name: Install dependencies
+        if: steps.released.outputs.on-registry != 'true'
         run: pnpm install
 
       - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: changelog
@@ -400,11 +440,13 @@ jobs:
       # job carries the changelog this run generated, so there is no CHANGELOG.md
       # in the tree that could fall out of step with what was actually published.
       - name: Update package version
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
           pnpm version ${{ needs.version.outputs.ts-version }} --no-git-tag-version
 
       - name: Publish to npm
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
@@ -413,6 +455,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
+        if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.ts-version-tag }}
@@ -574,13 +617,38 @@ jobs:
           node-version: '25'
           package-manager-cache: false
 
+      # Asked first, for the reason given on `publish-typescript`: a version npm
+      # holds is not uploaded again, and a tag that exists is not released again.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.kit-version }}
+          TAG: ${{ needs.version.outputs.kit-version-tag }}
+        run: |
+          if [ "$(npm view "@simpleplatform/ui-kit@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "@simpleplatform/ui-kit ${VERSION} is already on npm. It is not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Enable Corepack
+        if: steps.released.outputs.on-registry != 'true'
         run: corepack enable
 
       - name: Install dependencies
+        if: steps.released.outputs.on-registry != 'true'
         run: pnpm install
 
       - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: kit-changelog
@@ -588,11 +656,13 @@ jobs:
       # Nothing has built the kit in this checkout: it has no `prepare` script.
       # It is typed against the SDK of this workspace, so that is built first.
       - name: Build TypeScript SDK
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
           pnpm build
 
       - name: Build UI Kit
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/space-ui
           pnpm build
@@ -600,11 +670,13 @@ jobs:
       # The version of record is the tag and the registry, as for the SDK: the
       # number in `sdks/space-ui/package.json` is not what is published.
       - name: Update package version
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/space-ui
           pnpm version ${{ needs.version.outputs.kit-version }} --no-git-tag-version
 
       - name: Publish to npm
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/space-ui
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
@@ -613,6 +685,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
+        if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.kit-version-tag }}
@@ -778,7 +851,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Asked first, for the reason given on `publish-typescript`.
+      #
+      # One `cargo publish` uploads both crates, so the upload is skipped only
+      # when crates.io holds this version of both. One without the other is a
+      # release that stopped half way; it is left to run and fail where it can
+      # be seen, because nothing here can finish it safely.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.rust-version }}
+          TAG: ${{ needs.version.outputs.rust-version-tag }}
+        run: |
+          held=0
+          for crate in simpleplatform-sdk-macros simpleplatform-sdk; do
+            if curl --fail --silent --output /dev/null \
+              --user-agent "simple-sdks release workflow (https://github.com/simple-platform/simple-sdks)" \
+              "https://crates.io/api/v1/crates/${crate}/${VERSION}"; then
+              held=$((held + 1))
+            fi
+          done
+
+          if [ "$held" -eq 2 ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "simpleplatform-sdk ${VERSION} and its derive are already on crates.io. They are not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Rust
+        if: steps.released.outputs.on-registry != 'true'
         env:
           RUST_VERSION: ${{ needs.version.outputs.rust-toolchain }}
         run: |
@@ -788,6 +897,7 @@ jobs:
           rustc --version
 
       - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: rust-changelog
@@ -807,6 +917,7 @@ jobs:
       # sits inside braces on its own line. The count is asserted first, so the
       # step rewrites exactly the one line it means to.
       - name: Update crate version
+        if: steps.released.outputs.on-registry != 'true'
         working-directory: sdks/rust
         run: |
           set -euo pipefail
@@ -862,6 +973,7 @@ jobs:
       # this step fail, because cargo refuses a version the registry already
       # holds before it packages anything.
       - name: Publish to crates.io
+        if: steps.released.outputs.on-registry != 'true'
         working-directory: sdks/rust
         env:
           # `CRATE_PUBLISH_TOKEN` is a secret of the `crates.io` environment above,
@@ -876,6 +988,7 @@ jobs:
         run: cargo publish --allow-dirty
 
       - name: Create GitHub Release
+        if: steps.released.outputs.tagged != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           tag_name: ${{ needs.version.outputs.rust-version-tag }}
