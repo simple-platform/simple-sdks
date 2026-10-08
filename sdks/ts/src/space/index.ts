@@ -99,6 +99,8 @@ export interface ConnectOptions {
   targetOrigin: string
 }
 
+const connections = new WeakMap<SpaceWindowLike, { promise: Promise<SimpleClient>, targetOrigin: string }>()
+
 /** Connects this Space to its host using the explicitly supplied host origin. */
 export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient> {
   if (!isOrigin(targetOrigin)) {
@@ -116,10 +118,21 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
     }))
   }
 
+  const existing = connections.get(window)
+  if (existing) {
+    if (existing.targetOrigin === targetOrigin)
+      return existing.promise
+
+    return Promise.reject(new SpaceProtocolError({
+      code: 'invalid_request',
+      message: 'connect() already opened this Space\'s connection to a different targetOrigin.',
+    }))
+  }
+
   // The host cannot style a cross-origin frame's viewport, where edge bounce occurs.
   window.document.documentElement.style.overscrollBehaviorY = 'none'
 
-  return new Promise((resolve, reject) => {
+  const promise = new Promise<SimpleClient>((resolve, reject) => {
     const onMessage = (event: SpaceMessageEvent) => {
       if (event.origin !== targetOrigin || !isInitializationMessage(event.data))
         return
@@ -182,7 +195,13 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
       },
       type: 'SPACE_READY',
     }, targetOrigin)
+  }).catch((error) => {
+    connections.delete(window)
+    throw error
   })
+
+  connections.set(window, { promise, targetOrigin })
+  return promise
 }
 
 function isOrigin(targetOrigin: string): boolean {
