@@ -1,0 +1,62 @@
+name: Commit convention
+
+# Refuses a pull request whose title is not `type(scope): subject` with a type
+# and a scope from commitlint.config.cjs.
+#
+# This repository squash merges, so the title is the subject that lands on
+# `main`, and the subject is what the release lanes read. The `commit-msg` hook
+# checks a contributor's own commits with the same rules, but a hook can be
+# skipped and is never run for a title; this check is the one that cannot be.
+#
+# For it to block a merge, the branch ruleset of `main` has to require the
+# status check named "Commit convention". There is no paths filter, for the
+# reason the supply chain guard gives: a required check that never starts
+# cannot be told apart from one that has not finished.
+on:
+  pull_request:
+    branches:
+      - main
+    # `edited` is what re-runs the check when a title is corrected.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-convention:
+    name: Commit convention
+    runs-on: ubuntu-latest
+    steps:
+      # THE RULES ARE `main`'S, NOT THE PULL REQUEST'S. Checking out the merge
+      # commit would let a pull request rewrite the rules its own title is held
+      # to, so the base branch is what is checked out and installed.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v3.0.0
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '25'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # The title reaches the script through the environment and is never
+      # pasted into it: a title is text anyone who can open a pull request can
+      # write.
+      - name: Check the pull request's title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
