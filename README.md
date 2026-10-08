@@ -269,6 +269,7 @@ For SDK-specific changes, use component names:
 
 - `feat(sdk-ts):` TypeScript SDK features
 - `feat(space-sdk):` Space SDK features (`sdks/ts/src/space`, part of the TypeScript SDK package)
+- `feat(sdk-ui):` UI Kit features (`sdks/space-ui`, the package `@simpleplatform/ui-kit`)
 - `feat(sdk-rust):` Rust SDK features
 - `fix(sdk-go):` Go SDK fixes
 - `docs(sdk-py):` Python SDK documentation
@@ -285,13 +286,19 @@ git commit -m "refactor(sdk-go): delete deprecated utilities"
 
 **The scope decides which SDK releases.** Each SDK has its own version lane in
 `release.yml`, keyed on the files a commit touched and tagged in its own
-namespace — `v1.2.3-ts` for TypeScript, `v1.2.3-rust` for Rust. A commit that
+namespace — `v1.2.3-ts` for TypeScript, `v1.2.3-rust` for Rust, `v0.1.2-kit` for
+the UI Kit. A commit that
 touches only `sdks/ts` cannot publish the crate, and a commit that touches only
 `sdks/rust` cannot publish the npm package.
 
 In the TypeScript lane a `feat` under `sdk-ts` or `space-sdk` is a minor, and
 the changelog lists both scopes. A major is cut only by a commit whose subject
 says `(sdk-ts)!: release the next major`.
+
+The Rust crate and the UI Kit are below 1.0: there a `feat` or a `!` under the
+lane's scope (`sdk-rust`, `sdk-ui`) raises the minor, and 1.0.0 is cut only by
+a subject that says `(sdk-rust) declares the API stable` or
+`(sdk-ui) declares the API stable`.
 
 ---
 
