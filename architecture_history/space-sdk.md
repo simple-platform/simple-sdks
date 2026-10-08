@@ -581,6 +581,12 @@ secret decryption, and parent-frame navigation.
 
 ## Decision history
 
+### 2026-10-08 — One naming for commit scopes, and a check that holds it
+
+- **Decision:** A commit's scope names its package the way the other SDKs already did: `sdk-ts`, `sdk-rust`, and now `sdk-space` for the Space SDK and `sdk-ui` for the UI Kit, beside `repo`, `deps` and `deps-dev`. A scope is required and a commit carries one. `commitlint.config.cjs` holds the lists; the `commit-msg` hook refuses a message before the commit exists, and the "Commit convention" check refuses a pull request title, which a squash merge writes to `main`.
+- **Reason:** The release lanes choose a version and write a changelog from the subject. The Space SDK and the UI Kit were committed under `space-sdk` and `space-ui`, names the lanes did not read, and nothing stopped it.
+- **Boundary:** The lanes still read the two old names, because the features released as SDK 3.0.0 and the kit's first release carry them. The rules refuse them for any new commit.
+
 ### 2026-10-08 — Give the UI Kit its own release lane
 
 - **Decision:** `@simpleplatform/ui-kit` (`sdks/space-ui`) is versioned and published by a third lane in `release.yml`, built like the other two: versions from `v<version>-kit` tags over `sdks/space-ui`, commits under the scope `sdk-ui` (written `space-ui` before the `sdk-` names were agreed; the lane reads both for the first release), a build-and-test job, a changelog, and a publish that waits for a deployment review. It is below 1.0 and follows the crate's rule: a `feat` or a `!` raises the minor, and 1.0.0 needs the subject `(sdk-ui) declares the API stable`.

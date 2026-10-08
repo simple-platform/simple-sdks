@@ -252,46 +252,49 @@ We welcome contributions! Here's how to get started:
 
 #### Commit Guidelines
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) with component scopes:
+Every commit, and every pull request title, is `type(scope): subject`. The
+rules live in `commitlint.config.cjs` and are checked in two places:
 
-**Commit Types:**
+- **Before the commit exists.** The `commit-msg` hook runs commitlint on the
+  message and refuses it. `pnpm install` installs the hooks.
+- **Before a pull request can merge.** The "Commit convention" check runs
+  commitlint on the pull request's title. This repository squash merges, so
+  the title is the subject that lands on `main`.
 
-- `feat:` New features
-- `fix:` Bug fixes
-- `docs:` Documentation changes
-- `refactor:` Code refactoring
-- `test:` Test additions or updates
-- `chore:` Build/tooling changes
+**Types:** `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`, `style`, `revert`.
 
-**Component Scopes:**
+**Scopes.** A scope is required, and a commit carries exactly one:
 
-For SDK-specific changes, use component names:
-
-- `feat(sdk-ts):` TypeScript SDK features
-- `feat(space-sdk):` Space SDK features (`sdks/ts/src/space`, part of the TypeScript SDK package)
-- `feat(sdk-ui):` UI Kit features (`sdks/space-ui`, the package `@simpleplatform/ui-kit`)
-- `feat(sdk-rust):` Rust SDK features
-- `fix(sdk-go):` Go SDK fixes
-- `docs(sdk-py):` Python SDK documentation
+| Scope              | What it covers                                                             |
+| ------------------ | -------------------------------------------------------------------------- |
+| `sdk-ts`           | `sdks/ts`, the TypeScript SDK                                              |
+| `sdk-space`        | `sdks/ts/src/space`, the Space SDK (part of the TypeScript SDK's package)  |
+| `sdk-rust`         | `sdks/rust`, the Rust SDK                                                  |
+| `sdk-ui`           | `sdks/space-ui`, the UI Kit (`@simpleplatform/ui-kit`)                     |
+| `sdk-go`, `sdk-py` | The Go and Python SDKs                                                     |
+| `repo`             | Everything that is not one package: workflows, tooling, the root documents |
+| `deps`, `deps-dev` | Dependency updates, as Renovate and Dependabot write them                  |
 
 **Examples:**
 
 ```bash
 git commit -m "feat(sdk-ts): add streaming AI response support"
-git commit -m "fix(sdk-ts): resolve GraphQL mutation error handling"
+git commit -m "fix(sdk-space): resolve a tab selection that arrives early"
 git commit -m "feat(sdk-rust): add the settings host call"
-git commit -m "docs: update monorepo setup instructions"
-git commit -m "refactor(sdk-go): delete deprecated utilities"
+git commit -m "fix(sdk-ui): update the status badge defaults"
+git commit -m "docs(repo): update monorepo setup instructions"
 ```
 
-**The scope decides which SDK releases.** Each SDK has its own version lane in
-`release.yml`, keyed on the files a commit touched and tagged in its own
+**The scope decides which SDK releases.** Each package has its own version lane
+in `release.yml`, keyed on the files a commit touched and tagged in its own
 namespace — `v1.2.3-ts` for TypeScript, `v1.2.3-rust` for Rust, `v0.1.2-kit` for
-the UI Kit. A commit that
-touches only `sdks/ts` cannot publish the crate, and a commit that touches only
-`sdks/rust` cannot publish the npm package.
+the UI Kit. A commit that touches only `sdks/ts` cannot publish the crate, and a
+commit that touches only `sdks/rust` cannot publish the npm package. A scope the
+lanes do not know is released as a patch and listed in no changelog, which is
+why the scope is checked.
 
-In the TypeScript lane a `feat` under `sdk-ts` or `space-sdk` is a minor, and
+In the TypeScript lane a `feat` under `sdk-ts` or `sdk-space` is a minor, and
 the changelog lists both scopes. A major is cut only by a commit whose subject
 says `(sdk-ts)!: release the next major`.
 

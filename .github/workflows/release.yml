@@ -70,18 +70,22 @@ jobs:
       # only that. The Rust step below turns it off for the same reason.
       #
       # TWO SCOPES ARE THIS LANE'S. The Space SDK ships inside this package
-      # (`sdks/ts/src/space`), and its commits carry the scope `space-sdk`. Read
-      # as `sdk-ts` alone, a `feat(space-sdk):` counted as a patch and was left
-      # out of the changelog below: every Space SDK feature after 2.5.0 would
-      # have shipped that way. A `feat` under either scope is a minor and both
-      # are listed. A major is still only the sentence above, under `sdk-ts`.
+      # (`sdks/ts/src/space`), and its commits carry the scope `sdk-space`. Read
+      # as `sdk-ts` alone, a Space SDK feature counted as a patch and was left
+      # out of the changelog below: every one after 2.5.0 would have shipped
+      # that way. A `feat` under either scope is a minor and both are listed. A
+      # major is still only the sentence above, under `sdk-ts`.
+      #
+      # `space-sdk` is how that scope was written before the `sdk-` names were
+      # agreed (see commitlint.config.cjs). The features released as 3.0.0 carry
+      # it, so the lane reads it too; no new commit may use the old name.
       - name: TypeScript SDK Version
         id: ts-version
         uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-ts\)!?: release the next major/'
-          minor_pattern: '/feat\((sdk-ts|space-sdk)\):/'
+          minor_pattern: '/feat\((sdk-ts|sdk-space|space-sdk)\):/'
           version_format: '${major}.${minor}.${patch}'
           change_path: sdks/ts
           namespace: ts
@@ -251,18 +255,19 @@ jobs:
           PREV_TAG=$(git tag -l "v*-ts" --sort=-version:refname | head -n 1)
 
           if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(space-sdk)" -- sdks/ts)
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(sdk-space)" --grep="(space-sdk)" -- sdks/ts)
           else
-            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(space-sdk)" -- sdks/ts)
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(sdk-space)" --grep="(space-sdk)" -- sdks/ts)
           fi
 
-          # Organize commits by type. Both of this lane's scopes are read (see
-          # the version step), and a breaking commit is listed under Breaking
-          # Changes only, not a second time under Other Changes.
-          FEATURES=$(echo "$COMMITS" | grep -E "feat\((sdk-ts|space-sdk)\):" || true)
-          FIXES=$(echo "$COMMITS" | grep -E "fix\((sdk-ts|space-sdk)\):" || true)
-          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\((sdk-ts|space-sdk)\)!:|BREAKING CHANGE" || true)
-          OTHER=$(echo "$COMMITS" | grep -v -E "(feat|fix)\((sdk-ts|space-sdk)\)!?:" || true)
+          # Organize commits by type. Both of this lane's scopes are read, and
+          # the Space SDK's old name beside them (see the version step). A
+          # breaking commit is listed under Breaking Changes only, not a second
+          # time under Other Changes.
+          FEATURES=$(echo "$COMMITS" | grep -E "feat\((sdk-ts|sdk-space|space-sdk)\):" || true)
+          FIXES=$(echo "$COMMITS" | grep -E "fix\((sdk-ts|sdk-space|space-sdk)\):" || true)
+          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\((sdk-ts|sdk-space|space-sdk)\)!:|BREAKING CHANGE" || true)
+          OTHER=$(echo "$COMMITS" | grep -v -E "(feat|fix)\((sdk-ts|sdk-space|space-sdk)\)!?:" || true)
 
           # Build changelog
           echo "## TypeScript SDK ${{ needs.version.outputs.ts-version }}" > changelog.md
