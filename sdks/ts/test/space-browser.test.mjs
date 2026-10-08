@@ -125,7 +125,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -302,7 +302,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -344,6 +344,7 @@ test('SPACE_READY advertises supported protocol versions including records: [1]'
       document: [1],
       form: [2],
       header: [1],
+      headerStatus: [1],
       record: [1],
       records: [1],
       tabs: [1],
@@ -441,6 +442,32 @@ test('actions.set rejects with structured unavailable errors in standalone conte
     error => error instanceof SpaceProtocolError
       && error.code === 'unavailable'
       && error.message === 'The header-action bridge is unavailable for this record Space.',
+  )
+})
+
+test('header status is negotiated independently and sends set and clear messages', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, recordContext, { headerStatus: 1, record: 1 })
+
+  simple.ui.header.status.set({ description: 'Needs review.', label: 'Review', tone: 'warning' })
+  assert.deepEqual(port.sent.at(-1), {
+    status: { description: 'Needs review.', label: 'Review', tone: 'warning' },
+    type: 'SPACE_HEADER_STATUS_SET',
+  })
+
+  simple.ui.header.status.set(null)
+  assert.deepEqual(port.sent.at(-1), {
+    status: null,
+    type: 'SPACE_HEADER_STATUS_SET',
+  })
+
+  const olderHostPort = new FakePort()
+  const olderHost = await connectWithHost(olderHostPort, recordContext, { header: 1, record: 1 })
+  olderHost.ui.header.actions.set([{ id: 'sync', label: 'Sync', onClick: () => {} }])
+  assert.equal(olderHostPort.sent.at(-1).type, 'SPACE_HEADER_ACTIONS_SET')
+  assert.throws(
+    () => olderHost.ui.header.status.set(null),
+    error => error instanceof SpaceProtocolError && error.code === 'unavailable',
   )
 })
 

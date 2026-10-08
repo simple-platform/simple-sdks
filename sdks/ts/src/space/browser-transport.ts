@@ -1,7 +1,8 @@
 import type { GraphQLVariables, SpaceDataTransport } from './core.js'
+import type { SpaceNavigationTransport } from './navigation.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
 import type { RecordFormCapabilities } from './record-form.js'
-import type { HeaderAction, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
+import type { HeaderAction, SpaceHeaderStatus, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
   SpaceDataError,
   SpaceProtocolError,
@@ -18,7 +19,7 @@ export interface MessagePortLike {
   start?: () => void
 }
 
-export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
+export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceNavigationTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
   capabilities: RecordFormCapabilities
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
 }
@@ -192,6 +193,12 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
       })
     },
     isClosed: () => isPortClosed || Boolean((port as { closed?: boolean }).closed),
+    navigate: (url, target) => {
+      port.postMessage({
+        payload: { target, url },
+        type: 'NAVIGATE_REQUEST',
+      })
+    },
     request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
       return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
         const abort = () => {
@@ -224,6 +231,9 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
         })),
         type: 'SPACE_HEADER_ACTIONS_SET',
       })
+    },
+    setStatus: (status: SpaceHeaderStatus | null) => {
+      port.postMessage({ status, type: 'SPACE_HEADER_STATUS_SET' })
     },
     showToast: (options: SpaceToastOptions) => {
       port.postMessage({ options, type: 'SPACE_TOAST_SHOW' })
