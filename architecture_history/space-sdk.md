@@ -855,3 +855,9 @@ secret decryption, and parent-frame navigation.
 - **Decision:** Remove the exported `@simpleplatform/sdk/space/internal` path while managed components are pre-release. SDK-created record handles carry their managed UI bridge on a non-enumerable property keyed by the versioned `Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')`. The UI Kit reads that property through its own unexported helper. No managed UI adapter is added to the SDK package exports or public `RecordHandle` type.
 - **Reason:** Any exported package subpath becomes a public contract, whatever its name. The symbol lets the separately bundled SDK and UI Kit share the bridge without adding a customer-facing import path or framework concepts to the Space API.
 - **Boundary:** The symbol key and bridge shape remain a cross-package implementation dependency and need coordinated changes and tests. They do not provide secrecy or authorization: customer code can inspect symbols, while the host and server continue to enforce access. The versioned key lets an incompatible bridge fail as unavailable. Package-export tests reject both the former `internal` path and the briefly considered `managed-ui` path.
+
+### 2026-10-07 — Match StatusBadge defaults to platform theme
+
+- **Decision:** Set UI Kit `StatusBadge` dimensions and light/dark colored tones to the platform values in `apps/platform_web/src/global.css`. Resolve its neutral colors from inherited `--secondary`, `--border`, and `--secondary-foreground` tokens, each with the prior UI Kit color as a fallback.
+- **Reason:** A StatusBadge should look consistent in a Space and in the platform without requiring Space authors to duplicate fifteen palette values.
+- **Boundary:** `sdks/space-ui/theme.css` remains independently overridable through its `--simple-status-badge-*` variables. The element, React bridge, font defaults, and Space SDK are unchanged.
