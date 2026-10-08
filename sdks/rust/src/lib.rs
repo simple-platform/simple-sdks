@@ -208,6 +208,7 @@ pub mod http;
 mod run;
 pub mod settings;
 pub mod storage;
+pub mod tasks;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod testing;

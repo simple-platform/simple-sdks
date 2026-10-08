@@ -57,10 +57,13 @@ import '@simpleplatform/ui-kit/theme.css'
 
 Import `theme.css` in the Space entry point. It bundles the Geist font files
 with the Space (so they load inside its cross-origin iframe) and provides
-fallback values for the alpha `StatusBadge`. Spaces can override the default
-font stack in their own CSS. This is not the future Simple platform token
-contract; the platform-wide semantic CSS-variable contract is a separate
-project.
+`StatusBadge` defaults that use the platform's own light and dark colors and
+dimensions. The neutral tone follows the Space's `--secondary`, `--border`, and
+`--secondary-foreground` tokens when defined (as HSL triplets, the platform's
+convention), with fallback colors otherwise. A Space may override any
+`--simple-status-badge-*` variable in its own CSS, and may override the default
+font stack as well. These names stay component-local: the platform-wide semantic
+CSS-variable contract is a separate project.
 
 ### Runtime boundary
 

@@ -1,5 +1,5 @@
-- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and tabs, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, standalone document staging, and negotiated `simple.records.open()` are implemented in the workspace. Managed React `RecordActivity` is a local pre-release UI Kit component and is included in fixture `0.0.2-local.36`, deployed and installed in `acme::local`. Chrome CDP verified Activity reads, successful note posting, and Space-side tab switching: RecordForm rendered on Details while Activity was absent, then Activity returned on its tab. A host runtime test covers “Show more” pagination with 26 audit items. The earlier fixture `0.0.2-local.31` remains the deployment baseline for the SDK work described elsewhere in this history. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling. `connect({ targetOrigin })` is the sole browser bootstrap. The UI Kit uses a private layered record UI/form bridge; renderer, field registry, behavior scheduler, Activity stream query semantics, and managed-form/Activity host capabilities remain private. Generic framework-neutral Activity SDK APIs remain deferred; the records protocol is separate from Activity.
-- **Last updated:** 2026-10-03
+- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and status, tabs with count tones, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, standalone document staging, and negotiated `simple.records.open()` are implemented in the workspace. Managed React `RecordActivity` is a local pre-release UI Kit component and is included in fixture `0.0.2-local.36`, deployed and installed in `acme::local`. Chrome CDP verified Activity reads, successful note posting, and Space-side tab switching: RecordForm rendered on Details while Activity was absent, then Activity returned on its tab. A host runtime test covers “Show more” pagination with 26 audit items. The earlier fixture `0.0.2-local.31` remains the deployment baseline for the SDK work described elsewhere in this history. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling. `connect({ targetOrigin })` is the sole browser bootstrap. The UI Kit uses a private layered record UI/form bridge; renderer, field registry, behavior scheduler, Activity stream query semantics, and managed-form/Activity host capabilities remain private. Generic framework-neutral Activity SDK APIs remain deferred; the records protocol is separate from Activity.
+- **Last updated:** 2026-10-07
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -57,7 +57,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - The package root must stay Action/WASM-only because importing browser globals from Actions is unsafe and invalid in the runtime.
 - The host iframe bridge already carries `GRAPHQL_REQUEST` and `GRAPHQL_RESPONSE` over a dedicated MessagePort with parent-side authorization.
 - The record protocol is negotiated through the existing `SPACE_READY` / `INIT_RPC` handshake. `record` provides the route record while the independently negotiated `records` protocol opens and closes host-managed secondary sessions.
-- Each public protocol capability has its own key in that handshake. The Space offers `action`, `document`, `form`, `header`, `record`, `records`, `tabs`, `task`, and `toast`; the host grants document staging, records, tasks, toasts, and actions independently of record access, and grants record/form/header/tabs only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository).
+- Each public protocol capability has its own key in that handshake. The Space offers `action`, `document`, `form`, `header`, `headerStatus`, `record`, `records`, `tabs`, `task`, and `toast`; the host grants document staging, records, tasks, toasts, and actions independently of record access, and grants record/form/header/headerStatus/tabs only when a primary record session exists (`apps/platform_web/components/space-iframe.tsx` in the platform repository). `headerStatus` is independent from `header` so older hosts can retain header actions without granting status.
 - Before `action.run`, Spaces ran their own app's actions with a `fetch` of their own to `https://triggers.<parent host>/logic`. That needs the app to name a domain in its Space network permission, which the host turns into the iframe's CSP `connect-src` (`apps/platform_web/components/space-iframe.tsx`), so a Space broke on any other domain, and each Space resolved the endpoint itself. With `action.run`, the host makes the call on behalf of the Space without direct network requests.
 - Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities. Separately, `simple.documents.stage()` supports customer-owned upload workflows and returns an unattached staged handle. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to managed-form file bytes.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
@@ -80,6 +80,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 │   ├── simple.tasks             tasks created from a task type, and replies
 │   ├── simple.actions           the Space's own app's actions, run by the host
 │   ├── simple.ui.header.actions.set()  record-space header action delegation
+│   ├── simple.ui.header.status.set()   record-space title status
 │   ├── simple.ui.tabs.set/select()     record-space tabs and navigation
 │   └── simple.ui.toast.show()          platform-owned toast presentation
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
@@ -89,6 +90,7 @@ Embedded Space
     ├── SPACE_PROTOCOL_REQUEST / RESPONSE  -> host RecordSession, document, task, and action commands
     ├── GRAPHQL_REQUEST / RESPONSE          -> host-authorized GraphQL bridge
     ├── SPACE_HEADER_ACTIONS_SET / INVOKE   -> platform-owned header actions
+    ├── SPACE_HEADER_STATUS_SET             -> platform-owned record header status
     ├── SPACE_UI_TABS_SELECTION_CHANGED     -> host-owned record tab selection
     └── SPACE_TOAST_SHOW                    -> platform-owned toast presenter
 
@@ -211,6 +213,24 @@ document boundary while leaving normal page and nested-element scrolling
 available. No host protocol or public option is needed because only code inside
 the cross-origin Space document can control its root viewport.
 
+### Open a platform page
+
+```ts
+simple.navigation.open({ path: '/om/<application>/<table>/<record>' })
+simple.navigation.open({ path: '/tasks/<task>', target: 'new-tab' })
+```
+
+`simple.navigation.open()` validates a host-relative path, resolves it against
+the explicit connection origin, and posts `NAVIGATE_REQUEST` with `{ url,
+target }` on the Space MessagePort. It is available in both record and
+standalone Spaces without protocol negotiation. The call returns `void` after
+posting; the host sends no reply, and older hosts may ignore the message. The
+SDK rejects non-HTTPS connected origins with `unavailable` because the host
+accepts only HTTPS navigation targets.
+`'same-tab'` opens the path in the platform tab the Space is shown in (a Space
+cannot navigate its own frame); `'new-tab'` opens it in a new browser tab. The
+target defaults to `'same-tab'`. The SDK sends the value to the host unchanged.
+
 ### Managed React record form — implemented locally
 
 ```tsx
@@ -266,6 +286,18 @@ platform retains Delete, recovery, navigation, and other overflow controls.
 There is no separate header submit protocol: a callback calls `record.submit()`
 when it needs to submit the route record.
 
+### Record-Space header status — implemented
+
+`simple.ui.header.status.set({ label, tone, description? })` sets one status
+beside the record title; passing `null` clears it. Labels are non-blank and at
+most 80 characters, tones are `neutral`, `info`, `success`, `warning`, and
+`danger`, and description is an optional string for screen readers. `headerStatus`
+version 1 is negotiated separately from `header` version 1; only record Spaces
+receive the grant. The browser adapter sends one-way
+`SPACE_HEADER_STATUS_SET` messages with `{ status }`. Missing grants produce an
+`unavailable` error only when the capability is called. Header action
+compatibility is unchanged for hosts that grant `header` alone.
+
 ### Platform toast notifications — implemented locally
 
 ```ts
@@ -303,7 +335,7 @@ The Space offers `protocols.tabs: [1]` in `SPACE_READY`. When the host confirms 
 
 Wire messages:
 
-- Registration: versioned request `operation: 'ui.tabs.set'` carrying `payload: { tabs: WireTab[] }`. Wire tab format: `{ id: string, title: string, default?: true, icon?: string, badge?: string | number }`. The requestId acts as the registration identity (`registrationRequestId`). The host acknowledges with `SPACE_PROTOCOL_RESPONSE` containing `result: { selectedTabId: string | null }`. The `onChange` callback is required and is not invoked on the initial registration response.
+- Registration: versioned request `operation: 'ui.tabs.set'` carrying `payload: { tabs: WireTab[] }`. Wire tab format: `{ id: string, title: string, default?: true, icon?: string, badge?: string | number, badgeTone?: SpaceStatusTone }`. The requestId acts as the registration identity (`registrationRequestId`). The host acknowledges with `SPACE_PROTOCOL_RESPONSE` containing `result: { selectedTabId: string | null }`. The `onChange` callback is required and is not invoked on the initial registration response. `badgeTone` is one of `neutral`, `info`, `success`, `warning`, or `danger`. Without it, the serialized tab remains unchanged and the host keeps its neutral count appearance; older hosts ignore the unknown key.
 - Selection: versioned request `operation: 'ui.tabs.select'` carrying `payload: { registrationRequestId: string, tabId: string }`. The host acknowledges with `SPACE_PROTOCOL_RESPONSE` containing `result: { selectedTabId: string }`. Programmatic selection reaches the `onChange` callback once after host acknowledgement/event, deduplicating the response and event. Calling `select()` with the already-active tab resolves immediately without sending a wire message.
 - Host selection event: canonical type `SPACE_UI_TABS_SELECTION_CHANGED` carrying `{ registrationRequestId: string, selectedTabId: string }` delivered over the MessagePort. When received, the SDK routes the event to `onChange(tabId)` if `registrationRequestId` matches the active registration.
 - Validation bounds: up to 32 tabs; an empty declaration clears the tab strip and returns `selectedTabId: null`. IDs match `^[a-z0-9][a-z0-9_-]{0,63}$`; titles are non-blank and at most 80 characters; text badges are non-blank and at most 20 characters; numeric badges are finite non-negative integers; icons are kebab-case Lucide icon names. Multiple defaults and duplicate IDs are rejected. If no tab specifies `default: true`, the first tab defaults to active.
@@ -548,6 +580,24 @@ secret decryption, and parent-frame navigation.
 5. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
 ## Decision history
+
+### 2026-10-07 — Add independent Record-Space header status and tab count tones
+
+- **Decision:** Offer and negotiate `headerStatus` version 1 independently from `header`; send status updates as one-way `SPACE_HEADER_STATUS_SET` messages with `{ status }`; add optional `badgeTone` to tab declarations using the SDK-owned `SpaceStatusTone` type.
+- **Reason:** Record status belongs next to the platform-owned record title, while tab counts need an optional semantic tone. Separate negotiation keeps older hosts' existing header actions intact, and omitting `badgeTone` preserves the existing wire shape and neutral look.
+- **Boundary:** The host owns badge rendering and lifecycle cleanup; the SDK validates labels, tones, and descriptions and only emits the status value. Older hosts ignore unknown tab keys, while missing header-status grants return `unavailable` when called.
+
+### 2026-10-07 — Keep the platform's navigation target names
+
+- **Decision:** `NavigationTarget = 'same-tab' | 'new-tab'`, optional, default `'same-tab'`. The SDK sends the value to the host unchanged and refuses any other value, the browser's `_self` and `_blank` included.
+- **Reason:** The host's `NAVIGATE_REQUEST` message has carried `same-tab` and `new-tab` since May 2026. Using the same names in the public API leaves that contract untouched and gives one set of names from a Space to the platform page, with no mapping in between. The names say where a platform page opens, not which browsing context a link uses, so a later target a browser has no name for (a popup, the developer studio) fits beside them.
+- **Considered and not taken:** the browser's `_self` and `_blank` as the public names, mapped to the host's names inside the SDK. That put two sets of names on one message and tied the public API to link targets, which cannot name a platform-only target. Renaming the host's values instead would have broken a message that already exists.
+
+### 2026-10-07 — Add standalone host-page navigation
+
+- **Decision:** Expose `simple.navigation.open({ path, target? })` from the Space client and post the host's existing `NAVIGATE_REQUEST` envelope over the connected MessagePort. Default `target` to `same-tab`; support `new-tab` without protocol negotiation.
+- **Reason:** A sandboxed Space cannot navigate reliably through ordinary links, while applications should not copy the SDK's private MessagePort bridge to reach another platform page.
+- **Boundary:** The SDK accepts only a single-slash host-relative path, builds the URL from the explicit connected host origin, and refuses non-HTTPS origins as `unavailable`. This is a one-way request that returns `void`; the SDK cannot confirm host handling or the resulting navigation. Existing hosts without the handler may ignore it.
 
 ### 2026-08-09 — One package with explicit environment subpaths
 
@@ -805,3 +855,9 @@ secret decryption, and parent-frame navigation.
 - **Decision:** Remove the exported `@simpleplatform/sdk/space/internal` path while managed components are pre-release. SDK-created record handles carry their managed UI bridge on a non-enumerable property keyed by the versioned `Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')`. The UI Kit reads that property through its own unexported helper. No managed UI adapter is added to the SDK package exports or public `RecordHandle` type.
 - **Reason:** Any exported package subpath becomes a public contract, whatever its name. The symbol lets the separately bundled SDK and UI Kit share the bridge without adding a customer-facing import path or framework concepts to the Space API.
 - **Boundary:** The symbol key and bridge shape remain a cross-package implementation dependency and need coordinated changes and tests. They do not provide secrecy or authorization: customer code can inspect symbols, while the host and server continue to enforce access. The versioned key lets an incompatible bridge fail as unavailable. Package-export tests reject both the former `internal` path and the briefly considered `managed-ui` path.
+
+### 2026-10-07 — Match StatusBadge defaults to platform theme
+
+- **Decision:** Set UI Kit `StatusBadge` dimensions and light/dark colored tones to the platform values in `apps/platform_web/src/global.css`. Resolve its neutral colors from inherited `--secondary`, `--border`, and `--secondary-foreground` tokens, each with the prior UI Kit color as a fallback.
+- **Reason:** A StatusBadge should look consistent in a Space and in the platform without requiring Space authors to duplicate fifteen palette values.
+- **Boundary:** `sdks/space-ui/theme.css` remains independently overridable through its `--simple-status-badge-*` variables. The element, React bridge, font defaults, and Space SDK are unchanged.
