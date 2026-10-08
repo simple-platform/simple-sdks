@@ -358,6 +358,9 @@ while `simple.records.current()` rejects with `SpaceProtocolError` code
 In an older host, `records.current()` can remain available through the `record`
 capability while `records.open()` requires the newer `records` capability.
 
+A Space has one connection per page. The first `connect()` opens it, and every
+later call returns the same client. A call with a different `targetOrigin` is rejected.
+
 When `connect()` runs in the Space document, it disables vertical root
 overscroll bounce. Normal scrolling inside the Space remains enabled.
 

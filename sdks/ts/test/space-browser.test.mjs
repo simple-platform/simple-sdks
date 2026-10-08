@@ -180,6 +180,145 @@ test('opens a secondary session in a general Space only when records was negotia
     error instanceof SpaceProtocolError && error.code === 'unavailable')
 })
 
+test('reuses the connection promise while waiting for the host', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+
+    assert.strictEqual(second, first)
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    assert.strictEqual(await second, await first)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('reuses the resolved connection promise and client', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    const simple = await first
+    const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+
+    assert.strictEqual(second, first)
+    assert.strictEqual(await second, simple)
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 0)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('rejects a different connection origin without announcing or listening again', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    const second = connect({ targetOrigin: 'https://other.simple.lcl' })
+    const rejection = assert.rejects(second, error =>
+      error instanceof SpaceProtocolError
+      && error.code === 'invalid_request'
+      && error.message === 'connect() already opened this Space\'s connection to a different targetOrigin.')
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://other.simple.lcl',
+      ports: [],
+    })
+    await rejection
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    await first
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('announces again after a handshake fails without a port or valid context', async () => {
+  for (const invalidHandshake of [
+    { code: 'unavailable', context: recordContext, ports: [] },
+    { code: 'invalid_response', context: undefined, ports: [new FakePort()] },
+  ]) {
+    const spaceWindow = new FakeSpaceWindow()
+    const restoreWindow = replaceGlobal('window', spaceWindow)
+
+    try {
+      const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+      spaceWindow.dispatchMessage({
+        data: { context: invalidHandshake.context, type: 'INIT_RPC' },
+        origin: 'https://acme.simple.lcl',
+        ports: invalidHandshake.ports,
+      })
+      await assert.rejects(first, error =>
+        error instanceof SpaceProtocolError && error.code === invalidHandshake.code)
+
+      const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+      assert.notStrictEqual(second, first)
+      assert.equal(spaceWindow.parentMessages.length, 2)
+      assert.equal(spaceWindow.listeners.size, 1)
+
+      spaceWindow.dispatchMessage({
+        data: { context: recordContext, type: 'INIT_RPC' },
+        origin: 'https://acme.simple.lcl',
+        ports: [new FakePort()],
+      })
+      await second
+    }
+    finally {
+      restoreWindow()
+    }
+  }
+})
+
+test('opens a fresh connection for a new window object', async () => {
+  const firstClient = await connectWithHost(new FakePort(), recordContext)
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    assert.notStrictEqual(await connection, firstClient)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
 test('disables root viewport overscroll when connecting an embedded Space', async () => {
   const port = new FakePort()
   const spaceWindow = new FakeSpaceWindow()
