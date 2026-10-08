@@ -217,6 +217,13 @@ test('validates tab input options and individual fields before sending', async (
     )
   }
 
+  for (const invalidTone of ['primary', '', null, 42]) {
+    await assert.rejects(
+      () => simple.ui.tabs.set({ onChange: () => {}, tabs: [{ badgeTone: invalidTone, id: 't1', title: 'T1' }] }),
+      isProtocolError('invalid_request'),
+    )
+  }
+
   // Nothing was sent because validation rejected before transport
   assert.equal(transport.requests.length, 0)
 })
@@ -275,6 +282,20 @@ test('normalizes defaults and preserves valid icons and badges within bounds', a
     protocol: 1,
     requestId: 'req-defaults-1',
   })
+
+  for (const badgeTone of ['neutral', 'info', 'success', 'warning', 'danger']) {
+    await simple.ui.tabs.set({
+      onChange: () => {},
+      tabs: [{ badge: 3, badgeTone, id: 'tab-1', title: badgeTone }],
+    })
+    assert.deepEqual(capturedRequest.payload.tabs[0], {
+      badge: 3,
+      badgeTone,
+      default: true,
+      id: 'tab-1',
+      title: badgeTone,
+    })
+  }
 
   // When an explicit default is provided, it is preserved and first tab is not marked default
   const simple2 = createSimpleClient({

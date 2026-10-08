@@ -13,7 +13,7 @@ const contracts = await import(new URL('../dist/contracts/index.js', import.meta
 const root = await import(new URL('../dist/index.js', import.meta.url).href)
 const react = await import(new URL('../dist/react/index.js', import.meta.url).href)
 
-test('ships local typography and StatusBadge defaults without defining the future token contract', async () => {
+test('ships local typography and StatusBadge defaults', async () => {
   const theme = await readFile(new URL('../theme.css', import.meta.url), 'utf8')
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 
@@ -28,6 +28,60 @@ test('ships local typography and StatusBadge defaults without defining the futur
   assert.ok(packageJson.sideEffects.includes('./theme.css'))
   assert.equal(packageJson.dependencies['@fontsource-variable/geist'], '5.2.9')
   assert.equal(packageJson.dependencies['@fontsource-variable/geist-mono'], '5.2.8')
+})
+
+test('pins StatusBadge theme values to the platform light and dark palette', async () => {
+  const theme = await readFile(new URL('../theme.css', import.meta.url), 'utf8')
+  const declarationsFor = (selector) => {
+    const block = theme.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`))?.[1]
+
+    assert.ok(block, `theme.css must define ${selector}`)
+
+    return Object.fromEntries(
+      [...block.matchAll(/^\s*(--simple-status-badge-[\w-]+):([^;\r\n]*);/gm)]
+        .map(([, name, value]) => [name, value.trim()]),
+    )
+  }
+
+  assert.deepEqual(declarationsFor(':root'), {
+    '--simple-status-badge-danger-background': 'hsl(0 84% 95%)',
+    '--simple-status-badge-danger-border': 'hsl(0 84% 75%)',
+    '--simple-status-badge-danger-foreground': 'hsl(0 72% 35%)',
+    '--simple-status-badge-font-family': 'var(--font-sans, ui-sans-serif, system-ui, sans-serif)',
+    '--simple-status-badge-font-size': '0.75rem',
+    '--simple-status-badge-font-weight': '500',
+    '--simple-status-badge-info-background': 'hsl(214 95% 93%)',
+    '--simple-status-badge-info-border': 'hsl(214 95% 75%)',
+    '--simple-status-badge-info-foreground': 'hsl(221 83% 35%)',
+    '--simple-status-badge-line-height': '1rem',
+    '--simple-status-badge-min-height': '1.5rem',
+    '--simple-status-badge-neutral-background': 'hsl(var(--secondary, 210 40% 98%))',
+    '--simple-status-badge-neutral-border': 'hsl(var(--border, 213 27% 84%))',
+    '--simple-status-badge-neutral-foreground': 'hsl(var(--secondary-foreground, 215 19% 35%))',
+    '--simple-status-badge-padding-inline': '0.5rem',
+    '--simple-status-badge-radius': '9999px',
+    '--simple-status-badge-success-background': 'hsl(142 76% 90%)',
+    '--simple-status-badge-success-border': 'hsl(142 76% 65%)',
+    '--simple-status-badge-success-foreground': 'hsl(142 72% 25%)',
+    '--simple-status-badge-warning-background': 'hsl(38 92% 90%)',
+    '--simple-status-badge-warning-border': 'hsl(38 92% 65%)',
+    '--simple-status-badge-warning-foreground': 'hsl(28 80% 25%)',
+  })
+
+  assert.deepEqual(declarationsFor('\\.dark'), {
+    '--simple-status-badge-danger-background': 'hsl(0 45% 24%)',
+    '--simple-status-badge-danger-border': 'hsl(0 55% 42%)',
+    '--simple-status-badge-danger-foreground': 'hsl(0 85% 88%)',
+    '--simple-status-badge-info-background': 'hsl(214 60% 25%)',
+    '--simple-status-badge-info-border': 'hsl(214 70% 45%)',
+    '--simple-status-badge-info-foreground': 'hsl(214 95% 90%)',
+    '--simple-status-badge-success-background': 'hsl(142 45% 22%)',
+    '--simple-status-badge-success-border': 'hsl(142 50% 38%)',
+    '--simple-status-badge-success-foreground': 'hsl(142 65% 85%)',
+    '--simple-status-badge-warning-background': 'hsl(38 55% 24%)',
+    '--simple-status-badge-warning-border': 'hsl(38 65% 42%)',
+    '--simple-status-badge-warning-foreground': 'hsl(38 90% 85%)',
+  })
 })
 
 test('publishes only the supported prop-driven UI Kit bridges', () => {

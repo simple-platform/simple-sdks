@@ -1,5 +1,6 @@
 import type { SimpleActionsClient } from './actions.js'
 import type { SimpleDocumentsClient } from './documents.js'
+import type { SimpleNavigationClient, SpaceNavigationTransport } from './navigation.js'
 import type { SpaceTransport } from './protocol.js'
 import type {
   RecordFormCapabilities,
@@ -17,6 +18,7 @@ import type {
   SimpleHeaderClient,
   SimpleTabsClient,
   SimpleToastClient,
+  SpaceHeaderStatusTransport,
   SpaceHeaderTransport,
   SpaceTabsTransport,
   SpaceToastOptions,
@@ -24,6 +26,7 @@ import type {
 } from './ui.js'
 import { createActionsClient } from './actions.js'
 import { createDocumentsClient } from './documents.js'
+import { createNavigationClient } from './navigation.js'
 import { deepFreeze, invalidResponse, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
 import { createRecordsClient, isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
 import { createTasksClient } from './tasks.js'
@@ -40,6 +43,12 @@ export type {
   SimpleDocumentsClient,
   StagedDocumentHandle,
 } from './documents.js'
+export type {
+  NavigationOpenOptions,
+  NavigationTarget,
+  SimpleNavigationClient,
+  SpaceNavigationTransport,
+} from './navigation.js'
 export { PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError } from './protocol.js'
 export type {
   ProtocolErrorResponse,
@@ -85,15 +94,19 @@ export type {
   TaskReplyResult,
   TaskStatus,
 } from './tasks.js'
-export { DEFAULT_TABS_TIMEOUT_MS, HEADER_ACTIONS_PROTOCOL_VERSION, LUCIDE_ICON_NAME, TAB_ID, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION, validateTabs } from './ui.js'
+export { DEFAULT_TABS_TIMEOUT_MS, HEADER_ACTIONS_PROTOCOL_VERSION, HEADER_STATUS_PROTOCOL_VERSION, LUCIDE_ICON_NAME, TAB_ID, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION, validateHeaderStatus, validateTabs } from './ui.js'
 export type {
   HeaderAction,
   HeaderActionType,
   SetTabsOptions,
   SimpleHeaderActionsClient,
   SimpleHeaderClient,
+  SimpleHeaderStatusClient,
   SimpleTabsClient,
   SimpleToastClient,
+  SpaceHeaderStatus,
+  SpaceHeaderStatusTransport,
+  SpaceStatusTone,
   SpaceTab,
   SpaceTabsSelectionEvent,
   SpaceTabsTransport,
@@ -135,6 +148,7 @@ export interface SimpleClient {
   context: SpaceContext
   data: SimpleDataClient
   documents: SimpleDocumentsClient
+  navigation: SimpleNavigationClient
   /** Record session capabilities for the current Space. */
   records: SimpleRecordsClient
   tasks: SimpleTasksClient
@@ -154,7 +168,10 @@ export interface SimpleClientOptions {
   /** Present only when the host negotiated the document protocol. */
   documentTransport?: SpaceTransport
   formModelTransport?: RecordFormModelTransport
+  hostOrigin?: string
   headerTransport?: SpaceHeaderTransport
+  headerStatusTransport?: SpaceHeaderStatusTransport
+  navigationTransport?: SpaceNavigationTransport
   nextRequestId?: () => string
   /** Present only when the host negotiated the records protocol. */
   recordsTransport?: SpaceTransport
@@ -173,7 +190,10 @@ export function createSimpleClient({
   dataTransport,
   documentTransport,
   formModelTransport,
+  headerStatusTransport,
   headerTransport,
+  hostOrigin,
+  navigationTransport,
   nextRequestId = createRequestId,
   recordsTransport,
   runtime,
@@ -245,10 +265,11 @@ export function createSimpleClient({
       query: (document, variables) => executeData(dataTransport, document, variables),
     },
     documents: createDocumentsClient(documentTransport, nextRequestId),
+    navigation: createNavigationClient(hostOrigin, navigationTransport),
     records,
     tasks: createTasksClient(taskTransport, nextRequestId),
     ui: {
-      header: createHeaderClient(immutableContext.kind === 'record', headerTransport),
+      header: createHeaderClient(immutableContext.kind === 'record', headerTransport, headerStatusTransport),
       tabs: createTabsClient(immutableContext.kind === 'record', tabsTransport, nextRequestId),
       toast: createToastClient(toastTransport),
     },
