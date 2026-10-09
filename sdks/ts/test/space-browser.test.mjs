@@ -432,6 +432,73 @@ test('maps GraphQL bridge failures to a structured Space data error', async () =
   )
 })
 
+for (const { message, name, response } of [
+  {
+    message: 'Clock-out must be after clock-in',
+    name: 'prefers GraphQL issue messages over the host error',
+    response: {
+      error: 'Validation failed',
+      errors: [{ extensions: { issues: [{ message: 'Clock-out must be after clock-in' }] }, message: 'Validation failed' }],
+    },
+  },
+  {
+    message: 'A payroll for this week already exists',
+    name: 'prefers GraphQL constraint details over the host error',
+    response: {
+      error: 'Constraint failed',
+      errors: [{ extensions: { details: { message: 'A payroll for this week already exists' } }, message: 'Constraint failed' }],
+    },
+  },
+  {
+    message: 'Clock-out must be after clock-in',
+    name: 'prefers GraphQL issue messages over constraint details',
+    response: {
+      errors: [{
+        extensions: {
+          details: { message: 'A payroll for this week already exists' },
+          issues: [{ message: 'Clock-out must be after clock-in' }],
+        },
+        message: 'Validation failed',
+      }],
+    },
+  },
+  {
+    message: 'First\nSecond',
+    name: 'preserves joined GraphQL host error messages without extensions',
+    response: {
+      error: 'First\nSecond',
+      errors: [{ message: 'First' }, { message: 'Second' }],
+    },
+  },
+  {
+    message: 'Only here',
+    name: 'uses the first GraphQL error message without a host error',
+    response: { errors: [{ message: 'Only here' }] },
+  },
+  {
+    message: 'Plain failure',
+    name: 'uses a plain GraphQL host error without an errors array',
+    response: { error: 'Plain failure' },
+  },
+]) {
+  test(name, async () => {
+    const port = new FakePort()
+    const simple = await connectWithHost(port, { kind: 'standalone' })
+    const request = simple.data.query('query RestrictedUsers { dev_simple_system__users { id } }')
+    const payload = port.sent[0].payload
+
+    port.emit({ ...response, id: payload.id, type: 'GRAPHQL_RESPONSE' })
+
+    await assert.rejects(() => request, (error) => {
+      assert.ok(error instanceof SpaceDataError)
+      assert.equal(error.code, 'request_failed')
+      assert.equal(error.message, message)
+      assert.deepEqual(error.details, response.errors)
+      return true
+    })
+  })
+}
+
 test('offers supported Space capabilities including document staging', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const port = new FakePort()
