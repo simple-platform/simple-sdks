@@ -531,6 +531,12 @@ jobs:
           # pnpm packs the package, as it always has. npm uploads the file,
           # because npm is what proves to the registry where this job runs.
           pnpm pack --pack-destination "${RUNNER_TEMP}/sdk"
+
+          # Packing does not build. A file packed without the built code is
+          # refused here, before it can be uploaded: the script says how it
+          # tells.
+          "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/sdk/*.tgz
+
           npm publish "${RUNNER_TEMP}"/sdk/*.tgz --access public
 
       # THE TAG NAMES THE COMMIT THIS RUN BUILT.
@@ -778,6 +784,12 @@ jobs:
           # pnpm packs the package, as it always has. npm uploads the file,
           # because npm is what proves to the registry where this job runs.
           pnpm pack --pack-destination "${RUNNER_TEMP}/ui-kit"
+
+          # Packing does not build. A file packed without the built code is
+          # refused here, before it can be uploaded: the script says how it
+          # tells.
+          "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/ui-kit/*.tgz
+
           npm publish "${RUNNER_TEMP}"/ui-kit/*.tgz --access public
 
       # The tag names the commit this run built, for the reason given on
