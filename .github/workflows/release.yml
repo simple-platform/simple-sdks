@@ -144,7 +144,7 @@ jobs:
       # major is still only the sentence above, under `sdk-ts`.
       - name: TypeScript SDK Version
         id: ts-version
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-ts\)!?: release the next major/'
@@ -199,7 +199,7 @@ jobs:
       # is the one place a release is deliberate, so this lane reads only that.
       - name: Rust SDK Version
         id: rust-version
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-rust\) declares the API stable/'
@@ -226,7 +226,7 @@ jobs:
       # too. Its tags are `v<version>-kit`, read back by this step alone.
       - name: UI Kit Version
         id: kit-version
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-ui\) declares the API stable/'
