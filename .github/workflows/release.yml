@@ -395,13 +395,16 @@ jobs:
     needs: [version, build-typescript]
     if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
     runs-on: ubuntu-latest
-    # NPM IS PUBLISHED TO WITHOUT A TOKEN. npm is told, in each package's
-    # settings there, to trust a publish that comes from this repository, this
+    # NPM IS UPLOADED TO WITHOUT A TOKEN. npm is told, in each package's
+    # settings there, to trust an upload that comes from this repository, this
     # workflow file and the environment `npmjs.org`. GitHub vouches for those
     # three with a short-lived identity it hands the job, and `id-token` is
     # what asks for it. So there is no npm secret to store, to replace when it
     # expires, or to leak. Renaming the repository, this file or the
-    # environment stops the publish until npm's settings are changed to match.
+    # environment stops the upload until npm's settings are changed to match.
+    #
+    # What that identity may do is park a version, not publish it. A person
+    # publishes it, on npm, as the steps below say.
     #
     # `contents` is for the tag and the release this job creates at its end.
     permissions:
@@ -524,7 +527,11 @@ jobs:
           cd sdks/ts
           pnpm version ${{ needs.version.outputs.ts-version }} --no-git-tag-version
 
-      - name: Publish to npm
+      # THE JOB PARKS THE VERSION ON NPM, AND A PERSON PUBLISHES IT. npm holds
+      # what is uploaded here where nobody can install it, until a maintainer
+      # approves it on npmjs.com with a two-factor code. The script that parks
+      # it says why.
+      - name: Park the version on npm
         if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
@@ -537,7 +544,19 @@ jobs:
           # tells.
           "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/sdk/*.tgz
 
-          npm publish "${RUNNER_TEMP}"/sdk/*.tgz --access public
+          "${GITHUB_WORKSPACE}/scripts/stage-packed-package.sh" "${RUNNER_TEMP}"/sdk/*.tgz
+
+      # THE JOB GOES ON THE MOMENT THE VERSION IS PUBLIC. It looks at the
+      # registry every few seconds, so the wait is as long as the approval
+      # takes. The tag and the release below are made only then, so a tag
+      # always means the package is out. A job that gave up waiting is run
+      # again after the approval: it finds the version published, skips the
+      # upload, and makes the tag.
+      - name: Wait for the approval on npm
+        if: steps.released.outputs.on-registry != 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.ts-version }}
+        run: scripts/wait-until-published.sh "@simpleplatform/sdk" "$VERSION"
 
       # THE TAG NAMES THE COMMIT THIS RUN BUILT.
       #
@@ -777,7 +796,8 @@ jobs:
           cd sdks/space-ui
           pnpm version ${{ needs.version.outputs.kit-version }} --no-git-tag-version
 
-      - name: Publish to npm
+      # Parked, then published by a person on npm, as the SDK is.
+      - name: Park the version on npm
         if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/space-ui
@@ -790,7 +810,15 @@ jobs:
           # tells.
           "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/ui-kit/*.tgz
 
-          npm publish "${RUNNER_TEMP}"/ui-kit/*.tgz --access public
+          "${GITHUB_WORKSPACE}/scripts/stage-packed-package.sh" "${RUNNER_TEMP}"/ui-kit/*.tgz
+
+      # The tag and the release wait for the approval on npm, for the reason
+      # given on `publish-typescript`.
+      - name: Wait for the approval on npm
+        if: steps.released.outputs.on-registry != 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.kit-version }}
+        run: scripts/wait-until-published.sh "@simpleplatform/ui-kit" "$VERSION"
 
       # The tag names the commit this run built, for the reason given on
       # `publish-typescript`.
