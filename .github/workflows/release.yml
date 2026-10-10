@@ -25,6 +25,13 @@ on:
 permissions:
   contents: read
 
+# THE RUNNER IS NAMED BY ITS VERSION, NOT AS "LATEST". `ubuntu-latest` is
+# whichever Ubuntu GitHub means by it at the time, and GitHub moves it. A
+# release would then be built on a new operating system on a day nobody chose,
+# with nothing in this repository having changed. Every job below names
+# `ubuntu-24.04`, which is what `ubuntu-latest` was when this was written.
+# Moving to a newer one is a change to this file, made on purpose and seen
+# passing on a pull request first.
 jobs:
   # THE NEWEST PUSH IS THE ONE THAT WAITS FOR APPROVAL.
   #
@@ -46,7 +53,7 @@ jobs:
   supersede:
     name: Withdraw Superseded Runs
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
     steps:
@@ -95,7 +102,7 @@ jobs:
 
   version:
     name: Calculate Versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       ts-version: ${{ steps.ts-version.outputs.version }}
       ts-version-tag: ${{ steps.ts-version.outputs.version_tag }}
@@ -269,7 +276,7 @@ jobs:
     name: Build TypeScript SDK
     needs: version
     if: needs.version.outputs.ts-changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -394,7 +401,7 @@ jobs:
     name: Publish TypeScript SDK
     needs: [version, build-typescript]
     if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # NPM IS UPLOADED TO WITHOUT A TOKEN. npm is told, in each package's
     # settings there, to trust an upload that comes from this repository, this
     # workflow file and the environment `npmjs.org`. GitHub vouches for those
@@ -587,7 +594,7 @@ jobs:
     name: Build UI Kit
     needs: version
     if: needs.version.outputs.kit-changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -710,7 +717,7 @@ jobs:
     name: Publish UI Kit
     needs: [version, build-ui-kit]
     if: needs.version.outputs.kit-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Published without a token, as the SDK is; the note on `publish-typescript`
     # says how.
     permissions:
@@ -841,7 +848,7 @@ jobs:
     name: Build Rust SDK
     needs: version
     if: needs.version.outputs.rust-changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -973,7 +980,7 @@ jobs:
     name: Publish Rust SDK
     needs: [version, build-rust]
     if: needs.version.outputs.rust-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     # Its own environment, so approving a crate release approves exactly that.
