@@ -395,22 +395,34 @@ jobs:
     needs: [version, build-typescript]
     if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
     runs-on: ubuntu-latest
+    # NPM IS PUBLISHED TO WITHOUT A TOKEN. npm is told, in each package's
+    # settings there, to trust a publish that comes from this repository, this
+    # workflow file and the environment `npmjs.org`. GitHub vouches for those
+    # three with a short-lived identity it hands the job, and `id-token` is
+    # what asks for it. So there is no npm secret to store, to replace when it
+    # expires, or to leak. Renaming the repository, this file or the
+    # environment stops the publish until npm's settings are changed to match.
+    #
+    # `contents` is for the tag and the release this job creates at its end.
     permissions:
       contents: write
+      id-token: write
     # ONE ENVIRONMENT PER REGISTRY, NOT ONE PER RELEASE.
     #
     # A deployment review is granted to an ENVIRONMENT, not to a job, so two
     # lanes sharing one environment are approved by one click: releasing the
     # crate would have released the package beside it. Naming the environment
     # after the registry it publishes to keeps each approval about one artifact,
-    # and gives each registry's token an environment of its own to live in.
+    # and gives a registry's token, where publishing needs one, an environment
+    # of its own to live in.
     #
     # A language added later takes its own — a Go SDK does not publish to a
     # registry at all, and a Python one would take `pypi.org`.
     #
     # The UI Kit is the one job that shares an environment. It is a second
-    # package on this registry, published with this registry's token, so
-    # `publish-ui-kit` below names `npmjs.org` too. On a run where both packages
+    # package on this registry, and npm trusts a publish by the environment it
+    # comes from, so `publish-ui-kit` below names `npmjs.org` too. On a run
+    # where both packages
     # changed, one approval therefore releases both. They are reviewed together
     # because they are used together: a kit that needs a new SDK call ships with
     # the SDK that has it.
@@ -516,10 +528,10 @@ jobs:
         if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # pnpm packs the package, as it always has. npm uploads the file,
+          # because npm is what proves to the registry where this job runs.
+          pnpm pack --pack-destination "${RUNNER_TEMP}/sdk"
+          npm publish "${RUNNER_TEMP}"/sdk/*.tgz --access public
 
       # THE TAG NAMES THE COMMIT THIS RUN BUILT.
       #
@@ -674,11 +686,15 @@ jobs:
     needs: [version, build-ui-kit]
     if: needs.version.outputs.kit-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
     runs-on: ubuntu-latest
+    # Published without a token, as the SDK is; the note on `publish-typescript`
+    # says how.
     permissions:
       contents: write
+      id-token: write
     # The same environment and the same queue as `publish-typescript`: this is
-    # the second package on npm and it is published with npm's token. The note
-    # on that job says what sharing the environment means for an approval.
+    # the second package on npm, and npm is told to trust both from this one
+    # environment. The note on that job says what sharing the environment means
+    # for an approval.
     environment:
       name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/ui-kit/v/${{ needs.version.outputs.kit-version }}
@@ -759,10 +775,10 @@ jobs:
         if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/space-ui
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # pnpm packs the package, as it always has. npm uploads the file,
+          # because npm is what proves to the registry where this job runs.
+          pnpm pack --pack-destination "${RUNNER_TEMP}/ui-kit"
+          npm publish "${RUNNER_TEMP}"/ui-kit/*.tgz --access public
 
       # The tag names the commit this run built, for the reason given on
       # `publish-typescript`.
