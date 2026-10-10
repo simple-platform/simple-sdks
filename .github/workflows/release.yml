@@ -527,18 +527,24 @@ jobs:
       # commit here puts the tag on the tree the package was built from, so the
       # tag, the registry and the changelog describe one commit, and the next
       # version is computed over exactly what came after it.
+      #
+      # THE RELEASE IS CREATED WITH GITHUB'S OWN COMMAND, which is on every
+      # runner. A publish job can write to this repository, and with this no
+      # action from outside GitHub runs in one.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: ${{ needs.version.outputs.ts-version-tag }}
-          target_commitish: ${{ github.sha }}
-          name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
-          body_path: changelog.md
-          draft: false
-          prerelease: ${{ contains(needs.version.outputs.ts-version, '-') }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.ts-version-tag }}
+          VERSION: ${{ needs.version.outputs.ts-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.ts-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TypeScript SDK ${VERSION}" \
+            --notes-file changelog.md \
+            --prerelease="$PRERELEASE"
 
   build-ui-kit:
     name: Build UI Kit
@@ -762,16 +768,18 @@ jobs:
       # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: ${{ needs.version.outputs.kit-version-tag }}
-          target_commitish: ${{ github.sha }}
-          name: UI Kit ${{ needs.version.outputs.kit-version }}
-          body_path: kit-changelog.md
-          draft: false
-          prerelease: ${{ contains(needs.version.outputs.kit-version, '-') }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.kit-version-tag }}
+          VERSION: ${{ needs.version.outputs.kit-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.kit-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "UI Kit ${VERSION}" \
+            --notes-file kit-changelog.md \
+            --prerelease="$PRERELEASE"
 
   build-rust:
     name: Build Rust SDK
@@ -1068,13 +1076,15 @@ jobs:
       # `publish-typescript`.
       - name: Create GitHub Release
         if: steps.released.outputs.tagged != 'true'
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: ${{ needs.version.outputs.rust-version-tag }}
-          target_commitish: ${{ github.sha }}
-          name: Rust SDK ${{ needs.version.outputs.rust-version }}
-          body_path: rust-changelog.md
-          draft: false
-          prerelease: ${{ contains(needs.version.outputs.rust-version, '-') }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.rust-version-tag }}
+          VERSION: ${{ needs.version.outputs.rust-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.rust-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Rust SDK ${VERSION}" \
+            --notes-file rust-changelog.md \
+            --prerelease="$PRERELEASE"
