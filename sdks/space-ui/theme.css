@@ -7,6 +7,8 @@
  * customers can override them in their own stylesheet.
  */
 :root {
+  /* Native controls, scrollbars and autofill follow the mode; the SDK only toggles .dark. */
+  color-scheme: light;
   /* Local-development defaults. A host may replace these with a resolved tenant theme snapshot. */
   --simple-color-canvas: hsl(0 0% 100%);
   --simple-color-canvas-inverse: hsl(240 10% 3.9%);
@@ -151,6 +153,8 @@
 
 
 .dark {
+  /* Native controls, scrollbars and autofill follow the mode; the SDK only toggles .dark. */
+  color-scheme: dark;
   --simple-color-action-danger: hsl(0 62.8% 30.6%);
   --simple-color-action-danger-active: hsl(0 62.8% 25%);
   --simple-color-action-danger-hover: hsl(0 62.8% 27%);
