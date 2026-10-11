@@ -31,8 +31,8 @@ test('ships local typography and semantic token defaults without component-speci
   assert.match(darkDefaults, /--simple-color-canvas:\s*hsl\(240 10% 3\.9%\);/)
   assert.match(darkDefaults, /--simple-color-action-primary:\s*#0070DD;/)
   const lightDefaults = theme.match(/:root\s*\{([^}]*)\}/)?.[1] ?? ''
-  const lightBackdrop = lightDefaults.match(/--simple-color-overlay-backdrop:\s*([^;]+);/)?.[1]
-  const darkBackdrop = darkDefaults.match(/--simple-color-overlay-backdrop:\s*([^;]+);/)?.[1] ?? lightBackdrop
+  const lightBackdrop = lightDefaults.match(/--simple-color-overlay-backdrop:\s*(\S[^;]*);/)?.[1]?.trim()
+  const darkBackdrop = darkDefaults.match(/--simple-color-overlay-backdrop:\s*(\S[^;]*);/)?.[1]?.trim() ?? lightBackdrop
   assert.equal(lightBackdrop, 'hsl(0 0% 0% / 80%)')
   assert.equal(darkBackdrop, 'hsl(0 0% 0% / 80%)')
   assert.match(theme, /--simple-content-width-2xl:\s*96rem;/)
@@ -87,8 +87,6 @@ test('ships local typography and semantic token defaults without component-speci
   assert.equal(packageJson.dependencies['@fontsource-variable/geist'], '5.2.9')
   assert.equal(packageJson.dependencies['@fontsource-variable/geist-mono'], '5.2.8')
 })
-
-
 
 test('publishes only the supported prop-driven UI Kit bridges', () => {
   assert.equal('loadRuntime' in root, false)
