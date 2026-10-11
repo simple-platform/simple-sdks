@@ -4,6 +4,11 @@
   "version": "0.1.0-alpha.0",
   "description": "Supported UI contracts and framework bridges for Simple Spaces",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simple-platform/simple-sdks.git",
+    "directory": "sdks/space-ui"
+  },
   "sideEffects": [
     "./dist/elements/index.js",
     "./dist/elements/status-badge.js",
@@ -42,7 +47,7 @@
     "test": "pnpm build && node --test test/*.test.mjs"
   },
   "peerDependencies": {
-    "@simpleplatform/sdk": ">=0.0.0",
+    "@simpleplatform/sdk": "^3.0.0 || 0.0.0",
     "react": ">=18.3.0 <20"
   },
   "dependencies": {

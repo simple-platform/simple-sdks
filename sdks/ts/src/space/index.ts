@@ -6,6 +6,7 @@ import { createMessagePortTransport } from './browser-transport.js'
 import {
   createSimpleClient,
   HEADER_ACTIONS_PROTOCOL_VERSION,
+  HEADER_STATUS_PROTOCOL_VERSION,
   isSpaceContext,
   MANAGED_RECORD_FORM_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
@@ -18,7 +19,7 @@ import {
 import { isObjectRecord } from './protocol.js'
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_PROTOCOL_VERSION } from './theme.js'
 
-export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
+export { HEADER_ACTIONS_PROTOCOL_VERSION, HEADER_STATUS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
@@ -29,6 +30,8 @@ export type {
   HeaderActionType,
   JsonObject,
   JsonValue,
+  NavigationOpenOptions,
+  NavigationTarget,
   OpenRecordOptions,
   RecordErrorSnapshot,
   RecordFieldSnapshot,
@@ -47,13 +50,19 @@ export type {
   SimpleDocumentsClient,
   SimpleHeaderActionsClient,
   SimpleHeaderClient,
+  SimpleHeaderStatusClient,
+  SimpleNavigationClient,
   SimpleRecordsClient,
   SimpleTabsClient,
   SimpleTasksClient,
   SimpleToastClient,
   SpaceContext,
   SpaceDataErrorPayload,
+  SpaceHeaderStatus,
+  SpaceHeaderStatusTransport,
+  SpaceNavigationTransport,
   SpaceProtocolErrorPayload,
+  SpaceStatusTone,
   SpaceTab,
   SpaceTabsSelectionEvent,
   SpaceTabsTransport,
@@ -86,6 +95,8 @@ export interface ConnectOptions {
   targetOrigin: string
 }
 
+const connections = new WeakMap<SpaceWindowLike, { promise: Promise<SimpleClient>, targetOrigin: string }>()
+
 /** Connects this Space to its host using the explicitly supplied host origin. */
 export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient> {
   if (!isOrigin(targetOrigin)) {
@@ -103,11 +114,22 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
     }))
   }
 
+  const existing = connections.get(window)
+  if (existing) {
+    if (existing.targetOrigin === targetOrigin)
+      return existing.promise
+
+    return Promise.reject(new SpaceProtocolError({
+      code: 'invalid_request',
+      message: 'connect() already opened this Space\'s connection to a different targetOrigin.',
+    }))
+  }
+
   // The host cannot style a cross-origin frame's viewport, where edge bounce occurs.
   if (window.document.documentElement?.style)
     window.document.documentElement.style.overscrollBehaviorY = 'none'
 
-  return new Promise((resolve, reject) => {
+  const promise = new Promise<SimpleClient>((resolve, reject) => {
     const onMessage = (event: SpaceMessageEvent) => {
       if (event.origin !== targetOrigin || !isInitializationMessage(event.data))
         return
@@ -158,7 +180,10 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         dataTransport: transport,
         documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
+        headerStatusTransport: hasRecord && protocols?.headerStatus === HEADER_STATUS_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
+        hostOrigin: targetOrigin,
+        navigationTransport: transport,
         recordsTransport: hasRecords ? transport : undefined,
         runtime: event.data.runtime,
         tabsTransport: hasRecord && protocols?.tabs === TABS_PROTOCOL_VERSION ? transport : undefined,
@@ -175,6 +200,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         document: [PROTOCOL_VERSION],
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
+        headerStatus: [HEADER_STATUS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
         records: [RECORDS_PROTOCOL_VERSION],
         tabs: [TABS_PROTOCOL_VERSION],
@@ -184,7 +210,13 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
       },
       type: 'SPACE_READY',
     }, targetOrigin)
+  }).catch((error) => {
+    connections.delete(window)
+    throw error
   })
+
+  connections.set(window, { promise, targetOrigin })
+  return promise
 }
 
 function isOrigin(targetOrigin: string): boolean {
@@ -205,6 +237,7 @@ function isInitializationMessage(value: unknown): value is {
     document?: unknown
     form?: unknown
     header?: unknown
+    headerStatus?: unknown
     record?: unknown
     records?: unknown
     tabs?: unknown

@@ -215,7 +215,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -268,6 +268,145 @@ test('opens a secondary session in a general Space only when records was negotia
   const oldHost = await connectWithHost(new FakePort(), { kind: 'standalone' }, {})
   await assert.rejects(() => oldHost.records.open(target), error =>
     error instanceof SpaceProtocolError && error.code === 'unavailable')
+})
+
+test('reuses the connection promise while waiting for the host', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+
+    assert.strictEqual(second, first)
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    assert.strictEqual(await second, await first)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('reuses the resolved connection promise and client', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    const simple = await first
+    const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+
+    assert.strictEqual(second, first)
+    assert.strictEqual(await second, simple)
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 0)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('rejects a different connection origin without announcing or listening again', async () => {
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    const second = connect({ targetOrigin: 'https://other.simple.lcl' })
+    const rejection = assert.rejects(second, error =>
+      error instanceof SpaceProtocolError
+      && error.code === 'invalid_request'
+      && error.message === 'connect() already opened this Space\'s connection to a different targetOrigin.')
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://other.simple.lcl',
+      ports: [],
+    })
+    await rejection
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    await first
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('announces again after a handshake fails without a port or valid context', async () => {
+  for (const invalidHandshake of [
+    { code: 'unavailable', context: recordContext, ports: [] },
+    { code: 'invalid_response', context: undefined, ports: [new FakePort()] },
+  ]) {
+    const spaceWindow = new FakeSpaceWindow()
+    const restoreWindow = replaceGlobal('window', spaceWindow)
+
+    try {
+      const first = connect({ targetOrigin: 'https://acme.simple.lcl' })
+      spaceWindow.dispatchMessage({
+        data: { context: invalidHandshake.context, type: 'INIT_RPC' },
+        origin: 'https://acme.simple.lcl',
+        ports: invalidHandshake.ports,
+      })
+      await assert.rejects(first, error =>
+        error instanceof SpaceProtocolError && error.code === invalidHandshake.code)
+
+      const second = connect({ targetOrigin: 'https://acme.simple.lcl' })
+      assert.notStrictEqual(second, first)
+      assert.equal(spaceWindow.parentMessages.length, 2)
+      assert.equal(spaceWindow.listeners.size, 1)
+
+      spaceWindow.dispatchMessage({
+        data: { context: recordContext, type: 'INIT_RPC' },
+        origin: 'https://acme.simple.lcl',
+        ports: [new FakePort()],
+      })
+      await second
+    }
+    finally {
+      restoreWindow()
+    }
+  }
+})
+
+test('opens a fresh connection for a new window object', async () => {
+  const firstClient = await connectWithHost(new FakePort(), recordContext)
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    assert.equal(spaceWindow.parentMessages.length, 1)
+    assert.equal(spaceWindow.listeners.size, 1)
+
+    spaceWindow.dispatchMessage({
+      data: { context: recordContext, type: 'INIT_RPC' },
+      origin: 'https://acme.simple.lcl',
+      ports: [new FakePort()],
+    })
+    assert.notStrictEqual(await connection, firstClient)
+  }
+  finally {
+    restoreWindow()
+  }
 })
 
 test('disables root viewport overscroll when connecting an embedded Space', async () => {
@@ -383,6 +522,73 @@ test('maps GraphQL bridge failures to a structured Space data error', async () =
   )
 })
 
+for (const { message, name, response } of [
+  {
+    message: 'Clock-out must be after clock-in',
+    name: 'prefers GraphQL issue messages over the host error',
+    response: {
+      error: 'Validation failed',
+      errors: [{ extensions: { issues: [{ message: 'Clock-out must be after clock-in' }] }, message: 'Validation failed' }],
+    },
+  },
+  {
+    message: 'A payroll for this week already exists',
+    name: 'prefers GraphQL constraint details over the host error',
+    response: {
+      error: 'Constraint failed',
+      errors: [{ extensions: { details: { message: 'A payroll for this week already exists' } }, message: 'Constraint failed' }],
+    },
+  },
+  {
+    message: 'Clock-out must be after clock-in',
+    name: 'prefers GraphQL issue messages over constraint details',
+    response: {
+      errors: [{
+        extensions: {
+          details: { message: 'A payroll for this week already exists' },
+          issues: [{ message: 'Clock-out must be after clock-in' }],
+        },
+        message: 'Validation failed',
+      }],
+    },
+  },
+  {
+    message: 'First\nSecond',
+    name: 'preserves joined GraphQL host error messages without extensions',
+    response: {
+      error: 'First\nSecond',
+      errors: [{ message: 'First' }, { message: 'Second' }],
+    },
+  },
+  {
+    message: 'Only here',
+    name: 'uses the first GraphQL error message without a host error',
+    response: { errors: [{ message: 'Only here' }] },
+  },
+  {
+    message: 'Plain failure',
+    name: 'uses a plain GraphQL host error without an errors array',
+    response: { error: 'Plain failure' },
+  },
+]) {
+  test(name, async () => {
+    const port = new FakePort()
+    const simple = await connectWithHost(port, { kind: 'standalone' })
+    const request = simple.data.query('query RestrictedUsers { dev_simple_system__users { id } }')
+    const payload = port.sent[0].payload
+
+    port.emit({ ...response, id: payload.id, type: 'GRAPHQL_RESPONSE' })
+
+    await assert.rejects(() => request, (error) => {
+      assert.ok(error instanceof SpaceDataError)
+      assert.equal(error.code, 'request_failed')
+      assert.equal(error.message, message)
+      assert.deepEqual(error.details, response.errors)
+      return true
+    })
+  })
+}
+
 test('offers supported Space capabilities including document staging', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const port = new FakePort()
@@ -392,7 +598,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -434,6 +640,7 @@ test('SPACE_READY advertises supported protocol versions including records: [1]'
       document: [1],
       form: [2],
       header: [1],
+      headerStatus: [1],
       record: [1],
       records: [1],
       tabs: [1],
@@ -532,6 +739,32 @@ test('actions.set rejects with structured unavailable errors in standalone conte
     error => error instanceof SpaceProtocolError
       && error.code === 'unavailable'
       && error.message === 'The header-action bridge is unavailable for this record Space.',
+  )
+})
+
+test('header status is negotiated independently and sends set and clear messages', async () => {
+  const port = new FakePort()
+  const simple = await connectWithHost(port, recordContext, { headerStatus: 1, record: 1 })
+
+  simple.ui.header.status.set({ description: 'Needs review.', label: 'Review', tone: 'warning' })
+  assert.deepEqual(port.sent.at(-1), {
+    status: { description: 'Needs review.', label: 'Review', tone: 'warning' },
+    type: 'SPACE_HEADER_STATUS_SET',
+  })
+
+  simple.ui.header.status.set(null)
+  assert.deepEqual(port.sent.at(-1), {
+    status: null,
+    type: 'SPACE_HEADER_STATUS_SET',
+  })
+
+  const olderHostPort = new FakePort()
+  const olderHost = await connectWithHost(olderHostPort, recordContext, { header: 1, record: 1 })
+  olderHost.ui.header.actions.set([{ id: 'sync', label: 'Sync', onClick: () => {} }])
+  assert.equal(olderHostPort.sent.at(-1).type, 'SPACE_HEADER_ACTIONS_SET')
+  assert.throws(
+    () => olderHost.ui.header.status.set(null),
+    error => error instanceof SpaceProtocolError && error.code === 'unavailable',
   )
 })
 

@@ -13,6 +13,21 @@ Space SDK as `simple.ui.header`; they are not a UI Kit export.
 Do not treat alpha APIs as a stable compatibility promise until they are
 released with an explicit support policy.
 
+## Installation
+
+```bash
+pnpm add @simpleplatform/ui-kit @simpleplatform/sdk
+```
+
+The kit needs version 3 of `@simpleplatform/sdk`, and React 18.3 or 19 for its
+React bridges. Its peer range also accepts `0.0.0`, the number the SDK carries
+inside this repository, so a Space that links both packages by folder path
+installs without a warning.
+
+Releases are tagged `v<version>-kit`. The package is below 1.0: a breaking
+change raises the minor, and the default range `^0.1.0` never moves onto `0.2`
+by itself.
+
 ## Current component: StatusBadge
 
 ```tsx
@@ -57,10 +72,13 @@ import '@simpleplatform/ui-kit/theme.css'
 
 Import `theme.css` in the Space entry point. It bundles the Geist font files
 with the Space (so they load inside its cross-origin iframe) and provides
-fallback values for the alpha `StatusBadge`. Spaces can override the default
-font stack in their own CSS. This is not the future Simple platform token
-contract; the platform-wide semantic CSS-variable contract is a separate
-project.
+`StatusBadge` defaults that use the platform's own light and dark colors and
+dimensions. The neutral tone follows the Space's `--secondary`, `--border`, and
+`--secondary-foreground` tokens when defined (as HSL triplets, the platform's
+convention), with fallback colors otherwise. A Space may override any
+`--simple-status-badge-*` variable in its own CSS, and may override the default
+font stack as well. These names stay component-local: the platform-wide semantic
+CSS-variable contract is a separate project.
 
 ### Runtime boundary
 

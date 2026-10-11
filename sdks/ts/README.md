@@ -10,6 +10,53 @@ Install the SDK using [pnpm](https://pnpm.io):
 pnpm add @simpleplatform/sdk
 ```
 
+## Upgrading from 2.x to 3
+
+Version 3 is the first release that carries the Space calls added after 2.5.0.
+One of those changes renamed how a Space connects, which is why this is a major.
+
+**A Space changes these names:**
+
+| 2.x                                                        | 3                                                                                                        |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `import { connectSpace } from '@simpleplatform/sdk/space'` | `import { connect } from '@simpleplatform/sdk/space'`                                                    |
+| `await connectSpace({ targetOrigin })`                     | `await connect({ targetOrigin })`                                                                        |
+| `connectSpace({ targetOrigin, window: fake })` in a test   | `connect({ targetOrigin })`. It reads `globalThis.window`, so a test sets a browser-like global instead. |
+| `ConnectSpaceOptions`                                      | `ConnectOptions`                                                                                         |
+| `SpaceWindowLike`, `SpaceMessageEvent`                     | No longer exported. A test declares its own.                                                             |
+
+**A test that builds the client by hand** adds what the client gained, or it
+stops type checking: `navigation`, `ui`, and `open` beside `current` under
+`records` (for example `records: { current: vi.fn(), open: vi.fn() }`).
+
+**Two behaviours change with no change in your code:**
+
+- `connect()` sets `overscroll-behavior-y: none` on the Space's root element,
+  so the page no longer bounces at its top and bottom edge. A Space that wants
+  the bounce sets the style back after it connects.
+- An AI call (`extract`, `summarize`, `transcribePages`) refuses a
+  `transcription` option other than `'standard'` or `'precise'`. Version 2
+  ignored any value. An Action is otherwise unchanged.
+
+**A platform that embeds Spaces** must send a well-formed handshake: a
+`runtime` that is not `{ url, version }` with an `http` or `https` URL is
+ignored and the connection stays pending, and a malformed `form` or `formInfo`
+on a record reply is refused as `invalid_response`. The Simple Platform already
+sends both correctly.
+
+**New in 3:**
+
+- For a Space: platform tabs (`simple.ui.tabs`, with a count and its tone),
+  header actions and a header status, platform toasts, `simple.records.open()`,
+  `simple.navigation.open()`, and the bridge the UI Kit's managed `RecordForm`
+  and `RecordActivity` use.
+- For an Action: `tasks.create()` from `@simpleplatform/sdk/tasks`, and the
+  `transcription` option on the AI calls.
+
+Each new Space call needs a platform that supports it. On an older platform
+tabs, the header, toasts and `records.open()` fail as `unavailable`, and
+`navigation.open()` is ignored. The section for each call below says so.
+
 ## Quick Start
 
 Create your first Simple Platform action:
@@ -38,6 +85,7 @@ The TypeScript SDK is organized into focused modules for different capabilities:
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
 | **Settings** | `@simpleplatform/sdk/settings` | Application settings retrieval |
 | **Storage** | `@simpleplatform/sdk/storage` | File upload, and reading a stored file's bytes |
+| **Tasks** | `@simpleplatform/sdk/tasks` | Creating tasks from server actions |
 | **Space** | `@simpleplatform/sdk/space` | Record, data, document, task, UI, and action capabilities in a Space |
 
 ## Embedded Spaces
@@ -112,7 +160,6 @@ support `current()` through the existing `record` capability while lacking
 `open()`. Missing and inaccessible records return the same generic
 `target_unavailable` error.
 
-`simple.records.current()` is a compatibility alias for `simple.record()`.
 To work with another record, use `simple.records.open()` with its exact target:
 
 ```ts
@@ -174,6 +221,24 @@ state without choosing UI; call `simple.ui.toast.show()` when the Space should
 also show a platform toast. `RecordForm` continues to display detailed field
 and form messages inline.
 
+A Record Space can also show one status beside the record title:
+
+```ts
+simple.ui.header.status.set({
+  description: 'A reviewer needs to check this record.',
+  label: 'Needs review',
+  tone: 'warning',
+})
+
+simple.ui.header.status.set(null) // Clear the status
+```
+
+The label is non-blank and limited to 80 characters. Tones are `neutral`,
+`info`, `success`, `warning`, and `danger`; the optional description is for
+screen readers. Hosts that do not negotiate `headerStatus` reject this call
+with an `unavailable` error. Header status is negotiated separately, so an
+older host can continue to support header actions without supporting status.
+
 ### Show a platform toast
 
 Any Space can show feedback with Simple's existing toast presenter and theme:
@@ -206,7 +271,7 @@ const { selectedTabId } = await simple.ui.tabs.set({
   },
   tabs: [
     { icon: 'layout-dashboard', id: 'overview', title: 'Overview' },
-    { badge: 3, icon: 'message-square', id: 'messages', title: 'Messages' },
+    { badge: 3, badgeTone: 'warning', icon: 'message-square', id: 'messages', title: 'Messages' },
     { badge: 'New', icon: 'file-text', id: 'documents', title: 'Documents' },
   ],
 })
@@ -221,8 +286,13 @@ empty list clears the current declaration and resolves with
 Each tab requires an `id` (1–64 characters matching `^[a-z0-9][a-z0-9_-]{0,63}$`)
 and a non-blank `title` (up to 80 characters), with optional `default: true`,
 optional kebab-case Lucide `icon`, and optional `badge` (non-blank text up to 20
-characters or a finite non-negative integer). At most one tab may set `default: true`;
-if none is specified, the first tab defaults to active.
+characters or a finite non-negative integer). A count can also set `badgeTone`
+to `neutral`, `info`, `success`, `warning`, or `danger`; without it, the count
+keeps its neutral appearance. At most one tab may set `default: true`; if none
+is specified, the first tab defaults to active.
+
+Older hosts that do not recognize `badgeTone` ignore it and display the count
+with the neutral appearance.
 
 The host negotiates `protocols.tabs: [1]` and owns selection and URL state.
 Registration uses `ui.tabs.set`, which assigns a `registrationRequestId` and
@@ -237,6 +307,24 @@ Selecting an inactive declared tab resolves after host acknowledgement and reach
 the `onChange` callback once, deduplicating the response and event. Both methods fail
 with structured `SpaceProtocolError` code `'unavailable'` outside a record Space or
 when the tabs capability was not negotiated.
+
+### Open a platform page
+
+Ask the host to open a host-relative platform path from any Space:
+
+```ts
+simple.navigation.open({ path: '/om/<application>/<table>/<record>' })
+simple.navigation.open({ path: '/tasks/<task>', target: 'new-tab' })
+```
+
+`'same-tab'` opens the path in the platform tab the Space is shown in (a Space
+cannot navigate its own frame); `'new-tab'` opens it in a new browser tab. The
+target defaults to `'same-tab'`.
+These are the platform's own names, not the browser's `_self` and `_blank`:
+the platform's navigation message already carried them, and they leave room
+for platform targets a browser has no name for.
+`open()` returns `void` as soon as the request is posted. The host gives no
+confirmation, and a host without the navigation handler ignores the message.
 
 ### Space context
 
@@ -269,6 +357,9 @@ while `simple.records.current()` rejects with `SpaceProtocolError` code
 `unavailable` and explains that the current record requires a record view.
 In an older host, `records.current()` can remain available through the `record`
 capability while `records.open()` requires the newer `records` capability.
+
+A Space has one connection per page. The first `connect()` opens it, and every
+later call returns the same client. A call with a different `targetOrigin` is rejected.
 
 When `connect()` runs in the Space document, it disables vertical root
 overscroll bounce. Normal scrolling inside the Space remains enabled.
@@ -471,6 +562,58 @@ refused `reply()` arrives the same way, with the service's own code in
 `reply()` again with the same arguments resends the kept message rather than
 posting it twice.
 
+#### Starting a task after other tasks
+
+To make a task wait for others, create the others first, then list them under
+`_metadata.start_after` in the new task's `input`:
+
+```typescript
+const terms = await simple.tasks.create({ input: { packet: 'DOC000001' }, taskTypeId: 'TTY000003', title: 'Read the terms' })
+const parties = await simple.tasks.create({ input: { packet: 'DOC000001' }, taskTypeId: 'TTY000004', title: 'Read the parties' })
+
+const { task: summary } = await simple.tasks.create({
+  input: {
+    _metadata: {
+      start_after: [
+        { task_id: terms.task.id }, // Waits until this task has completed.
+        { on: ['approved', 'declined'], task_id: parties.task.id }, // Waits until it is in either state.
+      ],
+    },
+    packet: 'DOC000001',
+  },
+  taskTypeId: 'TTY000009',
+  title: 'Summarise the packet',
+})
+```
+
+- `_metadata` is reserved. The platform owns it, its shape is fixed, and a member
+  it does not know is refused. A task type's input schema must not declare it:
+  the rest of `input` is checked against that schema as if `_metadata` were not
+  there. It counts toward the 32,768-byte limit.
+- `start_after` is a list of entries `{ task_id, on }`. `task_id` names an
+  existing task, and each task may be listed once. `on` is optional and names
+  states of the listed task's own task type that end it (a state that maps to
+  `completed`, `cancelled`, or `failed`). Left out, it means the states that map
+  to `completed`.
+- The new task is created `queued`, and nothing runs for it and no model is
+  called until every listed task has ended in a state its entry allows. There
+  is no time limit. A listed task that has only stopped and is `waiting` keeps
+  the new task waiting; reply to that task to carry it on.
+- If a listed task ends in a state its entry does not allow, or no longer
+  exists, the platform cancels the new task. Create another one.
+- When the new task runs, its doer, the AI that does the work, is given the
+  `read-task-output` tool. The tool reads a listed task's status and output,
+  and only for the listed tasks. The platform adds it by itself; the task type
+  does not need to declare it.
+- A create the platform refuses rejects as described above, with
+  `error.code` `task_rejected` and `details.code` `TASK_INPUT_INVALID`.
+  `details.pointers` points at the member: `/input/_metadata/start_after/1/task_id`
+  for a task that does not exist, or `/input/_metadata/start_after/1/on/0` for a
+  name that is not an end state of that task's type.
+- A platform release that predates this does not know the key: a task type with
+  a closed input schema refuses it, and one with an open schema starts the task
+  at once.
+
 ### Space actions
 
 `simple.actions.run()` runs an action of the Space's own app where the app
@@ -612,6 +755,13 @@ an editor with TSDoc support recognizes it instead of flagging it as unknown.
 ### AI Module
 
 The AI module provides powerful capabilities for working with unstructured data.
+
+The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribePages` selects the reader for scanned pages; omission or `'standard'` preserves the default behavior.
+`'precise'` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
+
+```typescript
+const read = await transcribePages(documentHandle, { transcription: 'precise' }, request.context)
+```
 
 #### Extract Structured Data
 
@@ -884,6 +1034,34 @@ const config = await settings.get(
 console.log(config.api_key) // "sk_live_..."
 console.log(config.max_retries) // 3
 ```
+
+### Tasks Module
+
+Create a task from a server action. It is assigned to the user the action runs
+as. The platform makes the task and first-message ids. If an action must not
+start the same work twice, check its own record before creating the task.
+
+On refusal, the task service's message begins with its code, such as
+`TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+**What is not yet true.** Not every service refusal keeps its internal code.
+Input/schema (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`), assignee
+(`TASK_ASSIGNEE_INVALID`), and other public refusals retain their codes.
+Unlisted internal refusals, including an unknown task type
+(`TASK_RELATION_NOT_FOUND`), arrive as `TASK_RUNTIME_REMOTE_FAILURE`, just as
+on the page path. A malformed successful reply throws an ordinary `Error`.
+
+```typescript
+import * as tasks from '@simpleplatform/sdk/tasks'
+
+const { task } = await tasks.create({
+  input: { invoice_id: 'INV000017' },
+  taskTypeId: 'TTY000003',
+  title: 'Review the invoice'
+}, request.context)
+```
+
+The result is `{ task: { id: 'TASK000042', revision: 0, status: 'queued' } }`.
+A new task starts at revision 0, also returned by the page's `tasks.create`.
 
 ### Storage Module
 

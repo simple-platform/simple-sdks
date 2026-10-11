@@ -1,8 +1,9 @@
 import type { GraphQLVariables, SpaceDataTransport } from './core.js'
+import type { SpaceNavigationTransport } from './navigation.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
 import type { RecordFormCapabilities } from './record-form.js'
 import type { SpaceThemeSnapshot } from './theme.js'
-import type { HeaderAction, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
+import type { HeaderAction, SpaceHeaderStatus, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
   SpaceDataError,
   SpaceProtocolError,
@@ -20,7 +21,7 @@ export interface MessagePortLike {
   start?: () => void
 }
 
-export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
+export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceNavigationTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
   capabilities: RecordFormCapabilities
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
 }
@@ -209,6 +210,12 @@ export function createMessagePortTransport(
       })
     },
     isClosed: () => isPortClosed || Boolean((port as { closed?: boolean }).closed),
+    navigate: (url, target) => {
+      port.postMessage({
+        payload: { target, url },
+        type: 'NAVIGATE_REQUEST',
+      })
+    },
     request: <TResult>(request: ProtocolRequest, transfer: ArrayBuffer[] = [], signal?: AbortSignal) => {
       return new Promise<ProtocolResponse<TResult>>((resolve, reject) => {
         const abort = () => {
@@ -241,6 +248,9 @@ export function createMessagePortTransport(
         })),
         type: 'SPACE_HEADER_ACTIONS_SET',
       })
+    },
+    setStatus: (status: SpaceHeaderStatus | null) => {
+      port.postMessage({ status, type: 'SPACE_HEADER_STATUS_SET' })
     },
     showToast: (options: SpaceToastOptions) => {
       port.postMessage({ options, type: 'SPACE_TOAST_SHOW' })
@@ -278,26 +288,28 @@ function createDataRequestId(): string {
 }
 
 function readGraphQLErrorMessage(error: unknown, errors: unknown): string {
+  const firstError = Array.isArray(errors) ? errors[0] : undefined
+  const details = firstError && typeof firstError === 'object'
+    ? firstError as {
+      extensions?: { details?: { message?: unknown }, issues?: Array<{ message?: unknown }> }
+      message?: unknown
+    }
+    : undefined
+
+  // The host always sends `error` beside `errors`, and `error` holds only the
+  // top-level messages. The text a person can act on is under `extensions`,
+  // so it is read first.
+  const issue = details?.extensions?.issues?.[0]?.message
+  if (typeof issue === 'string' && issue)
+    return issue
+  const detail = details?.extensions?.details?.message
+  if (typeof detail === 'string' && detail)
+    return detail
+
   if (typeof error === 'string' && error)
     return error
-
-  if (Array.isArray(errors)) {
-    const firstError = errors[0]
-    if (firstError && typeof firstError === 'object') {
-      const details = firstError as {
-        extensions?: { details?: { message?: unknown }, issues?: Array<{ message?: unknown }> }
-        message?: unknown
-      }
-      const issue = details.extensions?.issues?.[0]?.message
-      if (typeof issue === 'string' && issue)
-        return issue
-      const message = details.extensions?.details?.message
-      if (typeof message === 'string' && message)
-        return message
-      if (typeof details.message === 'string' && details.message)
-        return details.message
-    }
-  }
+  if (typeof details?.message === 'string' && details.message)
+    return details.message
 
   return 'GraphQL request failed.'
 }

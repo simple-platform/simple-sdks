@@ -88,6 +88,8 @@ test('ships local typography and semantic token defaults without component-speci
   assert.equal(packageJson.dependencies['@fontsource-variable/geist-mono'], '5.2.8')
 })
 
+
+
 test('publishes only the supported prop-driven UI Kit bridges', () => {
   assert.equal('loadRuntime' in root, false)
   assert.equal('RuntimeLoadError' in root, false)

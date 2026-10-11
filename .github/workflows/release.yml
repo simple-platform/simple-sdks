@@ -25,10 +25,84 @@ on:
 permissions:
   contents: read
 
+# THE RUNNER IS NAMED BY ITS VERSION, NOT AS "LATEST". `ubuntu-latest` is
+# whichever Ubuntu GitHub means by it at the time, and GitHub moves it. A
+# release would then be built on a new operating system on a day nobody chose,
+# with nothing in this repository having changed. Every job below names
+# `ubuntu-24.04`, which is what `ubuntu-latest` was when this was written.
+# Moving to a newer one is a change to this file, made on purpose and seen
+# passing on a pull request first.
 jobs:
+  # THE NEWEST PUSH IS THE ONE THAT WAITS FOR APPROVAL.
+  #
+  # Every lane computes its version from its own tags, so a run on a newer
+  # commit offers each release an older run was holding, built from a tree that
+  # contains it. From that moment the older offer is redundant, and this job
+  # withdraws it: every older run of this workflow on `main` that is still open
+  # is cancelled when a newer push starts its own.
+  #
+  # ONE KIND OF RUN IS LEFT ALONE: one that is publishing. A publish starts only
+  # once the review on its environment is approved, so a run with no approval
+  # has uploaded nothing and is cancelled whatever it is doing — versioning,
+  # building or waiting. A run that holds an approval is cancelled only when
+  # none of its jobs is under way: an upload that has begun is left to finish.
+  #
+  # No checkout and no third-party action. The job reads and cancels runs
+  # through the API with its own token, and it is the only job in this file
+  # that holds `actions: write`.
+  supersede:
+    name: Withdraw Superseded Runs
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel the older runs that are still open
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The workflow is named by the file this run was started from, so the
+          # name is not written down a second time here.
+          workflow="${GITHUB_WORKFLOW_REF%@*}"
+          workflow="${workflow##*/}"
+
+          older=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=push&per_page=100" \
+            --jq ".workflow_runs[] | select(.status != \"completed\" and .run_number < ${GITHUB_RUN_NUMBER}) | .id")
+
+          if [ -z "$older" ]; then
+            echo "No older run is open." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          for id in $older; do
+            approved=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approvals" \
+              --jq '[.[] | select(.state == "approved")] | length')
+
+            if [ "$approved" -gt 0 ]; then
+              under_way=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                --jq '[.jobs[] | select(.status != "completed" and .status != "waiting")] | length')
+
+              if [ "$under_way" -gt 0 ]; then
+                echo "Run ${id} is publishing an approved release. It is left to finish." >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+            fi
+
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/cancel" > /dev/null; then
+              echo "Run ${id} is cancelled. This run offers its releases from a newer commit." >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}" --jq .status)" = "completed" ]; then
+              echo "Run ${id} finished before it was cancelled." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Run ${id} is still open and was not cancelled." >&2
+              exit 1
+            fi
+          done
+
   version:
     name: Calculate Versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       ts-version: ${{ steps.ts-version.outputs.version }}
       ts-version-tag: ${{ steps.ts-version.outputs.version_tag }}
@@ -36,6 +110,9 @@ jobs:
       rust-version: ${{ steps.rust-version.outputs.version }}
       rust-version-tag: ${{ steps.rust-version.outputs.version_tag }}
       rust-changed: ${{ steps.rust-version.outputs.changed }}
+      kit-version: ${{ steps.kit-version.outputs.version }}
+      kit-version-tag: ${{ steps.kit-version.outputs.version_tag }}
+      kit-changed: ${{ steps.kit-version.outputs.changed }}
       rust-toolchain: ${{ steps.rust-toolchain.outputs.version }}
     steps:
       - name: Checkout
@@ -65,13 +142,20 @@ jobs:
       # pasting it — to compute a major from a change that declared nothing. The
       # subject line is the one place a release is deliberate, so this lane reads
       # only that. The Rust step below turns it off for the same reason.
+      #
+      # TWO SCOPES ARE THIS LANE'S. The Space SDK ships inside this package
+      # (`sdks/ts/src/space`), and its commits carry the scope `sdk-space`. Read
+      # as `sdk-ts` alone, a Space SDK feature counted as a patch and was left
+      # out of the changelog below: every one after 2.5.0 would have shipped
+      # that way. A `feat` under either scope is a minor and both are listed. A
+      # major is still only the sentence above, under `sdk-ts`.
       - name: TypeScript SDK Version
         id: ts-version
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-ts\)!?: release the next major/'
-          minor_pattern: '/feat\(sdk-ts\):/'
+          minor_pattern: '/feat\((sdk-ts|sdk-space)\):/'
           version_format: '${major}.${minor}.${patch}'
           change_path: sdks/ts
           namespace: ts
@@ -122,7 +206,7 @@ jobs:
       # is the one place a release is deliberate, so this lane reads only that.
       - name: Rust SDK Version
         id: rust-version
-        uses: paulhatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
         with:
           tag_prefix: v
           major_pattern: '/\(sdk-rust\) declares the API stable/'
@@ -139,6 +223,33 @@ jobs:
         if: steps.rust-version.outputs.debug_output
         run: |
           echo "${{ steps.rust-version.outputs.debug_output }}"
+
+      # THE UI KIT IS 0.x, AND IS VERSIONED THE WAY THE CRATE IS.
+      #
+      # `@simpleplatform/ui-kit` lives in `sdks/space-ui` and its commits carry
+      # the scope `sdk-ui`. It is below 1.0, so a `!` is a minor here for the
+      # reason the Rust step above gives, and 1.0.0 is cut only by the sentence
+      # written out in full. `search_commit_body` is off for the same reason
+      # too. Its tags are `v<version>-kit`, read back by this step alone.
+      - name: UI Kit Version
+        id: kit-version
+        uses: paulhatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
+        with:
+          tag_prefix: v
+          major_pattern: '/\(sdk-ui\) declares the API stable/'
+          minor_pattern: '/(feat\(sdk-ui\):)|(\(sdk-ui\)!:)/'
+          version_format: '${major}.${minor}.${patch}'
+          change_path: sdks/space-ui
+          namespace: kit
+          bump_each_commit: false
+          search_commit_body: false
+          enable_prerelease_mode: false
+          debug: false
+
+      - name: Display UI Kit Debug Output
+        if: steps.kit-version.outputs.debug_output
+        run: |
+          echo "${{ steps.kit-version.outputs.debug_output }}"
 
       # The Rust toolchain has exactly one authority in this repository and it is
       # devbox.json, the same file a contributor's toolchain comes from. Read, not
@@ -165,7 +276,7 @@ jobs:
     name: Build TypeScript SDK
     needs: version
     if: needs.version.outputs.ts-changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -177,7 +288,7 @@ jobs:
       # over a different tree without the reference here changing; the trailing
       # comment records the released tag the pinned commit carries.
       - name: Setup pnpm
-        uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v3.0.0
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10.32.1
 
@@ -210,16 +321,18 @@ jobs:
           PREV_TAG=$(git tag -l "v*-ts" --sort=-version:refname | head -n 1)
 
           if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(sdk-space)" -- sdks/ts)
           else
-            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" -- sdks/ts)
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ts)" --grep="(sdk-space)" -- sdks/ts)
           fi
 
-          # Organize commits by type
-          FEATURES=$(echo "$COMMITS" | grep "feat(sdk-ts):" || true)
-          FIXES=$(echo "$COMMITS" | grep "fix(sdk-ts):" || true)
-          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\(sdk-ts\)!:|BREAKING CHANGE" || true)
-          OTHER=$(echo "$COMMITS" | grep -v -E "feat\(sdk-ts\):|fix\(sdk-ts\):" || true)
+          # Organize commits by type. Both of this lane's scopes are read (see
+          # the version step), and a breaking commit is listed under Breaking
+          # Changes only, not a second time under Other Changes.
+          FEATURES=$(echo "$COMMITS" | grep -E "feat\((sdk-ts|sdk-space)\):" || true)
+          FIXES=$(echo "$COMMITS" | grep -E "fix\((sdk-ts|sdk-space)\):" || true)
+          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\((sdk-ts|sdk-space)\)!:|BREAKING CHANGE" || true)
+          OTHER=$(echo "$COMMITS" | grep -v -E "(feat|fix)\((sdk-ts|sdk-space)\)!?:" || true)
 
           # Build changelog
           echo "## TypeScript SDK ${{ needs.version.outputs.ts-version }}" > changelog.md
@@ -288,25 +401,48 @@ jobs:
     name: Publish TypeScript SDK
     needs: [version, build-typescript]
     if: needs.version.outputs.ts-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # NPM IS UPLOADED TO WITHOUT A TOKEN. npm is told, in each package's
+    # settings there, to trust an upload that comes from this repository, this
+    # workflow file and the environment `npmjs.org`. GitHub vouches for those
+    # three with a short-lived identity it hands the job, and `id-token` is
+    # what asks for it. So there is no npm secret to store, to replace when it
+    # expires, or to leak. Renaming the repository, this file or the
+    # environment stops the upload until npm's settings are changed to match.
+    #
+    # What that identity may do is park a version, not publish it. A person
+    # publishes it, on npm, as the steps below say.
+    #
+    # `contents` is for the tag and the release this job creates at its end.
     permissions:
       contents: write
+      id-token: write
     # ONE ENVIRONMENT PER REGISTRY, NOT ONE PER RELEASE.
     #
     # A deployment review is granted to an ENVIRONMENT, not to a job, so two
     # lanes sharing one environment are approved by one click: releasing the
     # crate would have released the package beside it. Naming the environment
     # after the registry it publishes to keeps each approval about one artifact,
-    # and gives each registry's token an environment of its own to live in.
+    # and gives a registry's token, where publishing needs one, an environment
+    # of its own to live in.
     #
     # A language added later takes its own — a Go SDK does not publish to a
     # registry at all, and a Python one would take `pypi.org`.
+    #
+    # The UI Kit is the one job that shares an environment. It is a second
+    # package on this registry, and npm trusts a publish by the environment it
+    # comes from, so `publish-ui-kit` below names `npmjs.org` too. On a run
+    # where both packages
+    # changed, one approval therefore releases both. They are reviewed together
+    # because they are used together: a kit that needs a new SDK call ships with
+    # the SDK that has it.
     environment:
       name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
     # One upload to npm at a time, and nothing else waits on it. The group names
-    # the registry and nothing else — there is one package here and only `main`
-    # reaches this job, so the registry is the whole of what has to queue.
+    # the registry and nothing else — the SDK and the UI Kit both upload to it,
+    # one after the other, and only `main` reaches these jobs, so the registry is
+    # the whole of what has to queue.
     # In-progress runs are not cancelled: a run that has already uploaded to a
     # registry cannot be undone by stopping it.
     concurrency:
@@ -328,13 +464,53 @@ jobs:
           node-version: '25'
           package-manager-cache: false
 
+      # A RUN CAN BE ASKED TO PUBLISH A VERSION THAT IS ALREADY OUT.
+      #
+      # Every push to `main` computes the version its unreleased commits have
+      # earned, so two pushes ahead of one release compute the same number, and
+      # the second run still waits for its approval after the first has
+      # published. The registry refuses a version it holds, which made that
+      # second approval a failed run with nothing wrong behind it.
+      #
+      # So the registry and the tag are asked first: a version the registry
+      # holds is not uploaded again, and a tag that exists is not released
+      # again. They are asked separately because they are written separately. A
+      # run that uploaded and then stopped leaves a version with no tag, and
+      # without its tag this lane would compute that same version for every
+      # later commit; the release step still runs then, and finishes it.
+      #
+      # A registry that cannot be reached reads as "not published". The upload
+      # is then attempted, and the registry itself is the judge of it.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.ts-version }}
+          TAG: ${{ needs.version.outputs.ts-version-tag }}
+        run: |
+          if [ "$(npm view "@simpleplatform/sdk@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "@simpleplatform/sdk ${VERSION} is already on npm. It is not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Enable Corepack
+        if: steps.released.outputs.on-registry != 'true'
         run: corepack enable
 
       - name: Install dependencies
+        if: steps.released.outputs.on-registry != 'true'
         run: pnpm install
 
       - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: changelog
@@ -353,34 +529,326 @@ jobs:
       # job carries the changelog this run generated, so there is no CHANGELOG.md
       # in the tree that could fall out of step with what was actually published.
       - name: Update package version
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
           pnpm version ${{ needs.version.outputs.ts-version }} --no-git-tag-version
 
-      - name: Publish to npm
+      # THE JOB PARKS THE VERSION ON NPM, AND A PERSON PUBLISHES IT. npm holds
+      # what is uploaded here where nobody can install it, until a maintainer
+      # approves it on npmjs.com with a two-factor code. The script that parks
+      # it says why.
+      - name: Park the version on npm
+        if: steps.released.outputs.on-registry != 'true'
         run: |
           cd sdks/ts
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # pnpm packs the package, as it always has. npm uploads the file,
+          # because npm is what proves to the registry where this job runs.
+          pnpm pack --pack-destination "${RUNNER_TEMP}/sdk"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: ${{ needs.version.outputs.ts-version-tag }}
-          name: TypeScript SDK ${{ needs.version.outputs.ts-version }}
-          body_path: changelog.md
-          draft: false
-          prerelease: ${{ contains(needs.version.outputs.ts-version, '-') }}
+          # Packing does not build. A file packed without the built code is
+          # refused here, before it can be uploaded: the script says how it
+          # tells.
+          "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/sdk/*.tgz
+
+          "${GITHUB_WORKSPACE}/scripts/stage-packed-package.sh" "${RUNNER_TEMP}"/sdk/*.tgz
+
+      # THE JOB GOES ON THE MOMENT THE VERSION IS PUBLIC. It looks at the
+      # registry every few seconds, so the wait is as long as the approval
+      # takes. The tag and the release below are made only then, so a tag
+      # always means the package is out. A job that gave up waiting is run
+      # again after the approval: it finds the version published, skips the
+      # upload, and makes the tag.
+      - name: Wait for the approval on npm
+        if: steps.released.outputs.on-registry != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.ts-version }}
+        run: scripts/wait-until-published.sh "@simpleplatform/sdk" "$VERSION"
+
+      # THE TAG NAMES THE COMMIT THIS RUN BUILT.
+      #
+      # A publish waits on a review, and `main` moves while it waits. Naming the
+      # commit here puts the tag on the tree the package was built from, so the
+      # tag, the registry and the changelog describe one commit, and the next
+      # version is computed over exactly what came after it.
+      #
+      # THE RELEASE IS CREATED WITH GITHUB'S OWN COMMAND, which is on every
+      # runner. A publish job can write to this repository, and with this no
+      # action from outside GitHub runs in one.
+      - name: Create GitHub Release
+        if: steps.released.outputs.tagged != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.ts-version-tag }}
+          VERSION: ${{ needs.version.outputs.ts-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.ts-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TypeScript SDK ${VERSION}" \
+            --notes-file changelog.md \
+            --prerelease="$PRERELEASE"
+
+  build-ui-kit:
+    name: Build UI Kit
+    needs: version
+    if: needs.version.outputs.kit-changed == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '25'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint
+
+      # The kit is typed against the SDK of this workspace, which an install
+      # does not build, so the SDK is built first.
+      - name: Build TypeScript SDK
+        run: |
+          cd sdks/ts
+          pnpm build
+
+      # `pnpm test` builds the kit and then runs its tests, as the crate's job
+      # runs `cargo test`: what is published has been built and tested here.
+      - name: Build and test UI Kit
+        run: |
+          cd sdks/space-ui
+          pnpm test
+
+      - name: Generate Changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          # Get the previous tag for this package
+          PREV_TAG=$(git tag -l "v*-kit" --sort=-version:refname | head -n 1)
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"* %s (%h)" --grep="(sdk-ui)" -- sdks/space-ui)
+          else
+            COMMITS=$(git log ${PREV_TAG}..HEAD --pretty=format:"* %s (%h)" --grep="(sdk-ui)" -- sdks/space-ui)
+          fi
+
+          # Organize commits by type
+          FEATURES=$(echo "$COMMITS" | grep "feat(sdk-ui):" || true)
+          FIXES=$(echo "$COMMITS" | grep "fix(sdk-ui):" || true)
+          BREAKING=$(echo "$COMMITS" | grep -E "(feat|fix)\(sdk-ui\)!:" || true)
+          OTHER=$(echo "$COMMITS" | grep -v -E "(feat|fix)\(sdk-ui\)!?:" || true)
+
+          # Build changelog
+          echo "## UI Kit ${{ needs.version.outputs.kit-version }}" > kit-changelog.md
+          echo "" >> kit-changelog.md
+
+          if [ -n "$BREAKING" ]; then
+            echo "### ⚠️ Breaking Changes" >> kit-changelog.md
+            echo "$BREAKING" >> kit-changelog.md
+            echo "" >> kit-changelog.md
+          fi
+
+          if [ -n "$FEATURES" ]; then
+            echo "### ✨ Features" >> kit-changelog.md
+            echo "$FEATURES" >> kit-changelog.md
+            echo "" >> kit-changelog.md
+          fi
+
+          if [ -n "$FIXES" ]; then
+            echo "### 🐛 Bug Fixes" >> kit-changelog.md
+            echo "$FIXES" >> kit-changelog.md
+            echo "" >> kit-changelog.md
+          fi
+
+          if [ -n "$OTHER" ]; then
+            echo "### 📝 Other Changes" >> kit-changelog.md
+            echo "$OTHER" >> kit-changelog.md
+            echo "" >> kit-changelog.md
+          fi
+
+          echo "### 📦 Installation" >> kit-changelog.md
+          echo "\`\`\`bash" >> kit-changelog.md
+          echo "pnpm add @simpleplatform/ui-kit@${{ needs.version.outputs.kit-version }}" >> kit-changelog.md
+          echo "\`\`\`" >> kit-changelog.md
+
+      - name: Upload changelog
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: kit-changelog
+          path: kit-changelog.md
+          retention-days: 5
+
+      - name: Upload build
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ui-kit
+          path: sdks/space-ui/dist
+          retention-days: 5
+
+      - name: Create Release Summary
+        if: github.ref == 'refs/heads/main' && !github.event.pull_request
+        run: |
+          echo "## 📋 UI Kit Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.version.outputs.kit-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ needs.version.outputs.kit-version-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog Preview" >> $GITHUB_STEP_SUMMARY
+          cat kit-changelog.md >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ Review the changelog above before approving the deployment**" >> $GITHUB_STEP_SUMMARY
+
+  publish-ui-kit:
+    name: Publish UI Kit
+    needs: [version, build-ui-kit]
+    if: needs.version.outputs.kit-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
+    runs-on: ubuntu-24.04
+    # Published without a token, as the SDK is; the note on `publish-typescript`
+    # says how.
+    permissions:
+      contents: write
+      id-token: write
+    # The same environment and the same queue as `publish-typescript`: this is
+    # the second package on npm, and npm is told to trust both from this one
+    # environment. The note on that job says what sharing the environment means
+    # for an approval.
+    environment:
+      name: npmjs.org
+      url: https://www.npmjs.com/package/@simpleplatform/ui-kit/v/${{ needs.version.outputs.kit-version }}
+    concurrency:
+      group: publish-npmjs.org
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '25'
+          package-manager-cache: false
+
+      # Asked first, for the reason given on `publish-typescript`: a version npm
+      # holds is not uploaded again, and a tag that exists is not released again.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.kit-version }}
+          TAG: ${{ needs.version.outputs.kit-version-tag }}
+        run: |
+          if [ "$(npm view "@simpleplatform/ui-kit@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "@simpleplatform/ui-kit ${VERSION} is already on npm. It is not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable Corepack
+        if: steps.released.outputs.on-registry != 'true'
+        run: corepack enable
+
+      - name: Install dependencies
+        if: steps.released.outputs.on-registry != 'true'
+        run: pnpm install
+
+      - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: kit-changelog
+
+      # Nothing has built the kit in this checkout: it has no `prepare` script.
+      # It is typed against the SDK of this workspace, so that is built first.
+      - name: Build TypeScript SDK
+        if: steps.released.outputs.on-registry != 'true'
+        run: |
+          cd sdks/ts
+          pnpm build
+
+      - name: Build UI Kit
+        if: steps.released.outputs.on-registry != 'true'
+        run: |
+          cd sdks/space-ui
+          pnpm build
+
+      # The version of record is the tag and the registry, as for the SDK: the
+      # number in `sdks/space-ui/package.json` is not what is published.
+      - name: Update package version
+        if: steps.released.outputs.on-registry != 'true'
+        run: |
+          cd sdks/space-ui
+          pnpm version ${{ needs.version.outputs.kit-version }} --no-git-tag-version
+
+      # Parked, then published by a person on npm, as the SDK is.
+      - name: Park the version on npm
+        if: steps.released.outputs.on-registry != 'true'
+        run: |
+          cd sdks/space-ui
+          # pnpm packs the package, as it always has. npm uploads the file,
+          # because npm is what proves to the registry where this job runs.
+          pnpm pack --pack-destination "${RUNNER_TEMP}/ui-kit"
+
+          # Packing does not build. A file packed without the built code is
+          # refused here, before it can be uploaded: the script says how it
+          # tells.
+          "${GITHUB_WORKSPACE}/scripts/check-packed-package.sh" "${RUNNER_TEMP}"/ui-kit/*.tgz
+
+          "${GITHUB_WORKSPACE}/scripts/stage-packed-package.sh" "${RUNNER_TEMP}"/ui-kit/*.tgz
+
+      # The tag and the release wait for the approval on npm, for the reason
+      # given on `publish-typescript`.
+      - name: Wait for the approval on npm
+        if: steps.released.outputs.on-registry != 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.kit-version }}
+        run: scripts/wait-until-published.sh "@simpleplatform/ui-kit" "$VERSION"
+
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
+      - name: Create GitHub Release
+        if: steps.released.outputs.tagged != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.kit-version-tag }}
+          VERSION: ${{ needs.version.outputs.kit-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.kit-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "UI Kit ${VERSION}" \
+            --notes-file kit-changelog.md \
+            --prerelease="$PRERELEASE"
 
   build-rust:
     name: Build Rust SDK
     needs: version
     if: needs.version.outputs.rust-changed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -512,7 +980,7 @@ jobs:
     name: Publish Rust SDK
     needs: [version, build-rust]
     if: needs.version.outputs.rust-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     # Its own environment, so approving a crate release approves exactly that.
@@ -531,7 +999,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Asked first, for the reason given on `publish-typescript`.
+      #
+      # One `cargo publish` uploads both crates, so the upload is skipped only
+      # when crates.io holds this version of both. One without the other is a
+      # release that stopped half way; it is left to run and fail where it can
+      # be seen, because nothing here can finish it safely.
+      - name: Check what is already released
+        id: released
+        env:
+          VERSION: ${{ needs.version.outputs.rust-version }}
+          TAG: ${{ needs.version.outputs.rust-version-tag }}
+        run: |
+          held=0
+          for crate in simpleplatform-sdk-macros simpleplatform-sdk; do
+            if curl --fail --silent --output /dev/null \
+              --user-agent "simple-sdks release workflow (https://github.com/simple-platform/simple-sdks)" \
+              "https://crates.io/api/v1/crates/${crate}/${VERSION}"; then
+              held=$((held + 1))
+            fi
+          done
+
+          if [ "$held" -eq 2 ]; then
+            echo "on-registry=true" >> "$GITHUB_OUTPUT"
+            echo "simpleplatform-sdk ${VERSION} and its derive are already on crates.io. They are not uploaded again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "on-registry=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "The tag ${TAG} exists. No release is created again." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Rust
+        if: steps.released.outputs.on-registry != 'true'
         env:
           RUST_VERSION: ${{ needs.version.outputs.rust-toolchain }}
         run: |
@@ -541,6 +1045,7 @@ jobs:
           rustc --version
 
       - name: Download changelog
+        if: steps.released.outputs.tagged != 'true'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: rust-changelog
@@ -560,6 +1065,7 @@ jobs:
       # sits inside braces on its own line. The count is asserted first, so the
       # step rewrites exactly the one line it means to.
       - name: Update crate version
+        if: steps.released.outputs.on-registry != 'true'
         working-directory: sdks/rust
         run: |
           set -euo pipefail
@@ -615,6 +1121,7 @@ jobs:
       # this step fail, because cargo refuses a version the registry already
       # holds before it packages anything.
       - name: Publish to crates.io
+        if: steps.released.outputs.on-registry != 'true'
         working-directory: sdks/rust
         env:
           # `CRATE_PUBLISH_TOKEN` is a secret of the `crates.io` environment above,
@@ -628,13 +1135,19 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATE_PUBLISH_TOKEN }}
         run: cargo publish --allow-dirty
 
+      # The tag names the commit this run built, for the reason given on
+      # `publish-typescript`.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
-        with:
-          tag_name: ${{ needs.version.outputs.rust-version-tag }}
-          name: Rust SDK ${{ needs.version.outputs.rust-version }}
-          body_path: rust-changelog.md
-          draft: false
-          prerelease: ${{ contains(needs.version.outputs.rust-version, '-') }}
+        if: steps.released.outputs.tagged != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.rust-version-tag }}
+          VERSION: ${{ needs.version.outputs.rust-version }}
+          PRERELEASE: ${{ contains(needs.version.outputs.rust-version, '-') }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Rust SDK ${VERSION}" \
+            --notes-file rust-changelog.md \
+            --prerelease="$PRERELEASE"
