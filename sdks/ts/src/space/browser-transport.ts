@@ -2,6 +2,7 @@ import type { GraphQLVariables, SpaceDataTransport } from './core.js'
 import type { SpaceNavigationTransport } from './navigation.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
 import type { RecordFormCapabilities } from './record-form.js'
+import type { SpaceThemeSnapshot } from './theme.js'
 import type { HeaderAction, SpaceHeaderStatus, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
   SpaceDataError,
@@ -11,6 +12,7 @@ import {
   createFormModelSubscriptionManager,
   createRecordFormCapabilities,
 } from './record-form.js'
+import { parseThemeSnapshot } from './theme.js'
 
 export interface MessagePortLike {
   close?: () => void
@@ -24,7 +26,11 @@ export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderSt
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
 }
 
-export function createMessagePortTransport(port: MessagePortLike, targetOrigin: string): BrowserSpaceTransport {
+export function createMessagePortTransport(
+  port: MessagePortLike,
+  targetOrigin: string,
+  onThemeChanged?: (theme: SpaceThemeSnapshot) => void,
+): BrowserSpaceTransport {
   const headerCallbacks = new Map<string, () => Promise<void> | void>()
   const formModelManager = createFormModelSubscriptionManager()
   const pendingData = new Map<string, {
@@ -59,10 +65,21 @@ export function createMessagePortTransport(port: MessagePortLike, targetOrigin: 
       form: unknown
       id: unknown
       response: ProtocolResponse<unknown>
+      theme: unknown
       type: string
     }>
     if (envelope.type === 'SPACE_RECORD_FORM_UPDATE') {
       formModelManager.handleUpdate(envelope.form)
+      return
+    }
+
+    if (envelope.type === 'THEME_CHANGED') {
+      if (onThemeChanged) {
+        const snapshot = parseThemeSnapshot(envelope.theme)
+        if (snapshot) {
+          onThemeChanged(snapshot)
+        }
+      }
       return
     }
 

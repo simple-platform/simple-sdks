@@ -50,11 +50,96 @@ function replaceGlobal(name, value) {
 class FakeSpaceWindow {
   listeners = new Set()
   parentMessages = []
-  document = {
-    documentElement: {
-      style: { overscrollBehaviorX: 'auto', overscrollBehaviorY: 'auto' },
-    },
-  }
+  document = (() => {
+    const head = {
+      appendChild(child) {
+        this.children.push(child)
+        return child
+      },
+      children: [],
+      querySelector(selector) {
+        if (selector === 'link[data-simple-font="google"]') {
+          return this.children.find(child => child.getAttribute?.('data-simple-font') === 'google' || child['data-simple-font'] === 'google') ?? null
+        }
+        return null
+      },
+      removeChild(child) {
+        const index = this.children.indexOf(child)
+        if (index !== -1) {
+          this.children.splice(index, 1)
+        }
+        return child
+      },
+    }
+
+    const doc = {
+      createElement(tagName) {
+        if (tagName === 'link') {
+          const link = {
+            attributes: new Map(),
+            getAttribute(name) {
+              return this.attributes.get(name) ?? null
+            },
+            href: '',
+            rel: '',
+            remove() {
+              const index = head.children.indexOf(link)
+              if (index !== -1) {
+                head.children.splice(index, 1)
+              }
+            },
+            setAttribute(name, value) {
+              this.attributes.set(name, value)
+              this[name] = value
+            },
+          }
+          return link
+        }
+        return {}
+      },
+      documentElement: {
+        classList: {
+          classes: new Set(),
+          contains(name) {
+            return this.classes.has(name)
+          },
+          toggle(name, force) {
+            const shouldAdd = force ?? !this.classes.has(name)
+            if (shouldAdd) {
+              this.classes.add(name)
+            }
+            else {
+              this.classes.delete(name)
+            }
+            return shouldAdd
+          },
+        },
+        style: {
+          getPropertyValue(name) {
+            return this.properties.get(name) ?? ''
+          },
+          overscrollBehaviorX: 'auto',
+          overscrollBehaviorY: 'auto',
+          properties: new Map(),
+          removeProperty(name) {
+            const value = this.properties.get(name) ?? ''
+            this.properties.delete(name)
+            delete this[name]
+            return value
+          },
+          setProperty(name, value) {
+            this.properties.set(name, value)
+            this[name] = value
+          },
+        },
+      },
+      head,
+      querySelector(selector) {
+        return head.querySelector(selector)
+      },
+    }
+    return doc
+  })()
 
   parent = {
     postMessage: (message, targetOrigin) => this.parentMessages.push({ message, targetOrigin }),
@@ -98,14 +183,19 @@ const recordContext = {
   tableName: 'user',
 }
 
-async function connectWithHost(port, context, protocols, runtime) {
-  const spaceWindow = new FakeSpaceWindow()
+async function connectWithHost(port, context, protocols, runtime, theme, spaceWindow = new FakeSpaceWindow()) {
   const restoreWindow = replaceGlobal('window', spaceWindow)
 
   try {
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
     spaceWindow.dispatchMessage({
-      data: { context, protocols, ...(runtime ? { runtime } : {}), type: 'INIT_RPC' },
+      data: {
+        context,
+        protocols,
+        ...(runtime ? { runtime } : {}),
+        ...(theme !== undefined ? { theme } : {}),
+        type: 'INIT_RPC',
+      },
       origin: 'https://acme.simple.lcl',
       ports: [port],
     })
@@ -125,7 +215,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -508,7 +598,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -555,6 +645,7 @@ test('SPACE_READY advertises supported protocol versions including records: [1]'
       records: [1],
       tabs: [1],
       task: [1],
+      theme: [1],
       toast: [1],
     })
   }
@@ -1230,5 +1321,662 @@ test('ends a tab request with timeout when the host has closed its port', { time
   finally {
     spacePort.close()
     hostPort.close()
+  }
+})
+
+test('applies initial theme snapshot to document CSS custom properties when theme protocol is negotiated', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          mode: 'light',
+          tokens: {
+            '--simple-color-canvas': '#ffffff',
+            '--simple-color-text-primary': '#0f172a',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const simple = await connection
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#ffffff')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-text-primary'), '#0f172a')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), false)
+    assert.equal('theme' in simple, false)
+    assert.equal('ui' in simple && 'theme' in simple.ui, false)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('fully replaces applied theme tokens when THEME_CHANGED arrives over MessagePort', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          mode: 'light',
+          tokens: {
+            '--simple-color-canvas': '#ffffff',
+            '--simple-color-surface': '#f8fafc',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#ffffff')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-surface'), '#f8fafc')
+
+    port.emit({
+      theme: {
+        mode: 'light',
+        tokens: {
+          '--simple-color-canvas': '#f1f5f9',
+        },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#f1f5f9')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-surface'), '')
+    assert.equal('--simple-color-surface' in spaceWindow.document.documentElement.style, false)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('toggles dark class on documentElement based on theme snapshot mode and live updates', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          mode: 'dark',
+          tokens: {
+            '--simple-color-canvas': '#111827',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+
+    port.emit({
+      theme: {
+        mode: 'light',
+        tokens: {
+          '--simple-color-canvas': '#ffffff',
+        },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), false)
+
+    port.emit({
+      theme: {
+        mode: 'dark',
+        tokens: {
+          '--simple-color-canvas': '#000000',
+        },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('isolates malformed or unknown theme data so connect succeeds and invalid updates are ignored', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          mode: 'dark',
+          tokens: {
+            '--not-simple': '#ff0000',
+            '--simple-invalid-val': 12345,
+            '--simple-valid': '#00ff00',
+            'color': 'blue',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const simple = await connection
+    assert.ok(simple)
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-valid'), '#00ff00')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--not-simple'), '')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('color'), '')
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-invalid-val'), '')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+
+    // Malformed live THEME_CHANGED with unsupported version is ignored
+    port.emit({
+      theme: {
+        mode: 'light',
+        tokens: { '--simple-valid': '#ffffff' },
+        version: 2,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-valid'), '#00ff00')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+
+    // Malformed live THEME_CHANGED with null theme is ignored
+    port.emit({
+      theme: null,
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-valid'), '#00ff00')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+
+    // Malformed live THEME_CHANGED with invalid mode is ignored
+    port.emit({
+      theme: {
+        mode: 'sepia',
+        tokens: { '--simple-valid': '#ffffff' },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-valid'), '#00ff00')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), true)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('connect succeeds without applying theme when initial theme has unknown version or non-object shape', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          mode: 'dark',
+          tokens: { '--simple-color': '#000000' },
+          version: 999,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const simple = await connection
+    assert.ok(simple)
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color'), '')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), false)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('does not apply theme or process live updates when theme capability was not negotiated', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { record: 1 },
+        theme: {
+          mode: 'dark',
+          tokens: {
+            '--simple-color-canvas': '#000000',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const simple = await connection
+    assert.ok(simple)
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), false)
+
+    port.emit({
+      theme: {
+        mode: 'dark',
+        tokens: {
+          '--simple-color-canvas': '#111827',
+        },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '')
+    assert.equal(spaceWindow.document.documentElement.classList.contains('dark'), false)
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('inserts Google font stylesheet link before connect resolves when theme includes valid font metadata', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          fonts: {
+            sans: {
+              family: 'Inter',
+              provider: 'google',
+              weights: [400, 700],
+            },
+          },
+          mode: 'light',
+          tokens: {
+            '--simple-color-canvas': '#ffffff',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#ffffff')
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    const link = spaceWindow.document.head.children[0]
+    assert.equal(link.rel, 'stylesheet')
+    assert.equal(link.href, 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap')
+    assert.equal(link.getAttribute('data-simple-font'), 'google')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('supports both sans and mono Google fonts and builds multi-family CSS2 URL', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          fonts: {
+            mono: {
+              family: 'Roboto Mono',
+              provider: 'google',
+              weights: [400],
+            },
+            sans: {
+              family: 'Open Sans',
+              provider: 'google',
+              weights: [300, 600],
+            },
+          },
+          mode: 'light',
+          tokens: {},
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    const link = spaceWindow.document.head.children[0]
+    assert.equal(link.rel, 'stylesheet')
+    assert.equal(link.href, 'https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;600&family=Roboto+Mono:wght@400&display=swap')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('updates existing stable stylesheet link in place on live family and weight changes', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          fonts: {
+            sans: {
+              family: 'Inter',
+              provider: 'google',
+              weights: [400],
+            },
+          },
+          mode: 'light',
+          tokens: {},
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    const initialLink = spaceWindow.document.head.children[0]
+    assert.equal(initialLink.href, 'https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap')
+
+    port.emit({
+      theme: {
+        fonts: {
+          sans: {
+            family: 'Plus Jakarta Sans',
+            provider: 'google',
+            weights: [500, 700],
+          },
+        },
+        mode: 'light',
+        tokens: {},
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    assert.equal(spaceWindow.document.head.children[0], initialLink)
+    assert.equal(initialLink.href, 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700&display=swap')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('removes stylesheet link when font metadata disappears on reset, and recreates on subsequent update', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          fonts: {
+            sans: {
+              family: 'Inter',
+              provider: 'google',
+              weights: [400],
+            },
+          },
+          mode: 'light',
+          tokens: {},
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    await connection
+
+    assert.equal(spaceWindow.document.head.children.length, 1)
+
+    // Reset without fonts field removes link
+    port.emit({
+      theme: {
+        mode: 'light',
+        tokens: {},
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.head.children.length, 0)
+
+    // Re-adding font metadata inserts new link
+    port.emit({
+      theme: {
+        fonts: {
+          mono: {
+            family: 'Fira Code',
+            provider: 'google',
+            weights: [400],
+          },
+        },
+        mode: 'dark',
+        tokens: {},
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    assert.equal(spaceWindow.document.head.children[0].href, 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&display=swap')
+  }
+  finally {
+    restoreWindow()
+  }
+})
+
+test('rejects malicious provider, family, weight, and URL metadata while preserving valid colors and tokens', async () => {
+  const port = new FakePort()
+  const spaceWindow = new FakeSpaceWindow()
+  const restoreWindow = replaceGlobal('window', spaceWindow)
+
+  try {
+    const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
+    spaceWindow.dispatchMessage({
+      data: {
+        context: { kind: 'standalone' },
+        protocols: { theme: 1 },
+        theme: {
+          fonts: {
+            maliciousUrl: 'https://evil.com/font.css',
+            mono: {
+              family: 'CustomFont',
+              provider: 'evil-cdn',
+              weights: [400],
+            },
+            sans: {
+              family: 'Inter; @import url("https://evil.com/hack.css")',
+              provider: 'google',
+              weights: [400],
+            },
+          },
+          mode: 'light',
+          tokens: {
+            '--simple-color-canvas': '#ffffff',
+          },
+          version: 1,
+        },
+        type: 'INIT_RPC',
+      },
+      origin: 'https://acme.simple.lcl',
+      ports: [port],
+    })
+    const client = await connection
+    assert.ok(client)
+
+    // Colors and tokens applied successfully
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#ffffff')
+    // No malicious font stylesheet link inserted
+    assert.equal(spaceWindow.document.head.children.length, 0)
+
+    // Rejection of malicious URL property on descriptor
+    port.emit({
+      theme: {
+        fonts: {
+          sans: {
+            family: 'Inter',
+            provider: 'google',
+            url: 'https://evil.com/override.css',
+            weights: [400],
+          },
+        },
+        mode: 'light',
+        tokens: { '--simple-color-canvas': '#f8fafc' },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#f8fafc')
+    assert.equal(spaceWindow.document.head.children.length, 0)
+
+    // Rejection of invalid weights
+    for (const badWeights of [[], [0], [1000], [450], [400, 400], ['400'], [Number.NaN], [Infinity]]) {
+      port.emit({
+        theme: {
+          fonts: {
+            sans: {
+              family: 'Inter',
+              provider: 'google',
+              weights: badWeights,
+            },
+          },
+          mode: 'light',
+          tokens: { '--simple-color-canvas': '#111111' },
+          version: 1,
+        },
+        type: 'THEME_CHANGED',
+      })
+      assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#111111')
+      assert.equal(spaceWindow.document.head.children.length, 0)
+    }
+
+    // Rejection of invalid family names
+    for (const badFamily of ['', '   ', ' Inter', 'Inter ', '-Inter', 'Inter-', 'Inter--Mono', 'Inter  Mono', 'Inter<script>', 'a'.repeat(101)]) {
+      port.emit({
+        theme: {
+          fonts: {
+            sans: {
+              family: badFamily,
+              provider: 'google',
+              weights: [400],
+            },
+          },
+          mode: 'light',
+          tokens: { '--simple-color-canvas': '#222222' },
+          version: 1,
+        },
+        type: 'THEME_CHANGED',
+      })
+      assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#222222')
+      assert.equal(spaceWindow.document.head.children.length, 0)
+    }
+
+    // Rejection of fonts as string URL
+    port.emit({
+      theme: {
+        fonts: 'https://evil.com/font.css',
+        mode: 'light',
+        tokens: { '--simple-color-canvas': '#333333' },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#333333')
+    assert.equal(spaceWindow.document.head.children.length, 0)
+
+    // Valid sans alongside invalid mono still accepts valid sans
+    port.emit({
+      theme: {
+        fonts: {
+          mono: {
+            family: 'Evil<Script>',
+            provider: 'google',
+            weights: [400],
+          },
+          sans: {
+            family: 'Inter',
+            provider: 'google',
+            weights: [400],
+          },
+        },
+        mode: 'light',
+        tokens: { '--simple-color-canvas': '#444444' },
+        version: 1,
+      },
+      type: 'THEME_CHANGED',
+    })
+    assert.equal(spaceWindow.document.documentElement.style.getPropertyValue('--simple-color-canvas'), '#444444')
+    assert.equal(spaceWindow.document.head.children.length, 1)
+    assert.equal(spaceWindow.document.head.children[0].href, 'https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap')
+  }
+  finally {
+    restoreWindow()
   }
 })
