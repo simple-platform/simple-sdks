@@ -64,12 +64,13 @@ test('maps unsupported tones to neutral and preserves long labels', () => {
   assert.equal(base.textContent, label)
 })
 
-test('uses only StatusBadge-local variables in its component stylesheet', () => {
+test('uses shared status and typography tokens in its component stylesheet', () => {
   const badge = renderBadge({ label: 'Ready', tone: 'success' })
   const stylesheet = badge.shadowRoot.querySelector('style').textContent
 
-  assert.match(stylesheet, /var\(--simple-status-badge-success-background\)/)
-  assert.doesNotMatch(stylesheet, /var\(--simple-color-/)
+  assert.match(stylesheet, /var\(--simple-color-status-success-background\)/)
+  assert.match(stylesheet, /var\(--simple-font-family-sans\)/)
+  assert.doesNotMatch(stylesheet, /var\(--simple-status-badge-/)
   assert.doesNotMatch(stylesheet, /#[0-9a-f]{3,8}|rgb\(|hsl\(|oklch\(/i)
 })
 

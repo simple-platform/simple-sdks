@@ -7,35 +7,478 @@
  * customers can override them in their own stylesheet.
  */
 :root {
-  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Local-development defaults. A host may replace these with a resolved tenant theme snapshot. */
+  --simple-color-canvas: hsl(0 0% 100%);
+  --simple-color-canvas-inverse: hsl(240 10% 3.9%);
+  --simple-color-surface: hsl(0 0% 100%);
+  --simple-color-surface-raised: hsl(0 0% 100%);
+  --simple-color-surface-sunken: hsl(240 4.8% 95.9%);
+  --simple-color-surface-overlay: hsl(0 0% 100%);
+  --simple-color-surface-hover: hsl(240 4.8% 93%);
+  --simple-color-surface-active: hsl(240 4.8% 90%);
+  --simple-color-surface-selected: hsl(240 4.8% 95.9%);
+  --simple-color-surface-disabled: hsl(240 4.8% 95.9%);
+  --simple-color-overlay-backdrop: hsl(0 0% 0% / 80%);
+  --simple-color-text-primary: hsl(240 10% 3.9%);
+  --simple-color-text-secondary: hsl(240 3.8% 46.1%);
+  --simple-color-text-tertiary: hsl(240 3.8% 46.1%);
+  --simple-color-text-disabled: hsl(240 3.8% 64%);
+  --simple-color-text-inverse: hsl(0 0% 98%);
+  --simple-color-text-link: hsl(240 5.9% 10%);
+  --simple-color-text-link-hover: hsl(240 5.9% 25%);
+  --simple-color-icon-primary: hsl(240 10% 3.9%);
+  --simple-color-icon-secondary: hsl(240 3.8% 46.1%);
+  --simple-color-icon-disabled: hsl(240 3.8% 66%);
+  --simple-color-border-subtle: hsl(240 5.9% 94%);
+  --simple-color-border-default: hsl(240 5.9% 90%);
+  --simple-color-border-strong: hsl(240 5.9% 70%);
+  --simple-color-border-disabled: hsl(240 5.9% 90%);
+  --simple-color-focus-ring: hsl(240 10% 3.9%);
+  --simple-color-header-background: hsl(0 0% 100%);
+  --simple-color-header-foreground: hsl(240 10% 3.9%);
+  --simple-color-navbar-background: hsl(0 0% 98%);
+  --simple-color-navbar-foreground: hsl(240 5.3% 26.1%);
+  --simple-color-navbar-primary: hsl(240 5.9% 10%);
+  --simple-color-navbar-primary-foreground: hsl(0 0% 98%);
+  --simple-color-navbar-accent: hsl(240 4.8% 95.9%);
+  --simple-color-navbar-accent-foreground: hsl(240 5.9% 10%);
+  --simple-color-navbar-ring: hsl(217.2 91.2% 59.8%);
+  --simple-color-accent-1: hsl(221.2 83.2% 53.3%);
+  --simple-color-accent-2: hsl(212 95% 68%);
+  --simple-color-accent-3: hsl(216 92% 60%);
+  --simple-color-accent-4: hsl(210 98% 78%);
+  --simple-color-accent-5: hsl(212 97% 87%);
+  --simple-color-action-primary: #0070DD;
+  --simple-color-action-primary-hover: #005BB5;
+  --simple-color-action-primary-active: #004A99;
+  --simple-color-action-primary-foreground: #FFFFFF;
+  --simple-color-action-secondary: hsl(240 4.8% 95.9%);
+  --simple-color-action-secondary-hover: hsl(240 4.8% 93%);
+  --simple-color-action-secondary-active: hsl(240 4.8% 90%);
+  --simple-color-action-secondary-foreground: hsl(240 5.9% 10%);
+  --simple-color-action-danger: hsl(0 84.2% 60.2%);
+  --simple-color-action-danger-hover: hsl(0 84.2% 57%);
+  --simple-color-action-danger-active: hsl(0 84.2% 54%);
+  --simple-color-action-danger-foreground: hsl(0 0% 98%);
+  --simple-gradient-action-primary: none;
+  --simple-color-status-info: hsl(221 83% 35%);
+  --simple-color-status-info-background: hsl(214 95% 93%);
+  --simple-color-status-info-foreground: hsl(221 83% 35%);
+  --simple-color-status-success: hsl(142 72% 25%);
+  --simple-color-status-success-background: hsl(142 76% 90%);
+  --simple-color-status-success-foreground: hsl(142 72% 25%);
+  --simple-color-status-warning: hsl(28 80% 25%);
+  --simple-color-status-warning-background: hsl(38 92% 90%);
+  --simple-color-status-warning-foreground: hsl(28 80% 25%);
+  --simple-color-status-danger: hsl(0 84.2% 60.2%);
+  --simple-color-status-danger-background: hsl(0 84% 95%);
+  --simple-color-status-danger-foreground: hsl(0 72% 35%);
+  --simple-color-field-background: hsl(0 0% 100%);
+  --simple-color-field-background-disabled: hsl(240 4.8% 95.9%);
+  --simple-color-field-border: hsl(240 5.9% 90%);
+  --simple-color-field-border-hover: hsl(240 5.9% 70%);
+  --simple-color-field-border-invalid: hsl(0 84.2% 60.2%);
+  --simple-color-field-placeholder: hsl(240 3.8% 46.1%);
+  --simple-color-field-text: hsl(240 10% 3.9%);
+  --simple-font-family-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --simple-font-family-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --simple-font-size-2xs: 0.625rem;
+  --simple-font-size-xs: 0.75rem;
+  --simple-font-size-sm: 0.875rem;
+  --simple-font-size-md: 1rem;
+  --simple-font-size-lg: 1.125rem;
+  --simple-font-size-xl: 1.25rem;
+  --simple-font-size-2xl: 1.5rem;
+  --simple-font-size-3xl: 1.875rem;
+  --simple-font-weight-regular: 400;
+  --simple-font-weight-medium: 500;
+  --simple-font-weight-semibold: 600;
+  --simple-font-weight-bold: 700;
+  --simple-line-height-tight: 1.25;
+  --simple-line-height-normal: 1.5;
+  --simple-line-height-relaxed: 1.625;
+  --simple-letter-spacing-tight: -0.01em;
+  --simple-letter-spacing-normal: 0;
+  --simple-space-0: 0;
+  --simple-space-1: 0.25rem;
+  --simple-space-2: 0.5rem;
+  --simple-space-3: 0.75rem;
+  --simple-space-4: 1rem;
+  --simple-space-5: 1.25rem;
+  --simple-space-6: 1.5rem;
+  --simple-space-8: 2rem;
+  --simple-space-10: 2.5rem;
+  --simple-space-12: 3rem;
+  --simple-space-16: 4rem;
+  --simple-space-20: 5rem;
+  --simple-space-24: 6rem;
+  --simple-control-height-sm: 2rem;
+  --simple-control-height-md: 2.5rem;
+  --simple-control-height-lg: 3rem;
+  --simple-icon-size-sm: 1rem;
+  --simple-icon-size-md: 1.25rem;
+  --simple-icon-size-lg: 1.5rem;
+  --simple-content-width-sm: 24rem;
+  --simple-content-width-md: 42rem;
+  --simple-content-width-lg: 64rem;
+  --simple-content-width-xl: 80rem;
+  --simple-content-width-2xl: 96rem;
+  --simple-sidebar-width: 16rem;
+  --simple-radius-none: 0;
+  --simple-radius-sm: 0.25rem;
+  --simple-radius-md: 0.5rem;
+  --simple-radius-lg: 0.75rem;
+  --simple-radius-xl: 1rem;
+  --simple-radius-round: 9999px;
+  --simple-shadow-none: none;
+  --simple-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
+  --simple-shadow-md: 0 4px 6px rgb(0 0 0 / 0.1);
+  --simple-shadow-lg: 0 10px 15px rgb(0 0 0 / 0.12);
+  --simple-shadow-overlay: 0 20px 25px rgb(0 0 0 / 0.18);
+  --simple-duration-instant: 0ms;
+  --simple-duration-fast: 120ms;
+  --simple-duration-normal: 180ms;
+  --simple-duration-slow: 280ms;
+  --simple-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --simple-easing-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --simple-z-base: 0;
+  --simple-z-sticky: 100;
+  --simple-z-dropdown: 200;
+  --simple-z-overlay: 300;
+  --simple-z-modal: 400;
+  --simple-z-toast: 500;
+}
 
-  /* Local fallback values for the StatusBadge alpha, not the future token contract. */
-  --simple-status-badge-font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-  --simple-status-badge-font-size: 0.75rem;
-  --simple-status-badge-font-weight: 500;
-  --simple-status-badge-line-height: 1.25;
-  --simple-status-badge-min-height: 2rem;
-  --simple-status-badge-padding-inline: 0.5rem;
-  --simple-status-badge-radius: 9999px;
 
-  --simple-status-badge-neutral-background: #f8fafc;
-  --simple-status-badge-neutral-border: #cbd5e1;
-  --simple-status-badge-neutral-foreground: #475569;
+.dark {
+  --simple-color-action-danger: hsl(0 62.8% 30.6%);
+  --simple-color-action-danger-active: hsl(0 62.8% 25%);
+  --simple-color-action-danger-hover: hsl(0 62.8% 27%);
+  --simple-color-action-primary: #0070DD;
+  --simple-color-action-primary-active: #004A99;
+  --simple-color-action-primary-foreground: #FFFFFF;
+  --simple-color-action-primary-hover: #005BB5;
+  --simple-color-action-secondary: hsl(240 3.7% 15.9%);
+  --simple-color-action-secondary-active: hsl(240 3.7% 21%);
+  --simple-color-action-secondary-foreground: hsl(0 0% 98%);
+  --simple-color-action-secondary-hover: hsl(240 3.7% 18%);
+  --simple-color-border-default: hsl(240 3.7% 15.9%);
+  --simple-color-border-disabled: hsl(240 3.7% 15.9%);
+  --simple-color-border-strong: hsl(240 3.7% 30%);
+  --simple-color-border-subtle: hsl(240 3.7% 13%);
+  --simple-color-canvas: hsl(240 10% 3.9%);
+  --simple-color-canvas-inverse: hsl(0 0% 98%);
+  --simple-color-field-background: hsl(240 10% 3.9%);
+  --simple-color-field-background-disabled: hsl(240 3.7% 15.9%);
+  --simple-color-field-border: hsl(240 3.7% 15.9%);
+  --simple-color-field-border-hover: hsl(240 3.7% 30%);
+  --simple-color-field-border-invalid: hsl(0 62.8% 30.6%);
+  --simple-color-field-placeholder: hsl(240 5% 64.9%);
+  --simple-color-field-text: hsl(0 0% 98%);
+  --simple-color-focus-ring: hsl(240 4.9% 83.9%);
+  --simple-color-header-background: hsl(240 10% 3.9%);
+  --simple-color-header-foreground: hsl(0 0% 98%);
+  --simple-color-icon-disabled: hsl(240 5% 56%);
+  --simple-color-icon-primary: hsl(0 0% 98%);
+  --simple-color-icon-secondary: hsl(240 5% 64.9%);
+  --simple-color-navbar-accent: hsl(240 3.7% 15.9%);
+  --simple-color-navbar-accent-foreground: hsl(240 4.8% 95.9%);
+  --simple-color-navbar-background: hsl(240 5.9% 10%);
+  --simple-color-navbar-foreground: hsl(240 4.8% 95.9%);
+  --simple-color-navbar-primary: hsl(224.3 76.3% 48%);
+  --simple-color-navbar-primary-foreground: hsl(0 0% 100%);
+  --simple-color-status-danger: hsl(0 55% 42%);
+  --simple-color-status-danger-background: hsl(0 45% 24%);
+  --simple-color-status-danger-foreground: hsl(0 85% 88%);
+  --simple-color-status-info: hsl(214 70% 45%);
+  --simple-color-status-info-background: hsl(214 60% 25%);
+  --simple-color-status-info-foreground: hsl(214 95% 90%);
+  --simple-color-status-success: hsl(142 50% 38%);
+  --simple-color-status-success-background: hsl(142 45% 22%);
+  --simple-color-status-success-foreground: hsl(142 65% 85%);
+  --simple-color-status-warning: hsl(38 65% 42%);
+  --simple-color-status-warning-background: hsl(38 55% 24%);
+  --simple-color-status-warning-foreground: hsl(38 90% 85%);
+  --simple-color-surface: hsl(240 10% 3.9%);
+  --simple-color-surface-active: hsl(240 3.7% 21%);
+  --simple-color-surface-disabled: hsl(240 3.7% 15.9%);
+  --simple-color-surface-hover: hsl(240 3.7% 18%);
+  --simple-color-surface-overlay: hsl(240 10% 3.9%);
+  --simple-color-surface-raised: hsl(240 10% 3.9%);
+  --simple-color-surface-selected: hsl(240 3.7% 15.9%);
+  --simple-color-surface-sunken: hsl(240 3.7% 15.9%);
+  --simple-color-text-disabled: hsl(240 5% 50%);
+  --simple-color-text-inverse: hsl(240 10% 3.9%);
+  --simple-color-text-link: hsl(240 4.9% 83.9%);
+  --simple-color-text-link-hover: hsl(0 0% 98%);
+  --simple-color-text-primary: hsl(0 0% 98%);
+  --simple-color-text-secondary: hsl(240 5% 64.9%);
+}
 
-  --simple-status-badge-info-background: #e0f2fe;
-  --simple-status-badge-info-border: #0369a1;
-  --simple-status-badge-info-foreground: #075985;
+@theme {
+  /* shadcn color tokens */
+  --color-background: var(--simple-color-canvas);
+  --color-foreground: var(--simple-color-text-primary);
+  --color-card: var(--simple-color-surface-raised);
+  --color-card-foreground: var(--simple-color-text-primary);
+  --color-popover: var(--simple-color-surface-overlay);
+  --color-popover-foreground: var(--simple-color-text-primary);
+  --color-primary: var(--simple-color-action-primary);
+  --color-primary-foreground: var(--simple-color-action-primary-foreground);
+  --color-secondary: var(--simple-color-action-secondary);
+  --color-secondary-foreground: var(--simple-color-action-secondary-foreground);
+  --color-muted: var(--simple-color-surface-sunken);
+  --color-muted-foreground: var(--simple-color-text-secondary);
+  --color-accent: var(--simple-color-surface-hover);
+  --color-accent-foreground: var(--simple-color-text-primary);
+  --color-destructive: var(--simple-color-action-danger);
+  --color-destructive-foreground: var(--simple-color-action-danger-foreground);
+  --color-border: var(--simple-color-border-default);
+  --color-input: var(--simple-color-field-border);
+  --color-ring: var(--simple-color-focus-ring);
 
-  --simple-status-badge-success-background: #dcfce7;
-  --simple-status-badge-success-border: #15803d;
-  --simple-status-badge-success-foreground: #166534;
+  /* shadcn sidebar color tokens */
+  --color-sidebar: var(--simple-color-navbar-background);
+  --color-sidebar-background: var(--simple-color-navbar-background);
+  --color-sidebar-foreground: var(--simple-color-navbar-foreground);
+  --color-sidebar-primary: var(--simple-color-navbar-primary);
+  --color-sidebar-primary-foreground: var(--simple-color-navbar-primary-foreground);
+  --color-sidebar-accent: var(--simple-color-navbar-accent);
+  --color-sidebar-accent-foreground: var(--simple-color-navbar-accent-foreground);
+  --color-sidebar-border: var(--simple-color-border-default);
+  --color-sidebar-ring: var(--simple-color-navbar-ring);
 
-  --simple-status-badge-warning-background: #fef3c7;
-  --simple-status-badge-warning-border: #b45309;
-  --simple-status-badge-warning-foreground: #92400e;
+  --color-navbar: var(--simple-color-navbar-background);
+  --color-navbar-background: var(--simple-color-navbar-background);
+  --color-navbar-foreground: var(--simple-color-navbar-foreground);
+  --color-navbar-primary: var(--simple-color-navbar-primary);
+  --color-navbar-primary-foreground: var(--simple-color-navbar-primary-foreground);
+  --color-navbar-accent: var(--simple-color-navbar-accent);
+  --color-navbar-accent-foreground: var(--simple-color-navbar-accent-foreground);
+  --color-navbar-border: var(--simple-color-border-default);
+  --color-navbar-ring: var(--simple-color-navbar-ring);
 
-  --simple-status-badge-danger-background: #fee2e2;
-  --simple-status-badge-danger-border: #b91c1c;
-  --simple-status-badge-danger-foreground: #991b1b;
+  /* Semantic utility families: header */
+  --color-header-background: var(--simple-color-header-background);
+  --color-header-foreground: var(--simple-color-header-foreground);
+  --color-header-border: var(--simple-color-border-default);
+
+  /* shadcn chart utilities */
+  --color-chart-1: var(--simple-color-accent-1);
+  --color-chart-2: var(--simple-color-accent-2);
+  --color-chart-3: var(--simple-color-accent-3);
+  --color-chart-4: var(--simple-color-accent-4);
+  --color-chart-5: var(--simple-color-accent-5);
+
+  /* Semantic utility families: canvas */
+  --color-canvas: var(--simple-color-canvas);
+  --color-canvas-inverse: var(--simple-color-canvas-inverse);
+
+  /* Semantic utility families: surface */
+  --color-surface: var(--simple-color-surface);
+  --color-surface-raised: var(--simple-color-surface-raised);
+  --color-surface-sunken: var(--simple-color-surface-sunken);
+  --color-surface-overlay: var(--simple-color-surface-overlay);
+  --color-surface-hover: var(--simple-color-surface-hover);
+  --color-surface-active: var(--simple-color-surface-active);
+  --color-surface-selected: var(--simple-color-surface-selected);
+  --color-surface-disabled: var(--simple-color-surface-disabled);
+
+  /* Semantic utility families: text */
+  --color-text-primary: var(--simple-color-text-primary);
+  --color-text-secondary: var(--simple-color-text-secondary);
+  --color-text-tertiary: var(--simple-color-text-tertiary);
+  --color-text-disabled: var(--simple-color-text-disabled);
+  --color-text-inverse: var(--simple-color-text-inverse);
+  --color-text-link: var(--simple-color-text-link);
+  --color-text-link-hover: var(--simple-color-text-link-hover);
+
+  /* Semantic utility families: icon */
+  --color-icon-primary: var(--simple-color-icon-primary);
+  --color-icon-secondary: var(--simple-color-icon-secondary);
+  --color-icon-disabled: var(--simple-color-icon-disabled);
+
+  /* Semantic utility families: border */
+  --color-border-subtle: var(--simple-color-border-subtle);
+  --color-border-default: var(--simple-color-border-default);
+  --color-border-strong: var(--simple-color-border-strong);
+  --color-border-disabled: var(--simple-color-border-disabled);
+
+  /* Semantic utility families: focus */
+  --color-focus-ring: var(--simple-color-focus-ring);
+  --color-overlay-backdrop: var(--simple-color-overlay-backdrop);
+
+  /* Semantic utility families: action */
+  --color-action-primary: var(--simple-color-action-primary);
+  --color-action-primary-hover: var(--simple-color-action-primary-hover);
+  --color-action-primary-active: var(--simple-color-action-primary-active);
+  --color-action-primary-foreground: var(--simple-color-action-primary-foreground);
+  --color-action-secondary: var(--simple-color-action-secondary);
+  --color-action-secondary-hover: var(--simple-color-action-secondary-hover);
+  --color-action-secondary-active: var(--simple-color-action-secondary-active);
+  --color-action-secondary-foreground: var(--simple-color-action-secondary-foreground);
+  --color-action-danger: var(--simple-color-action-danger);
+  --color-action-danger-hover: var(--simple-color-action-danger-hover);
+  --color-action-danger-active: var(--simple-color-action-danger-active);
+  --color-action-danger-foreground: var(--simple-color-action-danger-foreground);
+  --background-image-action-primary-gradient: var(--simple-gradient-action-primary);
+
+  /* Semantic utility families: status */
+  --color-status-info: var(--simple-color-status-info);
+  --color-status-info-background: var(--simple-color-status-info-background);
+  --color-status-info-foreground: var(--simple-color-status-info-foreground);
+  --color-status-success: var(--simple-color-status-success);
+  --color-status-success-background: var(--simple-color-status-success-background);
+  --color-status-success-foreground: var(--simple-color-status-success-foreground);
+  --color-status-warning: var(--simple-color-status-warning);
+  --color-status-warning-background: var(--simple-color-status-warning-background);
+  --color-status-warning-foreground: var(--simple-color-status-warning-foreground);
+  --color-status-danger: var(--simple-color-status-danger);
+  --color-status-danger-background: var(--simple-color-status-danger-background);
+  --color-status-danger-foreground: var(--simple-color-status-danger-foreground);
+
+  /* Semantic utility families: field */
+  --color-field-background: var(--simple-color-field-background);
+  --color-field-background-disabled: var(--simple-color-field-background-disabled);
+  --color-field-border: var(--simple-color-field-border);
+  --color-field-border-hover: var(--simple-color-field-border-hover);
+  --color-field-border-invalid: var(--simple-color-field-border-invalid);
+  --color-field-placeholder: var(--simple-color-field-placeholder);
+  --color-field-text: var(--simple-color-field-text);
+
+  /* Semantic utility families: chart */
+  --color-chart-series-1: var(--simple-color-accent-1);
+  --color-chart-series-2: var(--simple-color-accent-2);
+  --color-chart-series-3: var(--simple-color-accent-3);
+  --color-chart-series-4: var(--simple-color-accent-4);
+  --color-chart-series-5: var(--simple-color-accent-5);
+
+  /* Typography: font families */
+  --font-sans: var(--simple-font-family-sans);
+  --font-mono: var(--simple-font-family-mono);
+
+  /* Typography: text size utilities */
+  --text-2xs: var(--simple-font-size-2xs);
+  --text-xs: var(--simple-font-size-xs);
+  --text-sm: var(--simple-font-size-sm);
+  --text-base: var(--simple-font-size-md);
+  --text-md: var(--simple-font-size-md);
+  --text-lg: var(--simple-font-size-lg);
+  --text-xl: var(--simple-font-size-xl);
+  --text-2xl: var(--simple-font-size-2xl);
+  --text-3xl: var(--simple-font-size-3xl);
+
+  /* Typography: font weights */
+  --font-weight-regular: var(--simple-font-weight-regular);
+  --font-weight-normal: var(--simple-font-weight-regular);
+  --font-weight-medium: var(--simple-font-weight-medium);
+  --font-weight-semibold: var(--simple-font-weight-semibold);
+  --font-weight-bold: var(--simple-font-weight-bold);
+
+  /* Typography: line heights */
+  --leading-tight: var(--simple-line-height-tight);
+  --leading-normal: var(--simple-line-height-normal);
+  --leading-relaxed: var(--simple-line-height-relaxed);
+
+  /* Typography: tracking */
+  --tracking-tight: var(--simple-letter-spacing-tight);
+  --tracking-normal: var(--simple-letter-spacing-normal);
+
+  /* Spacing and layout utilities */
+  --spacing-0: var(--simple-space-0);
+  --spacing-1: var(--simple-space-1);
+  --spacing-2: var(--simple-space-2);
+  --spacing-3: var(--simple-space-3);
+  --spacing-4: var(--simple-space-4);
+  --spacing-5: var(--simple-space-5);
+  --spacing-6: var(--simple-space-6);
+  --spacing-8: var(--simple-space-8);
+  --spacing-10: var(--simple-space-10);
+  --spacing-12: var(--simple-space-12);
+  --spacing-16: var(--simple-space-16);
+  --spacing-20: var(--simple-space-20);
+  --spacing-24: var(--simple-space-24);
+
+  --height-control-sm: var(--simple-control-height-sm);
+  --height-control-md: var(--simple-control-height-md);
+  --height-control-lg: var(--simple-control-height-lg);
+
+  --height-icon-sm: var(--simple-icon-size-sm);
+  --height-icon-md: var(--simple-icon-size-md);
+  --height-icon-lg: var(--simple-icon-size-lg);
+  --size-icon-sm: var(--simple-icon-size-sm);
+  --size-icon-md: var(--simple-icon-size-md);
+  --size-icon-lg: var(--simple-icon-size-lg);
+
+  --container-content-sm: var(--simple-content-width-sm);
+  --container-content-md: var(--simple-content-width-md);
+  --container-content-lg: var(--simple-content-width-lg);
+  --container-content-xl: var(--simple-content-width-xl);
+  --container-content-2xl: var(--simple-content-width-2xl);
+  --width-sidebar: var(--simple-sidebar-width);
+
+  /* Radii */
+  --radius: var(--simple-radius-md);
+  --radius-none: var(--simple-radius-none);
+  --radius-sm: var(--simple-radius-sm);
+  --radius-md: var(--simple-radius-md);
+  --radius-lg: var(--simple-radius-lg);
+  --radius-xl: var(--simple-radius-xl);
+  --radius-round: var(--simple-radius-round);
+  --radius-full: var(--simple-radius-round);
+
+  /* Shadows */
+  --shadow: var(--simple-shadow-md);
+  --shadow-none: var(--simple-shadow-none);
+  --shadow-sm: var(--simple-shadow-sm);
+  --shadow-md: var(--simple-shadow-md);
+  --shadow-lg: var(--simple-shadow-lg);
+  --shadow-overlay: var(--simple-shadow-overlay);
+}
+
+@media (min-width: 40rem) {
+  .container {
+    max-width: var(--simple-content-width-sm);
+  }
+}
+
+@media (min-width: 48rem) {
+  .container {
+    max-width: var(--simple-content-width-md);
+  }
+}
+
+@media (min-width: 64rem) {
+  .container {
+    max-width: var(--simple-content-width-lg);
+  }
+}
+
+@media (min-width: 80rem) {
+  .container {
+    max-width: var(--simple-content-width-xl);
+  }
+}
+
+@media (min-width: 96rem) {
+  .container {
+    max-width: var(--simple-content-width-2xl);
+  }
+}
+
+@layer utilities {
+  .lucide:is([class~='size-icon-sm'], [class~='size-4'], [class~='h-4'][class~='w-4']) {
+    height: var(--simple-icon-size-sm);
+    width: var(--simple-icon-size-sm);
+  }
+
+  .lucide:is([class~='size-icon-md'], [class~='size-5'], [class~='h-5'][class~='w-5']) {
+    height: var(--simple-icon-size-md);
+    width: var(--simple-icon-size-md);
+  }
+
+  .lucide:is([class~='size-icon-lg'], [class~='size-6'], [class~='h-6'][class~='w-6']) {
+    height: var(--simple-icon-size-lg);
+    width: var(--simple-icon-size-lg);
+  }
 }
