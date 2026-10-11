@@ -30,9 +30,11 @@ by itself.
 
 ## Current component: StatusBadge
 
+Load the stylesheet as described in [Loading the stylesheet](#loading-the-stylesheet)
+before using this example.
+
 ```tsx
 import { StatusBadge } from '@simpleplatform/ui-kit/react'
-import '@simpleplatform/ui-kit/theme.css'
 
 export function DeploymentState() {
   return <StatusBadge label="Ready" tone="success" />
@@ -59,26 +61,62 @@ Both exports are also available from the package root, `@simpleplatform/ui-kit`.
 props; the package provides no React provider or implicit SDK client.
 
 The Web Component can also be used without React. Import the `elements`
-entry once before using its tag in HTML:
+entry once before using its tag in HTML, and load the stylesheet as described
+in [Loading the stylesheet](#loading-the-stylesheet):
 
 ```ts
 import '@simpleplatform/ui-kit/elements'
-import '@simpleplatform/ui-kit/theme.css'
 ```
 
 ```html
 <simple-status-badge label="Ready" tone="success"></simple-status-badge>
 ```
 
-Import `theme.css` in the Space entry point. It bundles the Geist font files
-with the Space (so they load inside its cross-origin iframe) and provides
-`StatusBadge` defaults that use the platform's own light and dark colors and
-dimensions. The neutral tone follows the Space's `--secondary`, `--border`, and
-`--secondary-foreground` tokens when defined (as HSL triplets, the platform's
-convention), with fallback colors otherwise. A Space may override any
-`--simple-status-badge-*` variable in its own CSS, and may override the default
-font stack as well. These names stay component-local: the platform-wide semantic
-CSS-variable contract is a separate project.
+### Loading the stylesheet
+
+In a Space that uses Tailwind 4, import the kit's stylesheet inside the Space's
+Tailwind stylesheet, directly after `@import "tailwindcss";`. For example,
+`src/styles/theme.css` should begin with:
+
+```css
+@import "tailwindcss";
+@import "@simpleplatform/ui-kit/theme.css";
+```
+
+Import that Space stylesheet once from the entry point, such as `src/main.tsx`:
+
+```ts
+import './styles/theme.css'
+```
+
+The kit contains an `@theme` block that maps Tailwind names to the platform's
+theme tokens and an `@layer utilities` block, so both stylesheets need to pass
+through Tailwind together. Importing the kit's stylesheet separately from
+JavaScript can leave its `@theme` block unprocessed, which the browser ignores,
+and place the utilities layer before Tailwind's base layer. The base reset then
+overrides utilities, removing padding, margins, and borders.
+
+In a Space without Tailwind, import `@simpleplatform/ui-kit/theme.css` in the
+Space's own stylesheet and import that stylesheet once from the entry point.
+A plain import supplies the Geist and Geist Mono font files, the `:root`
+platform theme tokens and `.dark` color overrides, the responsive `.container`
+width rules, and the Lucide icon sizing rules. These are ordinary CSS and work
+without Tailwind; the browser ignores the `@theme` block, so a plain import does
+not generate Tailwind utilities or provide its theme aliases. The kit's
+stylesheet does not bundle Tailwind or its base reset.
+
+The fonts are bundled with the Space so they load inside its cross-origin
+iframe. `StatusBadge` uses the shared platform tokens for its light and dark
+colors and dimensions. Its neutral tone uses `--simple-color-surface-sunken`
+for the background, `--simple-color-border-default` for the border, and
+`--simple-color-text-secondary` for the text; these tokens contain complete
+CSS color values, not bare HSL triplets. The other tones use the corresponding
+`--simple-color-status-info*`, `--simple-color-status-success*`,
+`--simple-color-status-warning*`, and `--simple-color-status-danger*` tokens.
+A Space may override the `--simple-*` tokens in its own CSS after the imports,
+including `--simple-font-family-sans` for the font stack. These tokens are shared
+with other UI that uses the platform theme; they are not component-local
+`--simple-status-badge-*` variables.
 
 ### Runtime boundary
 
@@ -113,12 +151,14 @@ itself remains available only through the React entry point.
 `RecordForm` is the default choice for a Record Space that wants the complete
 Simple record experience without rebuilding it.
 
+Load the stylesheet as described in [Loading the stylesheet](#loading-the-stylesheet)
+before using this example.
+
 ```tsx
 import type { RecordHandle } from '@simpleplatform/sdk/space'
 import { connect } from '@simpleplatform/sdk/space'
 import { RecordForm } from '@simpleplatform/ui-kit/react'
 import { useEffect, useState } from 'react'
-import '@simpleplatform/ui-kit/theme.css'
 
 const client = connect({ targetOrigin: new URL(document.referrer).origin })
 
@@ -209,12 +249,14 @@ customer Spaces to track internal form contracts.
 `RecordActivity` is the managed component for displaying the platform activity
 stream (audit log changes and notes) for a record handle.
 
+Load the stylesheet as described in [Loading the stylesheet](#loading-the-stylesheet)
+before using this example.
+
 ```tsx
 import type { RecordHandle } from '@simpleplatform/sdk/space'
 import { connect } from '@simpleplatform/sdk/space'
 import { RecordActivity } from '@simpleplatform/ui-kit/react'
 import { useEffect, useState } from 'react'
-import '@simpleplatform/ui-kit/theme.css'
 
 const client = connect({ targetOrigin: new URL(document.referrer).origin })
 
