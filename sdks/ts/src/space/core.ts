@@ -127,9 +127,13 @@ export type SpaceContext
     kind: 'record'
     recordId: string
     tableName: string
+    /** Signed-in user ID; present from hosts with identity context support, absent on older hosts. */
+    userId?: string
   }
   | {
     kind: 'standalone'
+    /** Signed-in user ID; present from hosts with identity context support, absent on older hosts. */
+    userId?: string
   }
 
 export type GraphQLVariables = Readonly<Record<string, unknown>>
@@ -278,6 +282,9 @@ export function createSimpleClient({
 
 export function isSpaceContext(value: unknown): value is SpaceContext {
   if (!isObjectRecord(value))
+    return false
+
+  if (value.userId !== undefined && (typeof value.userId !== 'string' || value.userId.trim().length === 0))
     return false
 
   if (value.kind === 'standalone')

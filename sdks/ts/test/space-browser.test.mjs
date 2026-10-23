@@ -1017,6 +1017,35 @@ test('connects a standalone Space for data access when the host does not negotia
   }
 })
 
+for (const context of [recordContext, { kind: 'standalone' }]) {
+  test(`exposes the signed-in user ID from ${context.kind} initialization context`, async () => {
+    const hostContext = { ...context, userId: 'USR000042' }
+    const simple = await connectWithHost(new FakePort(), hostContext)
+
+    assert.deepEqual(simple.context, hostContext)
+    assert.equal(simple.context.userId, 'USR000042')
+  })
+
+  test(`leaves the user ID absent from older ${context.kind} initialization context`, async () => {
+    const simple = await connectWithHost(new FakePort(), context)
+
+    assert.deepEqual(simple.context, context)
+    assert.equal(simple.context.userId, undefined)
+    assert.equal(Object.hasOwn(simple.context, 'userId'), false)
+  })
+
+  test(`rejects malformed user IDs in ${context.kind} initialization context`, async () => {
+    for (const userId of [null, true, 42, {}, [], '', ' \t\n']) {
+      await assert.rejects(
+        () => connectWithHost(new FakePort(), { ...context, userId }),
+        error => error instanceof SpaceProtocolError
+          && error.code === 'invalid_response'
+          && error.message === 'The Space host did not provide valid context.',
+      )
+    }
+  })
+}
+
 test('rejects a host handshake that does not explicitly provide Space context', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const restoreWindow = replaceGlobal('window', spaceWindow)

@@ -345,10 +345,18 @@ switch (simple.context.kind) {
 }
 ```
 
-The two exact context forms are `{ kind: 'standalone' }` and
-`{ kind: 'record', applicationId, tableName, recordId }`. There is no
+The two context forms are `{ kind: 'standalone', userId?: string }` and
+`{ kind: 'record', applicationId, tableName, recordId, userId?: string }`. There is no
 `unknown` context variant. A missing or malformed context rejects
 `connect({ targetOrigin })` with `SpaceProtocolError` code `invalid_response`.
+
+`simple.context.userId` is the signed-in user's ID in both kinds of Space,
+present from the host version that adds identity to initialization context.
+Older hosts omit it, so Spaces must handle `undefined` explicitly before using
+it to filter tasks assigned to the viewer. The SDK does not invent an ID or
+derive it from `recordId`. A supplied ID must be a non-blank string; otherwise
+the context is malformed. This is descriptive identity, not an authorization
+grant: the host and server still enforce access.
 
 `connect({ targetOrigin })` works in any embedded Space, including standalone dashboards
 and tools. In a non-record Space, `simple.data` remains available and
