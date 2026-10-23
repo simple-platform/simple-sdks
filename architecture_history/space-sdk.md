@@ -1,5 +1,5 @@
 - **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and status, tabs with count tones, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, standalone document staging, and negotiated `simple.records.open()` are implemented in the workspace. Managed React `RecordActivity` is a local pre-release UI Kit component and is included in fixture `0.0.2-local.36`, deployed and installed in `acme::local`. Chrome CDP verified Activity reads, successful note posting, and Space-side tab switching: RecordForm rendered on Details while Activity was absent, then Activity returned on its tab. A host runtime test covers “Show more” pagination with 26 audit items. The earlier fixture `0.0.2-local.31` remains the deployment baseline for the SDK work described elsewhere in this history. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling. `connect({ targetOrigin })` is the sole browser bootstrap. The UI Kit uses a private layered record UI/form bridge; renderer, field registry, behavior scheduler, Activity stream query semantics, and managed-form/Activity host capabilities remain private. Generic framework-neutral Activity SDK APIs remain deferred; the records protocol is separate from Activity.
-- **Last updated:** 2026-10-07
+- **Last updated:** 2026-10-21
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -28,7 +28,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Exposing host `RecordSession` instances, route internals, cookies, or credentials to a Space.
 - Publishing multi-record session access or `OpenedRecordHandle.close()` in the original foundation release.
 - Publishing form schemas, field metadata, field renderer replacement, or Record Behavior timing as a supported UI extension API.
-- Removing copied bridge support or modifying B&V Spaces without an approved migration plan.
+- Removing copied bridge support or modifying customer Spaces without an approved migration plan.
 
 ## Engineering principles
 
@@ -62,10 +62,10 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities. Separately, `simple.documents.stage()` supports customer-owned upload workflows and returns an unattached staged handle. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to managed-form file bytes.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - A managed form may receive a private command-notification from its record handle when `update()` or `submit()` replaces the snapshot. This is a one-handle UI synchronization seam, not a public live subscription API; server/live events remain deferred.
-- Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
+- Production customer Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment, and `simple.records.open()` is available whenever `recordsTransport` was negotiated; `simple.records.current()` and unnegotiated capabilities reject with a structured `unavailable` error only when invoked.
 - Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
-- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
+- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, both with the optional `user` and `tenant` an action's context carries, for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
 
 ## Target architecture
 
@@ -124,16 +124,20 @@ The connection also exposes the host-supplied context:
 
 ```ts
 type SpaceContext
-  = | { kind: 'standalone' }
+  = | { kind: 'standalone', tenant?: Tenant, user?: User }
     | {
       kind: 'record'
       applicationId: string
       tableName: string
       recordId: string
+      tenant?: Tenant
+      user?: User
     }
 ```
 
 There is intentionally no inferred or `unknown` context variant. Context is descriptive page information, while `records.current()` remains the route-owned primary session with the shared behavior, validation, error, dirty-state, and header lifecycle.
+
+`user` and `tenant` name the signed-in viewer and the tenant in both context kinds, in the shapes an action's context uses (`User`, `Tenant` in `sdks/ts/src/types.ts`), starting with the host version that supplies them in `INIT_RPC`. Older hosts omit them; Spaces must handle absence explicitly, and the SDK supplies no fallback. Supplied text must be non-blank or initialization rejects with `SpaceProtocolError` code `invalid_response`. Identity enables viewer-specific queries such as assigned-task filtering; it is not a permission grant and does not alter host/server authorization.
 
 ## Ownership and security boundaries
 
@@ -497,6 +501,8 @@ simple-sdks/
 12. **Record-Space tabs — complete in the SDK workspace.** Implemented `simple.ui.tabs.set({ tabs, onChange })` and `simple.ui.tabs.select(tabId)` with `protocols.tabs: [1]`, bounded acknowledgement, input/response validation, canonical event routing via `SPACE_UI_TABS_SELECTION_CHANGED`, and registrationRequestId correlation for superseded registrations. SDK contract and MessageChannel tests pass; the host implementation and integrated fixture are maintained in their respective repositories.
 13. **Managed RecordActivity — implemented locally, pre-release.** Exposed `<RecordActivity record={record} />` from `@simpleplatform/ui-kit/react`; it mounts the private `<simple-record-activity>` element, uses the existing host GraphQL/decrypt bridges without adding protocol operations, and is integrated into the local fixture. Chrome validation of Activity reads/note posting, tab-scoped mounting, and standard platform form/Activity behavior is recorded below.
 
+14. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `user` and `tenant` on both `SpaceContext` kinds, in the shapes an action's context uses, through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values.
+
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
 ## Production copied-bridge migration inventory
@@ -575,7 +581,7 @@ secret decryption, and parent-frame navigation.
 
 1. Which data operations will a future portal session permit, and how are those scopes declared per Space?
 2. When a reliable event source exists, what ordering and replay contract should a subscription API provide?
-3. Which non-record bridge capabilities—identity, navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before B&V migration begins?
+3. Which remaining non-record bridge capabilities—navigation, decryption, documents, AI, and theme—need first-class SDK namespaces before production Space migration begins? Signed-in viewer identity is exposed through `SpaceContext.userId` as of 2026-10-21; no identity namespace is required for this step.
 4. ~~What release lanes and compatibility policy will govern published `@simpleplatform/sdk/space` versions?~~ Answered 2026-10-08: see "Release the Space SDK in the TypeScript SDK's lane" below.
 5. Should a `required` schema issue name the member that is missing? Today it sits at the object that lacks the member (`instance_pointer: ""`, pointer `/input`), so a Space cannot tell which member to ask for. Naming it would change the issue format in `apps/simple_ai/lib/simple_ai/tasks/json_schema.ex` in the platform repository.
 
@@ -879,3 +885,17 @@ secret decryption, and parent-frame navigation.
 - **Decision:** Set UI Kit `StatusBadge` dimensions and light/dark colored tones to the platform values in `apps/platform_web/src/global.css`. Resolve its neutral colors from inherited `--secondary`, `--border`, and `--secondary-foreground` tokens, each with the prior UI Kit color as a fallback.
 - **Reason:** A StatusBadge should look consistent in a Space and in the platform without requiring Space authors to duplicate fifteen palette values.
 - **Boundary:** `sdks/space-ui/theme.css` remains independently overridable through its `--simple-status-badge-*` variables. The element, React bridge, font defaults, and Space SDK are unchanged.
+
+### 2026-10-21 — Expose signed-in viewer identity in initialization context
+
+- **Decision:** Add `userId?: string` to both `SpaceContext` variants in `sdks/ts/src/space/core.ts` and validate it through the existing context check. Hosts with identity context support supply the signed-in user's ID in `INIT_RPC`; older hosts leave it absent. Supplied non-string or blank values reject initialization as malformed context.
+- **Reason:** A Space needs the viewer's identity to query tasks assigned to that person independently of record context. Optional typing preserves compatibility without inventing an ID and requires consumers to handle absence explicitly.
+- **Supersedes:** The deferred identity capability for this bounded signed-in-user-ID use case only; no identity namespace, extra connection API, or request protocol is introduced.
+- **Boundary:** Identity remains descriptive, not an authorization grant. Host and server permissions remain authoritative. Host implementation, integration, and final auditing are separate work.
+
+### 2026-10-22 — Name the viewer and tenant as an action's context does
+
+- **Decision:** Replace `userId?: string` with `user?: User` and `tenant?: Tenant` on both `SpaceContext` variants, reusing the SDK's own `User` and `Tenant` types from `sdks/ts/src/types.ts`, and validate them through the existing context check.
+- **Reason:** A Space and an action should see the signed-in user and the tenant in one shape. An action's context already carries `user` and `tenant`; a second, Space-only name for the same identity would drift. Nothing beyond what an action receives (no email, no names) reaches a Space.
+- **Supersedes:** The 2026-10-21 `userId` field, which was never released.
+- **Boundary:** Unchanged: identity is descriptive, not an authorization grant.

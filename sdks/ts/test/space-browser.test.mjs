@@ -1017,6 +1017,40 @@ test('connects a standalone Space for data access when the host does not negotia
   }
 })
 
+for (const context of [recordContext, { kind: 'standalone' }]) {
+  test(`exposes the signed-in user and tenant from ${context.kind} initialization context`, async () => {
+    const hostContext = { ...context, tenant: { host: 'acme.example.com', id: 'TEN000001', name: 'Acme' }, user: { id: 'USR000042' } }
+    const simple = await connectWithHost(new FakePort(), hostContext)
+
+    assert.deepEqual(simple.context, hostContext)
+    assert.equal(simple.context.user?.id, 'USR000042')
+    assert.equal(simple.context.tenant?.name, 'Acme')
+  })
+
+  test(`leaves the user and tenant absent from older ${context.kind} initialization context`, async () => {
+    const simple = await connectWithHost(new FakePort(), context)
+
+    assert.deepEqual(simple.context, context)
+    assert.equal(Object.hasOwn(simple.context, 'user'), false)
+    assert.equal(Object.hasOwn(simple.context, 'tenant'), false)
+  })
+
+  test(`rejects a malformed user or tenant in ${context.kind} initialization context`, async () => {
+    const malformed = [
+      ...[null, true, 42, 'USR000042', [], { id: '' }, { id: ' \t\n' }, { id: 42 }].map(user => ({ ...context, user })),
+      ...[null, 'Acme', [], {}, { name: '' }, { id: 42, name: 'Acme' }, { host: ' ', name: 'Acme' }].map(tenant => ({ ...context, tenant })),
+    ]
+    for (const hostContext of malformed) {
+      await assert.rejects(
+        () => connectWithHost(new FakePort(), hostContext),
+        error => error instanceof SpaceProtocolError
+          && error.code === 'invalid_response'
+          && error.message === 'The Space host did not provide valid context.',
+      )
+    }
+  })
+}
+
 test('rejects a host handshake that does not explicitly provide Space context', async () => {
   const spaceWindow = new FakeSpaceWindow()
   const restoreWindow = replaceGlobal('window', spaceWindow)
