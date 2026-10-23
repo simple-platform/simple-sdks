@@ -28,7 +28,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Exposing host `RecordSession` instances, route internals, cookies, or credentials to a Space.
 - Publishing multi-record session access or `OpenedRecordHandle.close()` in the original foundation release.
 - Publishing form schemas, field metadata, field renderer replacement, or Record Behavior timing as a supported UI extension API.
-- Removing copied bridge support or modifying B&V Spaces without an approved migration plan.
+- Removing copied bridge support or modifying customer Spaces without an approved migration plan.
 
 ## Engineering principles
 
@@ -62,7 +62,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Managed RecordForm uploads use private `DOCUMENT_CREATE_HANDLE_REQUEST` host capabilities. Separately, `simple.documents.stage()` supports customer-owned upload workflows and returns an unattached staged handle. The host owns upload, promotion, deletion, and authorized preview while preserving Record Behavior access to managed-form file bytes.
 - The Space client deliberately receives snapshots rather than host state stores. Snapshots are immutable and replaceable after each command response.
 - A managed form may receive a private command-notification from its record handle when `update()` or `submit()` replaces the snapshot. This is a one-handle UI synchronization seam, not a public live subscription API; server/live events remain deferred.
-- Production B&V Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
+- Production customer Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment, and `simple.records.open()` is available whenever `recordsTransport` was negotiated; `simple.records.current()` and unnegotiated capabilities reject with a structured `unavailable` error only when invoked.
 - Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
 - The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, both with an optional signed-in `userId` for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
