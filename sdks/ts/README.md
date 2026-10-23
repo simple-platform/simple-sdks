@@ -345,18 +345,20 @@ switch (simple.context.kind) {
 }
 ```
 
-The two context forms are `{ kind: 'standalone', userId?: string }` and
-`{ kind: 'record', applicationId, tableName, recordId, userId?: string }`. There is no
+The two context forms are `{ kind: 'standalone', user?, tenant? }` and
+`{ kind: 'record', applicationId, tableName, recordId, user?, tenant? }`. There is no
 `unknown` context variant. A missing or malformed context rejects
 `connect({ targetOrigin })` with `SpaceProtocolError` code `invalid_response`.
 
-`simple.context.userId` is the signed-in user's ID in both kinds of Space,
-present from the host version that adds identity to initialization context.
-Older hosts omit it, so Spaces must handle `undefined` explicitly before using
-it to filter tasks assigned to the viewer. The SDK does not invent an ID or
-derive it from `recordId`. A supplied ID must be a non-blank string; otherwise
-the context is malformed. This is descriptive identity, not an authorization
-grant: the host and server still enforce access.
+`simple.context.user` and `simple.context.tenant` name the signed-in user and
+the tenant exactly as an action's context names them, with the SDK's own `User`
+and `Tenant` types: `user.id`, and `tenant.id`, `tenant.name` and `tenant.host`.
+They are present from the host version that adds them to initialization
+context. Older hosts omit them, so a Space handles `undefined` explicitly before
+using `user.id`, for example to filter the tasks assigned to the viewer. The
+SDK never invents them or derives them from `recordId`. Supplied text must be
+non-blank; otherwise the context is malformed. This is descriptive identity,
+not an authorization grant: the host and server still enforce access.
 
 `connect({ targetOrigin })` works in any embedded Space, including standalone dashboards
 and tools. In a non-record Space, `simple.data` remains available and

@@ -65,7 +65,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Production customer Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment, and `simple.records.open()` is available whenever `recordsTransport` was negotiated; `simple.records.current()` and unnegotiated capabilities reject with a structured `unavailable` error only when invoked.
 - Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
-- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, both with an optional signed-in `userId` for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
+- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, both with the optional `user` and `tenant` an action's context carries, for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
 
 ## Target architecture
 
@@ -124,19 +124,20 @@ The connection also exposes the host-supplied context:
 
 ```ts
 type SpaceContext
-  = | { kind: 'standalone', userId?: string }
+  = | { kind: 'standalone', tenant?: Tenant, user?: User }
     | {
       kind: 'record'
       applicationId: string
       tableName: string
       recordId: string
-      userId?: string
+      tenant?: Tenant
+      user?: User
     }
 ```
 
 There is intentionally no inferred or `unknown` context variant. Context is descriptive page information, while `records.current()` remains the route-owned primary session with the shared behavior, validation, error, dirty-state, and header lifecycle.
 
-`userId` identifies the signed-in viewer in both context kinds, starting with the host version that supplies identity in `INIT_RPC`. Older hosts omit it; Spaces must handle absence explicitly, and the SDK supplies no fallback. When supplied, it must be a non-blank string or initialization rejects with `SpaceProtocolError` code `invalid_response`. Identity enables viewer-specific queries such as assigned-task filtering; it is not a permission grant and does not alter host/server authorization.
+`user` and `tenant` name the signed-in viewer and the tenant in both context kinds, in the shapes an action's context uses (`User`, `Tenant` in `sdks/ts/src/types.ts`), starting with the host version that supplies them in `INIT_RPC`. Older hosts omit them; Spaces must handle absence explicitly, and the SDK supplies no fallback. Supplied text must be non-blank or initialization rejects with `SpaceProtocolError` code `invalid_response`. Identity enables viewer-specific queries such as assigned-task filtering; it is not a permission grant and does not alter host/server authorization.
 
 ## Ownership and security boundaries
 
@@ -500,7 +501,7 @@ simple-sdks/
 12. **Record-Space tabs — complete in the SDK workspace.** Implemented `simple.ui.tabs.set({ tabs, onChange })` and `simple.ui.tabs.select(tabId)` with `protocols.tabs: [1]`, bounded acknowledgement, input/response validation, canonical event routing via `SPACE_UI_TABS_SELECTION_CHANGED`, and registrationRequestId correlation for superseded registrations. SDK contract and MessageChannel tests pass; the host implementation and integrated fixture are maintained in their respective repositories.
 13. **Managed RecordActivity — implemented locally, pre-release.** Exposed `<RecordActivity record={record} />` from `@simpleplatform/ui-kit/react`; it mounts the private `<simple-record-activity>` element, uses the existing host GraphQL/decrypt bridges without adding protocol operations, and is integrated into the local fixture. Chrome validation of Activity reads/note posting, tab-scoped mounting, and standard platform form/Activity behavior is recorded below.
 
-14. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `userId` on both `SpaceContext` kinds through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values in handshake tests. Host delivery and integration auditing are separate work.
+14. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `user` and `tenant` on both `SpaceContext` kinds, in the shapes an action's context uses, through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -891,3 +892,10 @@ secret decryption, and parent-frame navigation.
 - **Reason:** A Space needs the viewer's identity to query tasks assigned to that person independently of record context. Optional typing preserves compatibility without inventing an ID and requires consumers to handle absence explicitly.
 - **Supersedes:** The deferred identity capability for this bounded signed-in-user-ID use case only; no identity namespace, extra connection API, or request protocol is introduced.
 - **Boundary:** Identity remains descriptive, not an authorization grant. Host and server permissions remain authoritative. Host implementation, integration, and final auditing are separate work.
+
+### 2026-10-22 — Name the viewer and tenant as an action's context does
+
+- **Decision:** Replace `userId?: string` with `user?: User` and `tenant?: Tenant` on both `SpaceContext` variants, reusing the SDK's own `User` and `Tenant` types from `sdks/ts/src/types.ts`, and validate them through the existing context check.
+- **Reason:** A Space and an action should see the signed-in user and the tenant in one shape. An action's context already carries `user` and `tenant`; a second, Space-only name for the same identity would drift. Nothing beyond what an action receives (no email, no names) reaches a Space.
+- **Supersedes:** The 2026-10-21 `userId` field, which was never released.
+- **Boundary:** Unchanged: identity is descriptive, not an authorization grant.

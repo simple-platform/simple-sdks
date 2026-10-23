@@ -1,3 +1,4 @@
+import type { Tenant, User } from '../types.js'
 import type { SimpleActionsClient } from './actions.js'
 import type { SimpleDocumentsClient } from './documents.js'
 import type { SimpleNavigationClient, SpaceNavigationTransport } from './navigation.js'
@@ -27,7 +28,7 @@ import type {
 import { createActionsClient } from './actions.js'
 import { createDocumentsClient } from './documents.js'
 import { createNavigationClient } from './navigation.js'
-import { deepFreeze, invalidResponse, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
+import { deepFreeze, invalidResponse, isNonBlankString, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
 import { createRecordsClient, isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
 import { createTasksClient } from './tasks.js'
 import { createHeaderClient, createTabsClient, createToastClient, validateSpaceToastOptions } from './ui.js'
@@ -127,13 +128,17 @@ export type SpaceContext
     kind: 'record'
     recordId: string
     tableName: string
-    /** Signed-in user ID; present from hosts with identity context support, absent on older hosts. */
-    userId?: string
+    /** The tenant the Space runs in, named as an action's context names it. Absent on older hosts. */
+    tenant?: Tenant
+    /** The signed-in user, named as an action's context names it. Absent on older hosts. */
+    user?: User
   }
   | {
     kind: 'standalone'
-    /** Signed-in user ID; present from hosts with identity context support, absent on older hosts. */
-    userId?: string
+    /** The tenant the Space runs in, named as an action's context names it. Absent on older hosts. */
+    tenant?: Tenant
+    /** The signed-in user, named as an action's context names it. Absent on older hosts. */
+    user?: User
   }
 
 export type GraphQLVariables = Readonly<Record<string, unknown>>
@@ -280,11 +285,27 @@ export function createSimpleClient({
   }
 }
 
+/** An action's context names the user by an optional ID; a supplied ID is non-blank. */
+function isContextUser(value: unknown): value is User {
+  return isObjectRecord(value) && (value.id === undefined || isNonBlankString(value.id))
+}
+
+/** An action's context names the tenant, with an optional ID and host; supplied text is non-blank. */
+function isContextTenant(value: unknown): value is Tenant {
+  return isObjectRecord(value)
+    && isNonBlankString(value.name)
+    && (value.id === undefined || isNonBlankString(value.id))
+    && (value.host === undefined || isNonBlankString(value.host))
+}
+
 export function isSpaceContext(value: unknown): value is SpaceContext {
   if (!isObjectRecord(value))
     return false
 
-  if (value.userId !== undefined && (typeof value.userId !== 'string' || value.userId.trim().length === 0))
+  if (value.user !== undefined && !isContextUser(value.user))
+    return false
+
+  if (value.tenant !== undefined && !isContextTenant(value.tenant))
     return false
 
   if (value.kind === 'standalone')
