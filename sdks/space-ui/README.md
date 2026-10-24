@@ -346,6 +346,10 @@ The package exports `ListView`, `DataGrid`, and `Board` from
 `@simpleplatform/ui-kit/react`. Their contracts are exported from
 `@simpleplatform/ui-kit/contracts`.
 
+`ListView` uses the same tile preset for grid cards in a wide container and
+continuous rows in a narrow container. The layout follows the component's
+container width, including when it sits in a narrow Space on a wide screen.
+
 Inbox remains a platform Custom View preset and renderer. Spaces do not expose
 an `InboxView`; they can use List, DataGrid, and Board while platform routes
 continue to use Inbox.
@@ -481,19 +485,19 @@ alias for the load-more batch size.
 import type { BoardPreset } from '@simpleplatform/ui-kit/contracts'
 
 const boardPreset: BoardPreset = {
-  id: 'opportunities',
-  title: 'Opportunities',
-  kind: 'board',
   config: {
     laneFieldName: 'stage',
     loadMoreSizePerLane: 25,
-    orderBy: [{ fieldName: 'amount', direction: 'desc' }],
+    orderBy: [{ direction: 'desc', fieldName: 'amount' }],
     summaries: [
       { fieldName: 'amount', operation: 'sum' },
       { fieldName: 'amount', operation: 'average' },
     ],
-    tile: { version: 1, presentation: 'row', titleFieldName: 'name' },
+    tile: { presentation: 'row', titleFieldName: 'name', version: 1 },
   },
+  id: 'opportunities',
+  kind: 'board',
+  title: 'Opportunities',
 }
 ```
 

@@ -1,9 +1,9 @@
 import type { SimpleClient } from '@simpleplatform/sdk/space'
 import type {
-  DataGridProps,
-  FilterExpressionV1,
   BoardMoveRequestV1,
   BoardProps,
+  DataGridProps,
+  FilterExpressionV1,
   ListViewProps,
   RecordSourceV1,
   RecordViewPresetV1,
@@ -13,9 +13,9 @@ import type {
 import { useEffect, useRef, useState } from 'react'
 import {
   RecordViewContractError,
+  validateBoardPresetV1,
   validateControlledFilterPropsV1,
   validateDataGridPresetV1,
-  validateBoardPresetV1,
   validateListPresetV1,
   validateRecordSourceV1,
   validateSourceFilterExpressionV1,
