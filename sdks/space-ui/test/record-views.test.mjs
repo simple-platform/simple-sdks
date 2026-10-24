@@ -89,12 +89,11 @@ const sampleTile = {
 
 const sampleListPreset = {
   config: {
-    orderBy: [{ direction: 'asc', fieldName: 'title' }],
     tile: sampleTile,
   },
-  iconId: 'list',
   id: 'preset-list-1',
   kind: 'list',
+  orderBy: [{ direction: 'asc', fieldName: 'title' }],
   title: 'All Tickets',
 }
 
@@ -112,13 +111,13 @@ const sampleBoardPreset = {
   config: {
     laneFieldName: 'status',
     laneOrder: ['todo', 'done'],
-    loadMoreSizePerLane: 10,
-    orderBy: [{ direction: 'desc', fieldName: 'age' }],
+    lanePageSize: 10,
     summaries: [{ fieldName: 'age', operation: 'sum' }, { fieldName: 'age', operation: 'average' }],
     tile: sampleTile,
   },
   id: 'preset-board-1',
   kind: 'board',
+  orderBy: [{ direction: 'desc', fieldName: 'age' }],
   title: 'Ticket Board',
 }
 
@@ -146,8 +145,8 @@ test('exports unversioned managed-view names and validators from @simpleplatform
   assert.ok(contracts.RECORD_TILE_PRESENTATIONS.includes('row'))
   assert.ok(contracts.RECORD_TILE_PRESENTATIONS.includes('editorial'))
   assert.ok(Array.isArray(contracts.RECORD_VIEW_ICON_IDS))
-  assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('list'))
-  assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('check'))
+  assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('lucide:list'))
+  assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('lucide:check'))
   assert.ok(Array.isArray(contracts.RECORD_VIEW_KINDS))
   assert.deepEqual(contracts.RECORD_VIEW_KINDS, ['board', 'inbox', 'list', 'table'])
 
@@ -312,7 +311,7 @@ test('validates RecordTileLayout shape and compositions', () => {
     presentation: 'status',
     titleFieldName: 'name',
     version: 1,
-    visual: { fallbackIconId: 'help', fieldName: 'state', iconsByValue: { active: 'check' }, kind: 'enum-icon' },
+    visual: { fallbackIconId: 'lucide:circle-question-mark', fieldName: 'state', iconsByValue: { active: 'lucide:check' }, kind: 'enum-icon' },
   }
   assert.deepEqual(contracts.validateRecordTileLayout(enumIconTile), enumIconTile)
 
@@ -320,7 +319,7 @@ test('validates RecordTileLayout shape and compositions', () => {
     presentation: 'spotlight',
     titleFieldName: 'headline',
     version: 1,
-    visual: { iconId: 'star', kind: 'icon' },
+    visual: { iconId: 'lucide:star', kind: 'icon' },
   }
   assert.deepEqual(contracts.validateRecordTileLayout(iconTile), iconTile)
 
@@ -419,22 +418,19 @@ test('validates discriminated preset kinds', () => {
   assert.deepEqual(contracts.validateListPreset(sampleListPreset), sampleListPreset)
   assert.deepEqual(contracts.validateDataGridPreset(sampleTablePreset), sampleTablePreset)
   assert.deepEqual(contracts.validateBoardPreset(sampleBoardPreset), sampleBoardPreset)
-  assert.deepEqual(contracts.validateBoardPreset({ ...sampleBoardPreset, iconId: 'kanban', kind: 'kanban' }), {
+  assert.throws(() => contracts.validateBoardPreset({ ...sampleBoardPreset, kind: 'kanban' }), /kind must be 'board'/i)
+  assert.throws(() => contracts.validateBoardPreset({
     ...sampleBoardPreset,
-    iconId: 'board',
-  })
-  assert.deepEqual(contracts.validateBoardPreset({
+    config: { ...sampleBoardPreset.config, loadMoreSizePerLane: 10 },
+  }), /unsupported property/i)
+  assert.throws(() => contracts.validateBoardPreset({
     ...sampleBoardPreset,
-    config: { ...sampleBoardPreset.config, loadMoreSizePerLane: undefined, pageSizePerLane: 10 },
-  }).config.loadMoreSizePerLane, 10)
+    config: { ...sampleBoardPreset.config, pageSizePerLane: 10 },
+  }), /unsupported property/i)
   assert.deepEqual(contracts.validateBoardPreset(sampleBoardPreset).config.summaries, [
     { fieldName: 'age', operation: 'sum' },
     { fieldName: 'age', operation: 'average' },
   ])
-  assert.throws(() => contracts.validateBoardPreset({
-    ...sampleBoardPreset,
-    config: { ...sampleBoardPreset.config, pageSizePerLane: 10 },
-  }), /both loadMoreSizePerLane and legacy pageSizePerLane/i)
   assert.deepEqual(contracts.validateInboxPreset(sampleInboxPreset), sampleInboxPreset)
 
   // Discriminated rejection
@@ -494,12 +490,12 @@ test('validates discriminated preset kinds', () => {
     kind: 'table',
     title: 't',
   }), /fieldName/i)
-  assert.equal(contracts.validateDataGridPreset({
+  assert.throws(() => contracts.validateDataGridPreset({
     config: { columns: [{ fieldName: 'title' }], narrowPresentation: 'table' },
     id: 't1',
     kind: 'table',
     title: 't',
-  }).config.narrowPresentation, undefined)
+  }), /unsupported property/i)
   assert.equal(contracts.isDataGridPreset({
     config: { columns: [{ fieldId: 'title', width: 200 }] },
     id: 't1',
@@ -507,14 +503,21 @@ test('validates discriminated preset kinds', () => {
     title: 't',
   }), false)
 
-  // Legacy orderBy in preset fails closed
+  // Preset sorting is shared at the preset level, never nested in kind config.
   assert.throws(() => contracts.validateListPreset({
     config: {
-      orderBy: [{ direction: 'asc', fieldId: 'title' }],
+      orderBy: [{ direction: 'asc', fieldName: 'title' }],
       tile: sampleTile,
     },
     id: 'l1',
     kind: 'list',
+    title: 'l',
+  }), /unsupported property/i)
+  assert.throws(() => contracts.validateListPreset({
+    config: { tile: sampleTile },
+    id: 'l2',
+    kind: 'list',
+    orderBy: [{ direction: 'asc', fieldId: 'title' }],
     title: 'l',
   }), /fieldName/i)
 })
@@ -531,7 +534,7 @@ test('validates ViewPresetSet consistency', () => {
     defaultPresetId: sampleListPreset.id,
     presets: [{ ...sampleListPreset, iconId: 'unsafe-icon' }],
     version: 1,
-  }), /icon is not in the platform icon catalogue/i)
+  }), /unsupported property/i)
 
   // Default preset ID must exist in presets
   assert.throws(() => contracts.validateViewPresetSet({
@@ -572,8 +575,8 @@ test('validates ViewPresetSet consistency', () => {
   }), /1 to 40 columns/i)
   assert.throws(() => contracts.validateBoardPreset({
     ...sampleBoardPreset,
-    config: { ...sampleBoardPreset.config, loadMoreSizePerLane: 26 },
-  }), /between 1 and 25/i)
+    config: { ...sampleBoardPreset.config, lanePageSize: 51 },
+  }), /between 1 and 50/i)
   assert.throws(() => contracts.validateBoardPreset({
     ...sampleBoardPreset,
     config: { ...sampleBoardPreset.config, summaries: [{ fieldName: 'age', operation: 'sum' }, { fieldName: 'age', operation: 'sum' }] },

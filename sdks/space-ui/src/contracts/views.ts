@@ -69,24 +69,25 @@ export interface FilterExpressionV1 {
 }
 
 export const RECORD_VIEW_ICON_IDS_V1 = [
-  'alert-circle',
-  'arrow-up-right',
-  'board',
-  'box',
-  'calendar',
-  'check',
-  'clock',
-  'file',
-  'help',
-  'inbox',
-  'list',
-  'mail',
-  'settings',
-  'star',
-  'table',
-  'tag',
-  'user',
-  'video',
+  'lucide:circle-alert',
+  'lucide:arrow-up-right',
+  'lucide:columns-3',
+  'lucide:box',
+  'lucide:calendar-days',
+  'lucide:check',
+  'lucide:clock-3',
+  'lucide:file',
+  'lucide:circle-question-mark',
+  'lucide:inbox',
+  'lucide:layout-grid',
+  'lucide:list',
+  'lucide:mail',
+  'lucide:settings',
+  'lucide:star',
+  'lucide:table',
+  'lucide:tag',
+  'lucide:user-round',
+  'lucide:video',
 ] as const
 
 export type RecordViewIconIdV1 = typeof RECORD_VIEW_ICON_IDS_V1[number]
@@ -115,11 +116,11 @@ export type RecordTilePresentationV1 = typeof RECORD_TILE_PRESENTATIONS_V1[numbe
 
 export type RecordTileVisualV1
   = | { altFieldName?: string, fieldName: string, fit?: 'contain' | 'cover', kind: 'image' }
-    | { iconId: string, kind: 'icon' }
+    | { iconId: RecordViewIconIdV1, kind: 'icon' }
     | {
-      fallbackIconId: string
+      fallbackIconId: RecordViewIconIdV1
       fieldName: string
-      iconsByValue: Record<string, string>
+      iconsByValue: Record<string, RecordViewIconIdV1>
       kind: 'enum-icon'
     }
 
@@ -140,14 +141,13 @@ export type RecordViewKindV1 = typeof RECORD_VIEW_KINDS_V1[number]
 
 export interface RecordViewPresetBaseV1 {
   filter?: FilterExpressionV1
-  iconId?: RecordViewIconIdV1
   id: string
+  orderBy?: RecordSortV1[]
   title: string
 }
 
 export type ListPresetV1 = RecordViewPresetBaseV1 & {
   config: {
-    orderBy?: RecordSortV1[]
     tile: RecordTileLayoutV1
   }
   kind: 'list'
@@ -156,7 +156,6 @@ export type ListPresetV1 = RecordViewPresetBaseV1 & {
 export type DataGridPresetV1 = RecordViewPresetBaseV1 & {
   config: {
     columns: Array<{ fieldName: string, width?: number }>
-    orderBy?: RecordSortV1[]
     tile?: RecordTileLayoutV1
   }
   kind: 'table'
@@ -165,11 +164,8 @@ export type DataGridPresetV1 = RecordViewPresetBaseV1 & {
 export type BoardPresetV1 = RecordViewPresetBaseV1 & {
   config: {
     laneFieldName: string
+    lanePageSize?: number
     laneOrder?: string[]
-    loadMoreSizePerLane?: number
-    orderBy?: RecordSortV1[]
-    /** @deprecated Use loadMoreSizePerLane; this controls the Show more batch size. */
-    pageSizePerLane?: number
     summaries?: RecordViewSummaryV1[]
     tile: RecordTileLayoutV1
   }
@@ -177,13 +173,10 @@ export type BoardPresetV1 = RecordViewPresetBaseV1 & {
 }
 
 export type InboxPresetV1 = RecordViewPresetBaseV1 & {
-  config: {
-    detail?: 'fields' | 'record'
-    detailFieldNames: string[]
-    listTile: RecordTileLayoutV1
-    orderBy?: RecordSortV1[]
-  }
   kind: 'inbox'
+  config:
+    | { detail: 'record', detailFieldNames?: never, listTile: RecordTileLayoutV1 }
+    | { detail?: 'fields', detailFieldNames: string[], listTile: RecordTileLayoutV1 }
 }
 
 export type RecordViewPresetV1
@@ -337,10 +330,9 @@ const MAX_PRESETS = 20
 const MAX_VIEW_FIELDS = 40
 const MAX_SORT_FIELDS = 5
 const MAX_LANES = 20
-const MAX_LANE_PAGE_SIZE = 25
+const MAX_LANE_PAGE_SIZE = 50
 const SAFE_TILE_ICON_IDS = new Set<string>(RECORD_VIEW_ICON_IDS_V1)
-const isSafeTileIconId = (value: unknown): value is string => typeof value === 'string' && (SAFE_TILE_ICON_IDS.has(value) || value === 'kanban')
-const normalizeTileIconId = (value: string): RecordViewIconIdV1 => (value === 'kanban' ? 'board' : value) as RecordViewIconIdV1
+const isSafeTileIconId = (value: unknown): value is RecordViewIconIdV1 => typeof value === 'string' && SAFE_TILE_ICON_IDS.has(value)
 const FILTER_OPERATORS_WITHOUT_VALUES = new Set<FilterOperatorV1>([
   'future',
   'is_empty',
@@ -585,7 +577,7 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
       if (!isSafeTileIconId(value.visual.iconId))
         throw new RecordViewContractError(`Tile icon is not in the platform icon catalogue: ${value.visual.iconId}.`)
       assertOnlyKeys(value.visual, ['iconId', 'kind'], 'Tile icon visual')
-      visual = { iconId: normalizeTileIconId(value.visual.iconId), kind: 'icon' }
+      visual = { iconId: value.visual.iconId, kind: 'icon' }
     }
     else if (value.visual.kind === 'enum-icon') {
       if (!isNonEmptyString(value.visual.fieldName)) {
@@ -608,9 +600,9 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
       }
       assertOnlyKeys(value.visual, ['fallbackIconId', 'fieldName', 'iconsByValue', 'kind'], 'Tile enum icon visual')
       visual = {
-        fallbackIconId: normalizeTileIconId(value.visual.fallbackIconId),
+        fallbackIconId: value.visual.fallbackIconId as RecordViewIconIdV1,
         fieldName: value.visual.fieldName,
-        iconsByValue: Object.fromEntries(Object.entries(value.visual.iconsByValue).map(([key, iconId]) => [key, normalizeTileIconId(iconId as string)])),
+        iconsByValue: Object.fromEntries(Object.entries(value.visual.iconsByValue).map(([key, iconId]) => [key, iconId as RecordViewIconIdV1])),
         kind: 'enum-icon',
       }
     }
@@ -673,16 +665,15 @@ function validatePresetBase(value: unknown): RecordViewPresetBaseV1 {
   if (!isNonEmptyString(value.title)) {
     throw new RecordViewContractError('Preset title must be a non-empty string.')
   }
-  assertOnlyKeys(value, ['config', 'filter', 'iconId', 'id', 'kind', 'title'], 'Preset')
+  assertOnlyKeys(value, ['config', 'filter', 'id', 'kind', 'orderBy', 'title'], 'Preset')
   if (value.id.length > 80 || value.title.length > 120)
     throw new RecordViewContractError('Preset id must be at most 80 characters and title at most 120 characters.')
   const filter = value.filter !== undefined ? validateFilterExpressionV1(value.filter) : undefined
-  if (value.iconId !== undefined && !isSafeTileIconId(value.iconId))
-    throw new RecordViewContractError(`Preset icon is not in the platform icon catalogue: ${String(value.iconId)}.`)
+  const orderBy = validateOrderBy(value.orderBy)
   return {
     ...(filter ? { filter } : {}),
-    ...(value.iconId ? { iconId: normalizeTileIconId(value.iconId) } : {}),
     id: value.id,
+    ...(orderBy ? { orderBy } : {}),
     title: value.title,
   }
 }
@@ -709,12 +700,10 @@ export function validateListPresetV1(value: unknown): ListPresetV1 {
     throw new RecordViewContractError('List preset config must be an object.')
   }
   const tile = validateRecordTileLayoutV1(obj.config.tile)
-  const orderBy = validateOrderBy(obj.config.orderBy)
-  assertOnlyKeys(obj.config, ['orderBy', 'tile'], 'List preset config')
+  assertOnlyKeys(obj.config, ['tile'], 'List preset config')
   return {
     ...base,
     config: {
-      ...(orderBy ? { orderBy } : {}),
       tile,
     },
     kind: 'list',
@@ -740,9 +729,7 @@ export function validateDataGridPresetV1(value: unknown): DataGridPresetV1 {
   if (!isPlainObject(obj.config)) {
     throw new RecordViewContractError('DataGrid preset config must be an object.')
   }
-  assertOnlyKeys(obj.config, ['columns', 'narrowPresentation', 'orderBy', 'tile'], 'DataGrid preset config')
-  if (obj.config.narrowPresentation !== undefined && obj.config.narrowPresentation !== 'table' && obj.config.narrowPresentation !== 'tiles')
-    throw new RecordViewContractError('Legacy DataGrid narrowPresentation must be table or tiles.')
+  assertOnlyKeys(obj.config, ['columns', 'tile'], 'DataGrid preset config')
   if (!Array.isArray(obj.config.columns) || obj.config.columns.length === 0 || obj.config.columns.length > MAX_VIEW_FIELDS) {
     throw new RecordViewContractError(`DataGrid preset columns must contain 1 to ${MAX_VIEW_FIELDS} columns.`)
   }
@@ -765,13 +752,10 @@ export function validateDataGridPresetV1(value: unknown): DataGridPresetV1 {
   if (new Set(columns.map(column => column.fieldName)).size !== columns.length)
     throw new RecordViewContractError('DataGrid columns cannot contain duplicate fields.')
   const tile = obj.config.tile !== undefined ? validateRecordTileLayoutV1(obj.config.tile) : undefined
-  const orderBy = validateOrderBy(obj.config.orderBy)
-
   return {
     ...base,
     config: {
       columns,
-      ...(orderBy ? { orderBy } : {}),
       ...(tile ? { tile } : {}),
     },
     kind: 'table',
@@ -791,7 +775,7 @@ export function isDataGridPresetV1(value: unknown): value is DataGridPresetV1 {
 export function validateBoardPresetV1(value: unknown): BoardPresetV1 {
   const base = validatePresetBase(value)
   const obj = value as Record<string, unknown>
-  if (obj.kind !== 'board' && obj.kind !== 'kanban') {
+  if (obj.kind !== 'board') {
     throw new RecordViewContractError(`Board preset kind must be 'board', got ${String(obj.kind)}.`)
   }
   if (!isPlainObject(obj.config)) {
@@ -802,7 +786,7 @@ export function validateBoardPresetV1(value: unknown): BoardPresetV1 {
   }
   if (obj.config.laneFieldName.length > 200)
     throw new RecordViewContractError('Board preset laneFieldName must be at most 200 characters.')
-  assertOnlyKeys(obj.config, ['laneFieldName', 'laneOrder', 'loadMoreSizePerLane', 'orderBy', 'pageSizePerLane', 'summaries', 'tile'], 'Board preset config')
+  assertOnlyKeys(obj.config, ['laneFieldName', 'laneOrder', 'lanePageSize', 'summaries', 'tile'], 'Board preset config')
   const tile = validateRecordTileLayoutV1(obj.config.tile)
   if (obj.config.laneOrder !== undefined && (!Array.isArray(obj.config.laneOrder) || obj.config.laneOrder.length === 0 || obj.config.laneOrder.length > MAX_LANES || !obj.config.laneOrder.every(isNonEmptyString))) {
     throw new RecordViewContractError(`Board preset laneOrder must contain 1 to ${MAX_LANES} non-empty strings.`)
@@ -810,22 +794,15 @@ export function validateBoardPresetV1(value: unknown): BoardPresetV1 {
   if (Array.isArray(obj.config.laneOrder) && new Set(obj.config.laneOrder).size !== obj.config.laneOrder.length) {
     throw new RecordViewContractError('Board preset laneOrder cannot contain duplicate values.')
   }
-  if (obj.config.pageSizePerLane !== undefined && obj.config.loadMoreSizePerLane !== undefined) {
-    throw new RecordViewContractError('Board preset must not specify both loadMoreSizePerLane and legacy pageSizePerLane.')
-  }
-  const loadMoreSize = obj.config.loadMoreSizePerLane ?? obj.config.pageSizePerLane
-  if (loadMoreSize !== undefined && (!Number.isInteger(loadMoreSize) || (loadMoreSize as number) < 1 || (loadMoreSize as number) > MAX_LANE_PAGE_SIZE))
-    throw new RecordViewContractError(`Board preset loadMoreSizePerLane must be between 1 and ${MAX_LANE_PAGE_SIZE}.`)
+  if (obj.config.lanePageSize !== undefined && (!Number.isInteger(obj.config.lanePageSize) || (obj.config.lanePageSize as number) < 1 || (obj.config.lanePageSize as number) > MAX_LANE_PAGE_SIZE))
+    throw new RecordViewContractError(`Board preset lanePageSize must be between 1 and ${MAX_LANE_PAGE_SIZE}.`)
   const summaries = validateRecordViewSummariesV1(obj.config.summaries)
-  const orderBy = validateOrderBy(obj.config.orderBy)
-
   return {
     ...base,
     config: {
       laneFieldName: obj.config.laneFieldName,
       ...(obj.config.laneOrder ? { laneOrder: obj.config.laneOrder as string[] } : {}),
-      ...(loadMoreSize !== undefined ? { loadMoreSizePerLane: loadMoreSize as number } : {}),
-      ...(orderBy ? { orderBy } : {}),
+      ...(obj.config.lanePageSize !== undefined ? { lanePageSize: obj.config.lanePageSize as number } : {}),
       ...(summaries ? { summaries } : {}),
       tile,
     },
@@ -877,21 +854,31 @@ export function validateInboxPresetV1(value: unknown): InboxPresetV1 {
   const listTile = validateRecordTileLayoutV1(obj.config.listTile)
   if (obj.config.detail !== undefined && obj.config.detail !== 'fields' && obj.config.detail !== 'record')
     throw new RecordViewContractError('Inbox detail must be fields or record.')
-  if (!Array.isArray(obj.config.detailFieldNames) || obj.config.detailFieldNames.length === 0 || obj.config.detailFieldNames.length > MAX_VIEW_FIELDS || !obj.config.detailFieldNames.every(name => isNonEmptyString(name) && name.length <= 200)) {
+  if (obj.config.detail === 'record' && obj.config.detailFieldNames !== undefined) {
+    throw new RecordViewContractError('Inbox detailFieldNames are only valid when detail is fields.')
+  }
+  const detailFieldNames = obj.config.detail === 'record' ? undefined : obj.config.detailFieldNames
+  if (detailFieldNames !== undefined && (!Array.isArray(detailFieldNames) || detailFieldNames.length === 0 || detailFieldNames.length > MAX_VIEW_FIELDS || !detailFieldNames.every(name => isNonEmptyString(name) && name.length <= 200))) {
     throw new RecordViewContractError(`Inbox preset detailFieldNames must contain 1 to ${MAX_VIEW_FIELDS} non-empty field names.`)
   }
-  if (new Set(obj.config.detailFieldNames).size !== obj.config.detailFieldNames.length)
+  if (detailFieldNames === undefined && obj.config.detail !== 'record') {
+    throw new RecordViewContractError(`Inbox preset detailFieldNames must contain 1 to ${MAX_VIEW_FIELDS} non-empty field names.`)
+  }
+  if (Array.isArray(detailFieldNames) && new Set(detailFieldNames).size !== detailFieldNames.length)
     throw new RecordViewContractError('Inbox preset detailFieldNames cannot contain duplicates.')
-  assertOnlyKeys(obj.config, ['detail', 'detailFieldNames', 'listTile', 'orderBy'], 'Inbox preset config')
-  const orderBy = validateOrderBy(obj.config.orderBy)
+  assertOnlyKeys(obj.config, ['detail', 'detailFieldNames', 'listTile'], 'Inbox preset config')
+  const detailConfig = obj.config.detail === 'record'
+    ? { detail: 'record' as const }
+    : {
+        ...(obj.config.detail === 'fields' ? { detail: 'fields' as const } : {}),
+        detailFieldNames: detailFieldNames as string[],
+      }
 
   return {
     ...base,
     config: {
-      ...(obj.config.detail ? { detail: obj.config.detail as 'fields' | 'record' } : {}),
-      detailFieldNames: obj.config.detailFieldNames as string[],
+      ...detailConfig,
       listTile,
-      ...(orderBy ? { orderBy } : {}),
     },
     kind: 'inbox',
   }
@@ -917,7 +904,6 @@ export function validateRecordViewPresetV1(value: unknown): RecordViewPresetV1 {
     case 'table':
       return validateDataGridPresetV1(value)
     case 'board':
-    case 'kanban': // Older saved presets normalize to the public Board kind.
       return validateBoardPresetV1(value)
     case 'inbox':
       return validateInboxPresetV1(value)
@@ -927,8 +913,6 @@ export function validateRecordViewPresetV1(value: unknown): RecordViewPresetV1 {
 }
 
 export function isRecordViewPresetV1(value: unknown): value is RecordViewPresetV1 {
-  if (!isPlainObject(value) || value.kind === 'kanban' || value.iconId === 'kanban')
-    return false
   try {
     validateRecordViewPresetV1(value)
     return true
@@ -973,8 +957,6 @@ export function validateViewPresetSetV1(value: unknown): ViewPresetSetV1 {
 }
 
 export function isViewPresetSetV1(value: unknown): value is ViewPresetSetV1 {
-  if (!isPlainObject(value) || !Array.isArray(value.presets) || value.presets.some(preset => !isPlainObject(preset) || preset.kind === 'kanban' || preset.iconId === 'kanban'))
-    return false
   try {
     validateViewPresetSetV1(value)
     return true
