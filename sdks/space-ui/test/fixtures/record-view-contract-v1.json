@@ -190,9 +190,6 @@
       "input": {
         "config": {
           "detail": "record",
-          "detailFieldNames": [
-            "title"
-          ],
           "listTile": {
             "presentation": "row",
             "titleFieldName": "title",
@@ -214,14 +211,13 @@
             {
               "fieldName": "title"
             }
-          ],
-          "narrowPresentation": "tiles"
+          ]
         },
         "id": "review",
         "kind": "table",
         "title": "Review"
       },
-      "name": "legacy grid narrow mode normalizes",
+      "name": "data grid responsive mode follows container width",
       "target": "preset"
     },
     {
@@ -250,11 +246,11 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "done": "check",
-                "todo": "clock"
+                "done": "lucide:check",
+                "todo": "lucide:clock-3"
               },
               "kind": "enum-icon"
             }
@@ -317,12 +313,12 @@
             "version": 1
           }
         },
-        "iconId": "arbitrary",
+        "iconId": "lucide:list",
         "id": "review",
         "kind": "list",
         "title": "Review"
       },
-      "name": "unknown preset icon",
+      "name": "preset icon is derived from kind",
       "target": "preset"
     },
     {
@@ -353,7 +349,7 @@
             "version": 1,
             "visual": {
               "className": "unsafe",
-              "iconId": "mail",
+              "iconId": "lucide:mail",
               "kind": "icon"
             }
           }
@@ -374,10 +370,10 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "todo": "arbitrary"
+                "todo": "lucide:arbitrary"
               },
               "kind": "enum-icon"
             }
@@ -444,7 +440,7 @@
         "kind": "table",
         "title": "Review"
       },
-      "name": "unknown legacy grid narrow mode",
+      "name": "data grid responsive mode cannot be configured",
       "target": "preset"
     },
     {
@@ -507,14 +503,14 @@
     {
       "accepted": false,
       "input": {
+        "orderBy": [
+          {
+            "direction": "asc",
+            "fieldName": "title",
+            "nulls": "first"
+          }
+        ],
         "config": {
-          "orderBy": [
-            {
-              "direction": "asc",
-              "fieldName": "title",
-              "nulls": "first"
-            }
-          ],
           "tile": {
             "presentation": "row",
             "titleFieldName": "title",
@@ -781,7 +777,6 @@
             "doing",
             "done"
           ],
-          "pageSizePerLane": 25,
           "tile": {
             "badgeFieldNames": [
               "status"
@@ -790,34 +785,34 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "iconId": "clock",
+              "iconId": "lucide:clock-3",
               "kind": "icon"
             }
-          }
+          },
+          "lanePageSize": 50
         },
         "id": "review",
         "kind": "board",
         "title": "Review"
       },
-      "name": "board shared rich tile",
+      "name": "board per-lane page size",
       "target": "preset"
     },
     {
       "accepted": true,
       "input": {
+        "orderBy": [
+          {
+            "fieldName": "age",
+            "direction": "desc"
+          }
+        ],
         "config": {
           "laneFieldName": "status",
           "laneOrder": [
             "todo",
             "doing",
             "done"
-          ],
-          "loadMoreSizePerLane": 25,
-          "orderBy": [
-            {
-              "fieldName": "age",
-              "direction": "desc"
-            }
           ],
           "summaries": [
             {
@@ -833,16 +828,17 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "iconId": "clock",
+              "iconId": "lucide:clock-3",
               "kind": "icon"
             }
-          }
+          },
+          "lanePageSize": 25
         },
         "id": "review",
         "kind": "board",
         "title": "Review"
       },
-      "name": "board load more and numeric summary",
+      "name": "board per-lane page size and numeric summary",
       "target": "preset"
     },
     {
@@ -891,18 +887,18 @@
       "input": {
         "config": {
           "laneFieldName": "status",
-          "pageSizePerLane": 26,
           "tile": {
             "presentation": "row",
             "titleFieldName": "title",
             "version": 1
-          }
+          },
+          "lanePageSize": 51
         },
         "id": "review",
         "kind": "board",
         "title": "Review"
       },
-      "name": "board page limit",
+      "name": "board lane page size limit",
       "target": "preset"
     },
     {
@@ -1019,109 +1015,109 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "0": "mail",
-                "1": "mail",
-                "10": "mail",
-                "11": "mail",
-                "12": "mail",
-                "13": "mail",
-                "14": "mail",
-                "15": "mail",
-                "16": "mail",
-                "17": "mail",
-                "18": "mail",
-                "19": "mail",
-                "2": "mail",
-                "20": "mail",
-                "21": "mail",
-                "22": "mail",
-                "23": "mail",
-                "24": "mail",
-                "25": "mail",
-                "26": "mail",
-                "27": "mail",
-                "28": "mail",
-                "29": "mail",
-                "3": "mail",
-                "30": "mail",
-                "31": "mail",
-                "32": "mail",
-                "33": "mail",
-                "34": "mail",
-                "35": "mail",
-                "36": "mail",
-                "37": "mail",
-                "38": "mail",
-                "39": "mail",
-                "4": "mail",
-                "40": "mail",
-                "41": "mail",
-                "42": "mail",
-                "43": "mail",
-                "44": "mail",
-                "45": "mail",
-                "46": "mail",
-                "47": "mail",
-                "48": "mail",
-                "49": "mail",
-                "5": "mail",
-                "50": "mail",
-                "51": "mail",
-                "52": "mail",
-                "53": "mail",
-                "54": "mail",
-                "55": "mail",
-                "56": "mail",
-                "57": "mail",
-                "58": "mail",
-                "59": "mail",
-                "6": "mail",
-                "60": "mail",
-                "61": "mail",
-                "62": "mail",
-                "63": "mail",
-                "64": "mail",
-                "65": "mail",
-                "66": "mail",
-                "67": "mail",
-                "68": "mail",
-                "69": "mail",
-                "7": "mail",
-                "70": "mail",
-                "71": "mail",
-                "72": "mail",
-                "73": "mail",
-                "74": "mail",
-                "75": "mail",
-                "76": "mail",
-                "77": "mail",
-                "78": "mail",
-                "79": "mail",
-                "8": "mail",
-                "80": "mail",
-                "81": "mail",
-                "82": "mail",
-                "83": "mail",
-                "84": "mail",
-                "85": "mail",
-                "86": "mail",
-                "87": "mail",
-                "88": "mail",
-                "89": "mail",
-                "9": "mail",
-                "90": "mail",
-                "91": "mail",
-                "92": "mail",
-                "93": "mail",
-                "94": "mail",
-                "95": "mail",
-                "96": "mail",
-                "97": "mail",
-                "98": "mail",
-                "99": "mail"
+                "0": "lucide:mail",
+                "1": "lucide:mail",
+                "2": "lucide:mail",
+                "3": "lucide:mail",
+                "4": "lucide:mail",
+                "5": "lucide:mail",
+                "6": "lucide:mail",
+                "7": "lucide:mail",
+                "8": "lucide:mail",
+                "9": "lucide:mail",
+                "10": "lucide:mail",
+                "11": "lucide:mail",
+                "12": "lucide:mail",
+                "13": "lucide:mail",
+                "14": "lucide:mail",
+                "15": "lucide:mail",
+                "16": "lucide:mail",
+                "17": "lucide:mail",
+                "18": "lucide:mail",
+                "19": "lucide:mail",
+                "20": "lucide:mail",
+                "21": "lucide:mail",
+                "22": "lucide:mail",
+                "23": "lucide:mail",
+                "24": "lucide:mail",
+                "25": "lucide:mail",
+                "26": "lucide:mail",
+                "27": "lucide:mail",
+                "28": "lucide:mail",
+                "29": "lucide:mail",
+                "30": "lucide:mail",
+                "31": "lucide:mail",
+                "32": "lucide:mail",
+                "33": "lucide:mail",
+                "34": "lucide:mail",
+                "35": "lucide:mail",
+                "36": "lucide:mail",
+                "37": "lucide:mail",
+                "38": "lucide:mail",
+                "39": "lucide:mail",
+                "40": "lucide:mail",
+                "41": "lucide:mail",
+                "42": "lucide:mail",
+                "43": "lucide:mail",
+                "44": "lucide:mail",
+                "45": "lucide:mail",
+                "46": "lucide:mail",
+                "47": "lucide:mail",
+                "48": "lucide:mail",
+                "49": "lucide:mail",
+                "50": "lucide:mail",
+                "51": "lucide:mail",
+                "52": "lucide:mail",
+                "53": "lucide:mail",
+                "54": "lucide:mail",
+                "55": "lucide:mail",
+                "56": "lucide:mail",
+                "57": "lucide:mail",
+                "58": "lucide:mail",
+                "59": "lucide:mail",
+                "60": "lucide:mail",
+                "61": "lucide:mail",
+                "62": "lucide:mail",
+                "63": "lucide:mail",
+                "64": "lucide:mail",
+                "65": "lucide:mail",
+                "66": "lucide:mail",
+                "67": "lucide:mail",
+                "68": "lucide:mail",
+                "69": "lucide:mail",
+                "70": "lucide:mail",
+                "71": "lucide:mail",
+                "72": "lucide:mail",
+                "73": "lucide:mail",
+                "74": "lucide:mail",
+                "75": "lucide:mail",
+                "76": "lucide:mail",
+                "77": "lucide:mail",
+                "78": "lucide:mail",
+                "79": "lucide:mail",
+                "80": "lucide:mail",
+                "81": "lucide:mail",
+                "82": "lucide:mail",
+                "83": "lucide:mail",
+                "84": "lucide:mail",
+                "85": "lucide:mail",
+                "86": "lucide:mail",
+                "87": "lucide:mail",
+                "88": "lucide:mail",
+                "89": "lucide:mail",
+                "90": "lucide:mail",
+                "91": "lucide:mail",
+                "92": "lucide:mail",
+                "93": "lucide:mail",
+                "94": "lucide:mail",
+                "95": "lucide:mail",
+                "96": "lucide:mail",
+                "97": "lucide:mail",
+                "98": "lucide:mail",
+                "99": "lucide:mail"
               },
               "kind": "enum-icon"
             }
@@ -1143,110 +1139,110 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "0": "mail",
-                "1": "mail",
-                "10": "mail",
-                "100": "mail",
-                "11": "mail",
-                "12": "mail",
-                "13": "mail",
-                "14": "mail",
-                "15": "mail",
-                "16": "mail",
-                "17": "mail",
-                "18": "mail",
-                "19": "mail",
-                "2": "mail",
-                "20": "mail",
-                "21": "mail",
-                "22": "mail",
-                "23": "mail",
-                "24": "mail",
-                "25": "mail",
-                "26": "mail",
-                "27": "mail",
-                "28": "mail",
-                "29": "mail",
-                "3": "mail",
-                "30": "mail",
-                "31": "mail",
-                "32": "mail",
-                "33": "mail",
-                "34": "mail",
-                "35": "mail",
-                "36": "mail",
-                "37": "mail",
-                "38": "mail",
-                "39": "mail",
-                "4": "mail",
-                "40": "mail",
-                "41": "mail",
-                "42": "mail",
-                "43": "mail",
-                "44": "mail",
-                "45": "mail",
-                "46": "mail",
-                "47": "mail",
-                "48": "mail",
-                "49": "mail",
-                "5": "mail",
-                "50": "mail",
-                "51": "mail",
-                "52": "mail",
-                "53": "mail",
-                "54": "mail",
-                "55": "mail",
-                "56": "mail",
-                "57": "mail",
-                "58": "mail",
-                "59": "mail",
-                "6": "mail",
-                "60": "mail",
-                "61": "mail",
-                "62": "mail",
-                "63": "mail",
-                "64": "mail",
-                "65": "mail",
-                "66": "mail",
-                "67": "mail",
-                "68": "mail",
-                "69": "mail",
-                "7": "mail",
-                "70": "mail",
-                "71": "mail",
-                "72": "mail",
-                "73": "mail",
-                "74": "mail",
-                "75": "mail",
-                "76": "mail",
-                "77": "mail",
-                "78": "mail",
-                "79": "mail",
-                "8": "mail",
-                "80": "mail",
-                "81": "mail",
-                "82": "mail",
-                "83": "mail",
-                "84": "mail",
-                "85": "mail",
-                "86": "mail",
-                "87": "mail",
-                "88": "mail",
-                "89": "mail",
-                "9": "mail",
-                "90": "mail",
-                "91": "mail",
-                "92": "mail",
-                "93": "mail",
-                "94": "mail",
-                "95": "mail",
-                "96": "mail",
-                "97": "mail",
-                "98": "mail",
-                "99": "mail"
+                "0": "lucide:mail",
+                "1": "lucide:mail",
+                "2": "lucide:mail",
+                "3": "lucide:mail",
+                "4": "lucide:mail",
+                "5": "lucide:mail",
+                "6": "lucide:mail",
+                "7": "lucide:mail",
+                "8": "lucide:mail",
+                "9": "lucide:mail",
+                "10": "lucide:mail",
+                "11": "lucide:mail",
+                "12": "lucide:mail",
+                "13": "lucide:mail",
+                "14": "lucide:mail",
+                "15": "lucide:mail",
+                "16": "lucide:mail",
+                "17": "lucide:mail",
+                "18": "lucide:mail",
+                "19": "lucide:mail",
+                "20": "lucide:mail",
+                "21": "lucide:mail",
+                "22": "lucide:mail",
+                "23": "lucide:mail",
+                "24": "lucide:mail",
+                "25": "lucide:mail",
+                "26": "lucide:mail",
+                "27": "lucide:mail",
+                "28": "lucide:mail",
+                "29": "lucide:mail",
+                "30": "lucide:mail",
+                "31": "lucide:mail",
+                "32": "lucide:mail",
+                "33": "lucide:mail",
+                "34": "lucide:mail",
+                "35": "lucide:mail",
+                "36": "lucide:mail",
+                "37": "lucide:mail",
+                "38": "lucide:mail",
+                "39": "lucide:mail",
+                "40": "lucide:mail",
+                "41": "lucide:mail",
+                "42": "lucide:mail",
+                "43": "lucide:mail",
+                "44": "lucide:mail",
+                "45": "lucide:mail",
+                "46": "lucide:mail",
+                "47": "lucide:mail",
+                "48": "lucide:mail",
+                "49": "lucide:mail",
+                "50": "lucide:mail",
+                "51": "lucide:mail",
+                "52": "lucide:mail",
+                "53": "lucide:mail",
+                "54": "lucide:mail",
+                "55": "lucide:mail",
+                "56": "lucide:mail",
+                "57": "lucide:mail",
+                "58": "lucide:mail",
+                "59": "lucide:mail",
+                "60": "lucide:mail",
+                "61": "lucide:mail",
+                "62": "lucide:mail",
+                "63": "lucide:mail",
+                "64": "lucide:mail",
+                "65": "lucide:mail",
+                "66": "lucide:mail",
+                "67": "lucide:mail",
+                "68": "lucide:mail",
+                "69": "lucide:mail",
+                "70": "lucide:mail",
+                "71": "lucide:mail",
+                "72": "lucide:mail",
+                "73": "lucide:mail",
+                "74": "lucide:mail",
+                "75": "lucide:mail",
+                "76": "lucide:mail",
+                "77": "lucide:mail",
+                "78": "lucide:mail",
+                "79": "lucide:mail",
+                "80": "lucide:mail",
+                "81": "lucide:mail",
+                "82": "lucide:mail",
+                "83": "lucide:mail",
+                "84": "lucide:mail",
+                "85": "lucide:mail",
+                "86": "lucide:mail",
+                "87": "lucide:mail",
+                "88": "lucide:mail",
+                "89": "lucide:mail",
+                "90": "lucide:mail",
+                "91": "lucide:mail",
+                "92": "lucide:mail",
+                "93": "lucide:mail",
+                "94": "lucide:mail",
+                "95": "lucide:mail",
+                "96": "lucide:mail",
+                "97": "lucide:mail",
+                "98": "lucide:mail",
+                "99": "lucide:mail",
+                "100": "lucide:mail"
               },
               "kind": "enum-icon"
             }
@@ -1268,10 +1264,10 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "": "mail"
+                "": "lucide:mail"
               },
               "kind": "enum-icon"
             }
@@ -1293,10 +1289,10 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                " todo ": "mail"
+                " todo ": "lucide:mail"
               },
               "kind": "enum-icon"
             }
@@ -1318,10 +1314,10 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "help",
+              "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
               "iconsByValue": {
-                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "mail"
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "lucide:mail"
               },
               "kind": "enum-icon"
             }
@@ -1332,6 +1328,92 @@
         "title": "Review"
       },
       "name": "enum icon value length limit",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "iconId": "lucide:star",
+              "kind": "icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "provider-qualified tile icon",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "iconId": "star",
+              "kind": "icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile icon requires provider prefix",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "detail": "record",
+          "detailFieldNames": [
+            "title"
+          ],
+          "listTile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "inbox",
+        "title": "Review"
+      },
+      "name": "record detail does not configure unused fields",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "orderBy": [
+            {
+              "direction": "asc",
+              "fieldName": "title"
+            }
+          ],
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "nested-sort",
+        "kind": "list",
+        "title": "List"
+      },
+      "name": "sort is configured at preset level",
       "target": "preset"
     }
   ],

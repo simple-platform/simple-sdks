@@ -158,7 +158,6 @@ const preset: ListPreset = {
       version: 1,
     },
   },
-  iconId: 'user',
   id: 'people',
   kind: 'list',
   title: 'People',
@@ -175,9 +174,8 @@ sorting, bounded paging, and the final query. `custom_view.customization.views`
 stores database-authored presets for platform Custom View routes; a Space may
 instead pass a typed preset directly.
 
-Presets may include an `iconId` from the safe `RECORD_VIEW_ICON_IDS`
-catalogue. It is optional, so existing presets with `version: 1` remain valid and render with
-their view-family default.
+Preset icons are derived from `kind`. Tile icon IDs use a provider-qualified
+name from `RECORD_VIEW_ICON_IDS`, such as `lucide:star`.
 
 List, DataGrid, and Board include platform-owned filter controls. A Space may
 pass the controlled filter pair `filter` + `onFilterChange` to synchronize that
@@ -189,7 +187,7 @@ validated record identity, lane field, and old/new enum lane. The Space persists
 validation remain in force. Custom View routes persist with the existing
 authorized platform update hook.
 
-List, DataGrid, Board, and platform Inbox presets accept `config.orderBy` using
+List, DataGrid, Board, and platform Inbox presets accept preset-level `orderBy` using
 readable logical field names and `asc`/`desc` directions. For Board, this sorts
 cards within each lane; `laneOrder` separately controls the order of lanes.
 
@@ -587,9 +585,9 @@ simple-sdks/
 11. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
 12. **Record-Space tabs — complete in the SDK workspace.** Implemented `simple.ui.tabs.set({ tabs, onChange })` and `simple.ui.tabs.select(tabId)` with `protocols.tabs: [1]`, bounded acknowledgement, input/response validation, canonical event routing via `SPACE_UI_TABS_SELECTION_CHANGED`, and registrationRequestId correlation for superseded registrations. SDK contract and MessageChannel tests pass; the host implementation and integrated fixture are maintained in their respective repositories.
 13. **Managed RecordActivity — implemented locally, pre-release.** Exposed `<RecordActivity record={record} />` from `@simpleplatform/ui-kit/react`; it mounts the private `<simple-record-activity>` element, uses the existing host GraphQL/decrypt bridges without adding protocol operations, and is integrated into the local fixture. Chrome validation of Activity reads/note posting, tab-scoped mounting, and standard platform form/Activity behavior is recorded below.
-15. **Managed record views — implemented in the coordinated worktrees; publication remains gated.** Typed database-backed List, DataGrid, and Board with built-in filters are available through the React UI Kit entry point. Standalone ConditionBuilder/ConditionSummary remain private; Inbox is platform-only. The host validates table ownership and preset fields, and Board persistence uses the explicit app callback and managed record sessions. Current contract, validation evidence, and release gates are maintained in simple/architecture_history/space-views.md.
+14. **Managed record views — implemented in the coordinated worktrees; publication remains gated.** Typed database-backed List, DataGrid, and Board with built-in filters are available through the React UI Kit entry point. Standalone ConditionBuilder/ConditionSummary remain private; Inbox is platform-only. The host validates table ownership and preset fields, and Board persistence uses the explicit app callback and managed record sessions. Current contract, validation evidence, and release gates are maintained in simple/architecture_history/space-views.md.
 
-14. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `user` and `tenant` on both `SpaceContext` kinds, in the shapes an action's context uses, through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values.
+15. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `user` and `tenant` on both `SpaceContext` kinds, in the shapes an action's context uses, through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values.
 
 Every step ends with focused automated contract tests and a browser checkpoint before the next public capability is added.
 
@@ -979,7 +977,7 @@ secret decryption, and parent-frame navigation.
 
 - **Decision:** Add `ListView`, `DataGrid`, `Board`, `InboxView`, `ConditionBuilder`, and `ConditionSummary` to `@simpleplatform/ui-kit/react`, with their source, preset, filter, and item-reference contracts in `@simpleplatform/ui-kit/contracts`.
 - **Reason:** Spaces need platform-consistent table and record views without rebuilding authorization, field formatting, filtering, and paging. View authors still control typed presentation presets and own navigation and persistence decisions.
-- **Boundary:** Managed view data has one source: an authorized database table named by `TableRecordSourceV1` (`appId` plus `tableId`). The platform resolves the ID and verifies app ownership before using its existing query hooks. No row arrays, arbitrary GraphQL documents, render callbacks, nested iframe, or new Space wire operation are exposed. The existing SimpleClient bridge and private UI Runtime carry the view. Filters share `FilterExpressionV1`; Board movement is an explicit request. QuickFilterBar is outside the first phase.
+- **Boundary:** Managed view data has one source: an authorized database table named by the public `TableRecordSource` (`appId` plus `tableId`). The platform resolves the ID and verifies app ownership before using its existing query hooks. No row arrays, arbitrary GraphQL documents, render callbacks, nested iframe, or new Space wire operation are exposed. The existing SimpleClient bridge and private UI Runtime carry the view. Filters share `FilterExpression`; Board movement is an explicit request. QuickFilterBar is outside the first phase.
 - **Contract:** The concise package guide is in [`sdks/space-ui/README.md`](../sdks/space-ui/README.md#managed-database-backed-views). The full platform architecture and future view roadmap are in the Simple repository at `simple/architecture_history/space-views.md` and `simple/architecture_history/space-view-roadmap.md`.
 
 ### 2026-10-11 — Require the SDK bridge before publishing managed views

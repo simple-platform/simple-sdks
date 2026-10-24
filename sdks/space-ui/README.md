@@ -346,6 +346,10 @@ The package exports `ListView`, `DataGrid`, and `Board` from
 `@simpleplatform/ui-kit/react`. Their contracts are exported from
 `@simpleplatform/ui-kit/contracts`.
 
+`ListView` uses the same tile preset for grid cards in a wide container and
+continuous rows in a narrow container. The layout follows the component's
+container width, including when it sits in a narrow Space on a wide screen.
+
 Inbox remains a platform Custom View preset and renderer. Spaces do not expose
 an `InboxView`; they can use List, DataGrid, and Board while platform routes
 continue to use Inbox.
@@ -397,7 +401,6 @@ const preset: ListPreset = {
       version: 1,
     },
   },
-  iconId: 'list',
   id: 'open-tickets',
   kind: 'list',
   title: 'Open tickets',
@@ -435,8 +438,8 @@ stay with the Space. Controlled views pass both `filter` and
 The view's built-in filter controls share the versioned `FilterExpression`
 with saved preset filters. A Space may control that view state with `filter`
 and `onFilterChange`; filter-builder components remain platform-owned. Preset
-`iconId` is optional and accepts only IDs exported in
-`RECORD_VIEW_ICON_IDS`; existing presets with `version: 1` and no icon remain valid.
+icons are derived from `kind`. Tile visuals use provider-qualified IDs from
+`RECORD_VIEW_ICON_IDS`, such as `lucide:star`.
 QuickFilterBar is excluded from the first phase.
 `DataGrid` mounts the existing platform TanStack GenericTable, including its
 column configuration, sorting/resizing/pinning, cell menus, filter dialog,
@@ -468,32 +471,31 @@ even when no numeric summaries are configured. Pending totals show a loading
 indicator; failed totals show unavailable rather than zero. At narrow widths
 the Board uses horizontally scrollable lane tabs, a full-width vertical record
 stack, and a per-card **Move** action listing every destination lane. Wider
-boards retain multi-lane drag-and-drop. Configure the initial batch with
-`loadMoreSizePerLane`; the default is 25. Optional `summaries` display up to
+boards retain multi-lane drag-and-drop. Configure the per-lane batch with
+`lanePageSize`; it defaults to 50, matching List and DataGrid. Optional `summaries` display up to
 three database-backed numeric aggregates over all matching authorized records
 in each lane after its preset and active filters, using `sum`, `average`,
 `min`, or `max`. The platform validates summary fields against the table
-schema. Set `config.orderBy` to sort cards within each lane by up to five fields;
-`laneOrder` controls the lane order. `pageSizePerLane` remains a deprecated
-alias for the load-more batch size.
+schema. Set preset `orderBy` to sort cards within each lane by up to five fields;
+`laneOrder` controls the lane order.
 
 ```ts
 import type { BoardPreset } from '@simpleplatform/ui-kit/contracts'
 
 const boardPreset: BoardPreset = {
-  id: 'opportunities',
-  title: 'Opportunities',
-  kind: 'board',
   config: {
     laneFieldName: 'stage',
-    loadMoreSizePerLane: 25,
-    orderBy: [{ fieldName: 'amount', direction: 'desc' }],
+    lanePageSize: 50,
     summaries: [
       { fieldName: 'amount', operation: 'sum' },
       { fieldName: 'amount', operation: 'average' },
     ],
-    tile: { version: 1, presentation: 'row', titleFieldName: 'name' },
+    tile: { presentation: 'row', titleFieldName: 'name', version: 1 },
   },
+  id: 'opportunities',
+  kind: 'board',
+  orderBy: [{ direction: 'desc', fieldName: 'amount' }],
+  title: 'Opportunities',
 }
 ```
 
@@ -505,8 +507,10 @@ was removed, the platform uses `defaultPresetId`. A Space receives an explicit
 `preset` prop and owns preset selection state.
 
 Space tiles use the same `RecordTileLayout` in List/Table/Board `config.tile`.
-The platform Inbox uses `config.listTile`. The compositions are `row`, `person`, `media`,
-`editorial`, `email`, `status`, and `spotlight`. Email uses `titleFieldName` for
+The platform Inbox uses `config.listTile`. Its `detail` defaults to `fields`,
+which requires `detailFieldNames`; `detail: 'record'` renders the platform
+RecordPage and does not accept `detailFieldNames`. The compositions are `row`,
+`person`, `media`, `editorial`, `email`, `status`, and `spotlight`. Email uses `titleFieldName` for
 the subject, `eyebrowFieldName` for the sender, `subtitleFieldName` for a
 two-line plain-text preview, and `trailingFieldName` for the received date/time.
 The platform Inbox displays sender and relative date together above the subject.
@@ -534,12 +538,12 @@ fixture uses this approach rather than separate hardcoded presets.
 
 Contract bounds are 20 presets, 80-character IDs, 120-character titles, 200-character
 unpadded field names, 40 fields per column/detail/badge array, 5 sort fields,
-80–800px column widths, and 20 total Board lanes with batches of at most 25
+80–800px column widths, and 20 total Board lanes with batches of at most 50
 records per lane. Enum icon maps allow 100 unpadded nonempty values of at most 200
 characters and only exported catalog icons. Portable SDK and schema-aware
 platform validators remain separate and run matching versioned conformance
-fixtures. The legacy local `table.config.narrowPresentation` option is read
-and normalized away; the platform always chooses responsive presentation.
+fixtures. Container width selects the responsive DataGrid presentation; it is
+not configurable in the preset.
 
 The `dev.simple.ui_fixtures` Space API Demo includes a database-backed tile
 playground: saved presets, Apply/Reset tile JSON, List/Table/Board previews,
