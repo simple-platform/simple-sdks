@@ -418,7 +418,7 @@ test('validates discriminated preset kinds', () => {
   assert.deepEqual(contracts.validateListPreset(sampleListPreset), sampleListPreset)
   assert.deepEqual(contracts.validateDataGridPreset(sampleTablePreset), sampleTablePreset)
   assert.deepEqual(contracts.validateBoardPreset(sampleBoardPreset), sampleBoardPreset)
-  assert.throws(() => contracts.validateBoardPreset({ ...sampleBoardPreset, kind: 'kanban' }), /kind must be 'board'/i)
+  assert.throws(() => contracts.validateBoardPreset({ ...sampleBoardPreset, kind: 'unsupported' }), /kind must be 'board'/i)
   assert.throws(() => contracts.validateBoardPreset({
     ...sampleBoardPreset,
     config: { ...sampleBoardPreset.config, loadMoreSizePerLane: 10 },
