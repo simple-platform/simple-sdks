@@ -19,7 +19,6 @@ import type {
   SimpleHeaderClient,
   SimpleTabsClient,
   SimpleToastClient,
-  SpaceHeaderStatusTransport,
   SpaceHeaderTransport,
   SpaceTabsTransport,
   SpaceToastOptions,
@@ -95,19 +94,15 @@ export type {
   TaskReplyResult,
   TaskStatus,
 } from './tasks.js'
-export { DEFAULT_TABS_TIMEOUT_MS, HEADER_ACTIONS_PROTOCOL_VERSION, HEADER_STATUS_PROTOCOL_VERSION, LUCIDE_ICON_NAME, TAB_ID, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION, validateHeaderStatus, validateTabs } from './ui.js'
+export { DEFAULT_TABS_TIMEOUT_MS, HEADER_ACTIONS_PROTOCOL_VERSION, LUCIDE_ICON_NAME, TAB_ID, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION, validateTabs } from './ui.js'
 export type {
   HeaderAction,
   HeaderActionType,
   SetTabsOptions,
   SimpleHeaderActionsClient,
   SimpleHeaderClient,
-  SimpleHeaderStatusClient,
   SimpleTabsClient,
   SimpleToastClient,
-  SpaceHeaderStatus,
-  SpaceHeaderStatusTransport,
-  SpaceStatusTone,
   SpaceTab,
   SpaceTabsSelectionEvent,
   SpaceTabsTransport,
@@ -179,7 +174,6 @@ export interface SimpleClientOptions {
   formModelTransport?: RecordFormModelTransport
   hostOrigin?: string
   headerTransport?: SpaceHeaderTransport
-  headerStatusTransport?: SpaceHeaderStatusTransport
   navigationTransport?: SpaceNavigationTransport
   nextRequestId?: () => string
   /** Present only when the host negotiated the records protocol. */
@@ -201,7 +195,6 @@ export function createSimpleClient({
   dataTransport,
   documentTransport,
   formModelTransport,
-  headerStatusTransport,
   headerTransport,
   hostOrigin,
   navigationTransport,
@@ -280,7 +273,7 @@ export function createSimpleClient({
     records,
     tasks: createTasksClient(taskTransport, nextRequestId),
     ui: {
-      header: createHeaderClient(immutableContext.kind === 'record', headerTransport, headerStatusTransport),
+      header: createHeaderClient(immutableContext.kind === 'record', headerTransport),
       tabs: createTabsClient(immutableContext.kind === 'record', tabsTransport, nextRequestId),
       toast: createToastClient(toastTransport),
     },
