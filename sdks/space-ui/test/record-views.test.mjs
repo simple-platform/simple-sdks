@@ -113,7 +113,7 @@ const sampleBoardPreset = {
     laneFieldName: 'status',
     laneOrder: ['todo', 'done'],
     loadMoreSizePerLane: 10,
-    orderBy: [{ fieldName: 'age', direction: 'desc' }],
+    orderBy: [{ direction: 'desc', fieldName: 'age' }],
     summaries: [{ fieldName: 'age', operation: 'sum' }, { fieldName: 'age', operation: 'average' }],
     tile: sampleTile,
   },
