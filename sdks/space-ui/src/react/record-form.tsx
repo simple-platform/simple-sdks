@@ -17,6 +17,9 @@ interface RuntimeRecordFormElement extends HTMLElement {
   graphql?: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
   capabilities?: unknown
   navigate?: (path: string) => Promise<void>
+  onDraftChange?: () => void
+  registerDiscard?: (discard: (values: Readonly<Record<string, unknown>>) => Promise<void>) => () => void
+  registerDraftState?: (getDirty: () => boolean) => () => void
   registerSubmitPreparation?: (preparation: () => Promise<Readonly<Record<string, unknown>> | undefined>) => () => void
   record?: RecordHandle
   subscribe?: (listener: (snapshot: unknown) => void) => () => void
@@ -98,6 +101,9 @@ function RecordFormInstance({ record }: RecordFormProps) {
         element.graphql = bridge.graphql
         element.capabilities = bridge.capabilities
         element.navigate = bridge.capabilities?.navigate
+        element.onDraftChange = bridge.onDraftChange
+        element.registerDiscard = bridge.registerDiscard
+        element.registerDraftState = bridge.registerDraftState
         element.registerSubmitPreparation = bridge.registerSubmitPreparation
         element.record = record
         element.subscribe = bridge.subscribe

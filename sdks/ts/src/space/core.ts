@@ -191,6 +191,8 @@ export interface SimpleClientOptions {
   transport?: SpaceTransport
 }
 
+const MANAGED_UI_SYMBOL = Symbol.for('@simpleplatform/sdk/space/managed-ui/v1')
+
 /** Composes Space capabilities around the host transports supplied by `connect`. */
 export function createSimpleClient({
   actionTransport,
@@ -266,7 +268,7 @@ export function createSimpleClient({
     runtime,
   })
 
-  return {
+  const client: SimpleClient = {
     actions: createActionsClient(actionTransport, nextRequestId),
     context: immutableContext,
     data: {
@@ -283,6 +285,20 @@ export function createSimpleClient({
       toast: createToastClient(toastTransport),
     },
   }
+
+  const uiBridge = Object.freeze({
+    graphql: (document: string, variables?: GraphQLVariables) => executeData(dataTransport, document, variables),
+    runtime: runtime ? Object.freeze({ url: runtime.url, version: runtime.version }) : undefined,
+  })
+
+  Object.defineProperty(client, MANAGED_UI_SYMBOL, {
+    configurable: false,
+    enumerable: false,
+    value: uiBridge,
+    writable: false,
+  })
+
+  return client
 }
 
 /** An action's context names the user by an optional ID; a supplied ID is non-blank. */

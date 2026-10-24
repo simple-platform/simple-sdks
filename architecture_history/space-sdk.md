@@ -1,5 +1,5 @@
-- **Status:** The foundation SDK, managed React `RecordForm`, Record-Space header actions and status, tabs with count tones, platform-toast request, command-driven snapshot refresh, behavior-feedback fixture, action runs, standalone document staging, and negotiated `simple.records.open()` are implemented in the workspace. Managed React `RecordActivity` is a local pre-release UI Kit component and is included in fixture `0.0.2-local.36`, deployed and installed in `acme::local`. Chrome CDP verified Activity reads, successful note posting, and Space-side tab switching: RecordForm rendered on Details while Activity was absent, then Activity returned on its tab. A host runtime test covers “Show more” pagination with 26 audit items. The earlier fixture `0.0.2-local.31` remains the deployment baseline for the SDK work described elsewhere in this history. `connect()` suppresses vertical edge bounce at the embedded Space document root while preserving normal scrolling. `connect({ targetOrigin })` is the sole browser bootstrap. The UI Kit uses a private layered record UI/form bridge; renderer, field registry, behavior scheduler, Activity stream query semantics, and managed-form/Activity host capabilities remain private. Generic framework-neutral Activity SDK APIs remain deferred; the records protocol is separate from Activity.
-- **Last updated:** 2026-10-21
+- **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires the compatible SDK 3.2.0 bridge; published 3.1.0 lacks it. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
+- **Last updated:** 2026-10-23
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -65,7 +65,7 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 - Production customer Spaces still use copied GraphQL bridge clients, plus in some cases identity, navigation, decryption, and theme helpers. They are not yet migrated.
 - `connect({ targetOrigin })` establishes the general Space transport even when the host does not negotiate record protocol v1. `simple.data` remains available in that environment, and `simple.records.open()` is available whenever `recordsTransport` was negotiated; `simple.records.current()` and unnegotiated capabilities reject with a structured `unavailable` error only when invoked.
 - Space documents load from the platform assets origin and are cross-origin to the host. The host's `<iframe>` styles cannot change the embedded root viewport's overscroll behavior; `connect()` applies that browser behavior inside the Space document.
-- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, both with the optional `user` and `tenant` an action's context carries, for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. List context is deferred until a custom list body exists.
+- The host explicitly supplies a `SpaceContext` during `INIT_RPC`: currently `standalone` or `record`, with optional `user` and `tenant` values in the action-context shapes for older-host compatibility. The SDK rejects a missing or malformed context rather than deriving page state from browser data. Managed `ListView` is an optional table-backed component usable from either existing context; it adds no list context or handshake capability.
 
 ## Target architecture
 
@@ -84,6 +84,11 @@ The SDK must give a Space author simple, recognizable nouns without exposing hos
 │   ├── simple.ui.tabs.set/select()     record-space tabs and navigation
 │   └── simple.ui.toast.show()          platform-owned toast presentation
 └── /space                      iframe MessagePort bootstrap, adapter, and core API
+
+@simpleplatform/ui-kit/react
+├── RecordForm / RecordActivity  host-managed record workflows
+├── ListView / DataGrid          database-backed list and table presentations
+└── Board                  database-backed board presentation
 
 Embedded Space
 └── BrowserSpaceTransport
@@ -117,6 +122,83 @@ element's ready/error lifecycle events; the host defines the element in
 and registers it through the `private-ui-runtime-entry.tsx` bundle entry.
 Generic framework-neutral Activity SDK APIs remain deferred and no new wire
 protocol was added.
+
+### Managed database-backed record views — implemented locally
+
+The optional React UI Kit exports `ListView`, `DataGrid`, and `Board` from
+`@simpleplatform/ui-kit/react`; their source, preset, filter, and callback types
+are also exported from `@simpleplatform/ui-kit/contracts` under unversioned names.
+These components mount the platform's existing private renderer in the Space
+iframe. They use the SDK's authenticated GraphQL bridge; there is no nested
+iframe, separate view protocol, caller-supplied row payload, or direct database
+client. Platform Inbox presets remain in the shared serialized Custom View
+contract, but only platform collection routes render them.
+
+Type names omit a version suffix. The saved `views` preset-set envelope, filter
+expressions, and tile layouts keep their `version: 1` fields so stored JSON can
+be versioned independently from SDK identifiers.
+
+The source is a database metadata identity:
+
+```tsx
+const source: RecordSource = {
+  appId: 'demo.people',
+  kind: 'table',
+  tableId: 'TBL000123',
+}
+
+const preset: ListPreset = {
+  config: {
+    orderBy: [{ direction: 'asc', fieldName: 'display_name' }],
+    tile: {
+      detailFieldNames: ['team'],
+      presentation: 'person',
+      subtitleFieldName: 'role',
+      titleFieldName: 'display_name',
+      version: 1,
+    },
+  },
+  iconId: 'user',
+  id: 'people',
+  kind: 'list',
+  title: 'People',
+}
+
+// <ListView client={simple} source={source} preset={preset} onItemOpen={openRecord} />
+```
+
+The renderer verifies that the table belongs to `appId` before resolving its
+schema or reading rows. Presets use stable SCL field names and contain view
+presentation, sort, filter, and family configuration only. The host owns
+authorization, field projection and formatting, server-side filtering and
+sorting, bounded paging, and the final query. `custom_view.customization.views`
+stores database-authored presets for platform Custom View routes; a Space may
+instead pass a typed preset directly.
+
+Presets may include an `iconId` from the safe `RECORD_VIEW_ICON_IDS`
+catalogue. It is optional, so existing presets with `version: 1` remain valid and render with
+their view-family default.
+
+List, DataGrid, and Board include platform-owned filter controls. A Space may
+pass the controlled filter pair `filter` + `onFilterChange` to synchronize that
+view state; standalone ConditionBuilder/ConditionSummary components are not
+public Space APIs. `onItemOpen` returns record identity only. `Board` is
+read-only until the Space opts in with `onMoveRequest`; its callback receives a
+validated record identity, lane field, and old/new enum lane. The Space persists the write through
+`simple.records.open()` and its record handle, so Record Behaviors and
+validation remain in force. Custom View routes persist with the existing
+authorized platform update hook.
+
+List, DataGrid, Board, and platform Inbox presets accept `config.orderBy` using
+readable logical field names and `asc`/`desc` directions. For Board, this sorts
+cards within each lane; `laneOrder` separately controls the order of lanes.
+
+There is no per-record React render callback or arbitrary HTML contract. Each
+view preset selects a platform-controlled declarative tile composition and
+binds safe fields; the host retains typography, focus, theme, media delivery,
+responsive behavior, and accessibility. A list tile may differ from the same
+record's compact reference or future Board card because each surface owns its
+layout choice.
 
 An embedded Space does not need a record route to use the SDK. Record protocol negotiation is an optional capability of the general browser transport.
 
@@ -474,6 +556,11 @@ The action contract agreed with the host:
 simple-sdks/
 ├── architecture_history/
 │   └── space-sdk.md
+├── sdks/space-ui/
+│   ├── src/contracts/views.ts   versioned sources, filters, layouts, presets, and callbacks
+│   ├── src/react/record-view.tsx React adapters over the private host renderer
+│   ├── src/react/record-bridge.ts SDK-created client bridge access
+│   └── test/record-views.test.mjs public contract and adapter tests
 └── sdks/ts/
     ├── src/space/core.ts        public transport-neutral client and contracts
     ├── src/space/index.ts       browser MessagePort adapter and public entry
@@ -500,6 +587,7 @@ simple-sdks/
 11. **Public portal transport — not started.** Add a server-issued portal session adapter that exposes the same contracts under portal-specific capability grants.
 12. **Record-Space tabs — complete in the SDK workspace.** Implemented `simple.ui.tabs.set({ tabs, onChange })` and `simple.ui.tabs.select(tabId)` with `protocols.tabs: [1]`, bounded acknowledgement, input/response validation, canonical event routing via `SPACE_UI_TABS_SELECTION_CHANGED`, and registrationRequestId correlation for superseded registrations. SDK contract and MessageChannel tests pass; the host implementation and integrated fixture are maintained in their respective repositories.
 13. **Managed RecordActivity — implemented locally, pre-release.** Exposed `<RecordActivity record={record} />` from `@simpleplatform/ui-kit/react`; it mounts the private `<simple-record-activity>` element, uses the existing host GraphQL/decrypt bridges without adding protocol operations, and is integrated into the local fixture. Chrome validation of Activity reads/note posting, tab-scoped mounting, and standard platform form/Activity behavior is recorded below.
+15. **Managed record views — implemented in the coordinated worktrees; publication remains gated.** Typed database-backed List, DataGrid, and Board with built-in filters are available through the React UI Kit entry point. Standalone ConditionBuilder/ConditionSummary remain private; Inbox is platform-only. The host validates table ownership and preset fields, and Board persistence uses the explicit app callback and managed record sessions. Current contract, validation evidence, and release gates are maintained in simple/architecture_history/space-views.md.
 
 14. **Signed-in viewer identity — SDK side implemented locally.** Expose the host-supplied optional `user` and `tenant` on both `SpaceContext` kinds, in the shapes an action's context uses, through the existing initialization validation path. Cover record and standalone identity, older-host absence, and malformed values.
 
@@ -565,6 +653,7 @@ secret decryption, and parent-frame navigation.
 - Build and test the internal `record-protocol` fixture against the current local SDK package.
 - Deploy the fixture to the internal local tenant and verify the platform header/body boundary, `simple.data.query()` success, staged record update, default-view recovery, and browser console/network health.
 - Verify managed `RecordActivity` in the deployed fixture, including feed reads, note posting, Activity-tab unmounting, and the default platform form/Activity path.
+- For managed views, run UI Kit contract/adapter tests, Space app tests/build, platform route/data/table/filter tests, and CLI scaffold tests. In the browser verify the table source resolves, Space List/Table/Board presets load, platform Inbox presets render on platform routes, filter state is preserved correctly, narrow DataGrid avoids horizontal page overflow, and an opted-in Board move survives reload.
 - Keep GraphQL mutation browser checks out of the fixture when a contract test proves serialization; browser validation should not create fixture data unnecessarily.
 - Migrate production Spaces only after a written capability-by-capability migration plan and rollback path.
 
@@ -886,6 +975,45 @@ secret decryption, and parent-frame navigation.
 - **Reason:** A StatusBadge should look consistent in a Space and in the platform without requiring Space authors to duplicate fifteen palette values.
 - **Boundary:** `sdks/space-ui/theme.css` remains independently overridable through its `--simple-status-badge-*` variables. The element, React bridge, font defaults, and Space SDK are unchanged.
 
+### 2026-10-11 — Expose managed database-backed views to Spaces
+
+- **Decision:** Add `ListView`, `DataGrid`, `Board`, `InboxView`, `ConditionBuilder`, and `ConditionSummary` to `@simpleplatform/ui-kit/react`, with their source, preset, filter, and item-reference contracts in `@simpleplatform/ui-kit/contracts`.
+- **Reason:** Spaces need platform-consistent table and record views without rebuilding authorization, field formatting, filtering, and paging. View authors still control typed presentation presets and own navigation and persistence decisions.
+- **Boundary:** Managed view data has one source: an authorized database table named by `TableRecordSourceV1` (`appId` plus `tableId`). The platform resolves the ID and verifies app ownership before using its existing query hooks. No row arrays, arbitrary GraphQL documents, render callbacks, nested iframe, or new Space wire operation are exposed. The existing SimpleClient bridge and private UI Runtime carry the view. Filters share `FilterExpressionV1`; Board movement is an explicit request. QuickFilterBar is outside the first phase.
+- **Contract:** The concise package guide is in [`sdks/space-ui/README.md`](../sdks/space-ui/README.md#managed-database-backed-views). The full platform architecture and future view roadmap are in the Simple repository at `simple/architecture_history/space-views.md` and `simple/architecture_history/space-view-roadmap.md`.
+
+### 2026-10-11 — Require the SDK bridge before publishing managed views
+
+- **Decision:** Set the UI Kit SDK peer range and the generated Space dependency to `@simpleplatform/sdk@^3.1.0`; retain the `0.0.0` peer exception for linked packages in this workspace. Make the release workflow publish a changed SDK before UI Kit and confirm a compatible SDK is already present on npm before staging UI Kit.
+- **Historical assumption, corrected October 23:** This decision incorrectly attributed the bridge to published SDK 3.1.0. Its artifact lacks the bridge. The corrected floor is the planned 3.2.0 release, and artifact execution replaces version-presence checks.
+- **Boundary:** The bridge stays private and is not added to the SDK's exports or public client type. Future UI Kit-only releases remain possible once an SDK satisfying the peer range is published.
+
+### 2026-10-12 — Keep managed views database-backed and compose them through the existing bridge
+
+- **Decision:** Export typed React List, DataGrid, Board, Inbox, and filter components from `@simpleplatform/ui-kit/react`. Their only managed source is `{ kind: 'table', appId, tableId }`; view presets bind schema fields and presentation, not rows.
+- **Reason:** Caller-provided rows bypass platform authorization, field formatting, filtering, and paging. A second iframe or Space wire protocol would duplicate the established SDK and private UI runtime boundaries.
+- **Boundary:** The Space supplies source identity and view intent. The host checks ownership and authorization, resolves schema, bounds the query, and renders through its private component runtime. View-specific filter controls may differ while sharing `FilterExpressionV1`. Board writes require the caller's explicit callback and record-session persistence.
+
+- **October 13, 2026 — Managed views verified against the existing platform table.** Public DataGrid keeps the source/preset/item-callback contract and mounts GenericTable through the private runtime. Record and reference opens use the same callback. Local automated/browser results and release limits are recorded in [Space Record Views](../../simple/architecture_history/space-views.md); the API remains pre-release.
+
+## 2026-10-14 standard Inbox record page (historical Space capability)
+
+This was the Space Inbox design at implementation time. It used `recordPageBase` in the private runtime descriptor to open an authenticated standard page rather than a parallel `records.open()` managed form. The capability has since been removed from the Space SDK/runtime boundary. Platform Inbox retains its own authenticated embedded record page, configured Record Space, behavior/session, and guarded navigation; no tokens or arbitrary customer iframe URLs are passed.
+
+The October 14 browser correction hosted the Space page in a clipped platform surface outside the restricted Space frame because Chrome propagates the Space CSP to descendants. That Space positioning and message-channel plumbing are removed by the October 21 scope decision. Platform Inbox's ordinary embedded-page boundary remains. Record documents accept same-origin frame ancestors only.
+
+### 2026-10-21 — Keep Inbox platform-only
+
+- **Decision:** Remove `InboxView`, its `requestLeave()` React ref, and its record-page host capability from the Space UI Kit/runtime. Spaces expose List, DataGrid, and Board. Keep `InboxPresetV1` in the serialized shared contract because platform Custom Views still configure and render Inbox.
+- **Reason:** Space Inbox required a separate host-positioned page surface and lifecycle plumbing. That cross-document integration is not needed for the platform's Inbox route and is not a Space requirement.
+- **Boundary:** Platform Inbox keeps its authenticated embedded record page, configured Record Space support, and dirty-record guard. Space preset selection skips Inbox; the runtime rejects attempts to mount it. Do not create a `RecordRenderer` Space adapter unless another product requirement needs full record pages inside Spaces.
+
+### 2026-10-21 — Keep standalone filter editors platform-owned
+
+- **Decision:** Remove `ConditionBuilder` and `ConditionSummary` from the Space React UI Kit and its private Space runtime contract. Keep each managed view's built-in filter controls, controlled view filter props, and the shared serialized `FilterExpressionV1`.
+- **Reason:** A standalone filter editor is a separate public surface that needs its own API review. The view controls already cover Space filtering without exposing platform editor components.
+- **Boundary:** Platform table and collection routes continue to use the internal ConditionBuilder. Space developers cannot mount a standalone filter editor through the supported UI Kit API.
+
 ### 2026-10-21 — Expose signed-in viewer identity in initialization context
 
 - **Decision:** Add `userId?: string` to both `SpaceContext` variants in `sdks/ts/src/space/core.ts` and validate it through the existing context check. Hosts with identity context support supply the signed-in user's ID in `INIT_RPC`; older hosts leave it absent. Supplied non-string or blank values reject initialization as malformed context.
@@ -899,3 +1027,15 @@ secret decryption, and parent-frame navigation.
 - **Reason:** A Space and an action should see the signed-in user and the tenant in one shape. An action's context already carries `user` and `tenant`; a second, Space-only name for the same identity would drift. Nothing beyond what an action receives (no email, no names) reaches a Space.
 - **Supersedes:** The 2026-10-21 `userId` field, which was never released.
 - **Boundary:** Unchanged: identity is descriptive, not an authorization grant.
+
+### 2026-10-23 — Validate released bridges and coordinate Inbox drafts
+
+- **Decision:** Require SDK `^3.2.0` for managed collection views, retain the explicit local `0.0.0` override, publish SDK before UI Kit, and execute the registry SDK artifact to verify bridge and GraphQL forwarding. Correct invalid-source recovery and remove the Space reference override so all record links follow `onItemOpen`.
+- **Private lifecycle:** Prefer managed form protocol v3 while retaining v2 model rendering. Correlated host check/prepare/discard requests aggregate mounted managed forms, serialize mutations, and report dirty/busy state. Preparation applies validated updates before the host submits; discard waits for local work before the host resets its baseline. Unsupported or disconnected draft coordination blocks platform Inbox navigation with an error. No public lifecycle or standalone filter API is added.
+- **Evidence:** SDK 242 tests and UI Kit 115 tests pass. Published 3.1.0 fails the built-bridge check; the local packed SDK passes. SDK 3.2.0 is planned and remains unpublished; final clean registry installation follows its release.
+
+### 2026-10-23 — Keep version suffixes out of public managed-view names
+
+- **Decision:** Export managed-view contracts and validators with stable unversioned names such as `DataGridPreset` and `validateDataGridPreset`. Keep `V1` suffixes in internal SDK implementation symbols only.
+- **Reason:** Public names describe the API concept; the serialized JSON already carries its format version.
+- **Boundary:** Saved view, filter, and tile objects keep `version: 1`. This is a source-level and export-name change only; existing serialized Custom View data remains readable.

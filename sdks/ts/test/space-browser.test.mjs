@@ -215,7 +215,7 @@ test('connects a Space without exposing embedded transport configuration', async
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [3, 2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -598,7 +598,7 @@ test('offers supported Space capabilities including document staging', async () 
     const connection = connect({ targetOrigin: 'https://acme.simple.lcl' })
 
     assert.deepEqual(spaceWindow.parentMessages, [{
-      message: { protocols: { action: [1], document: [1], form: [2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
+      message: { protocols: { action: [1], document: [1], form: [3, 2], header: [1], headerStatus: [1], record: [1], records: [1], tabs: [1], task: [1], theme: [1], toast: [1] }, type: 'SPACE_READY' },
       targetOrigin: 'https://acme.simple.lcl',
     }])
 
@@ -638,7 +638,7 @@ test('SPACE_READY advertises supported protocol versions including records: [1]'
     assert.deepEqual(readyMessage.message.protocols, {
       action: [1],
       document: [1],
-      form: [2],
+      form: [3, 2],
       header: [1],
       headerStatus: [1],
       record: [1],
@@ -2013,4 +2013,201 @@ test('rejects malicious provider, family, weight, and URL metadata while preserv
   finally {
     restoreWindow()
   }
+})
+
+test('attaches a non-enumerable private UI bridge to created SimpleClient', async () => {
+  const port = new FakePort()
+  const runtime = { url: 'https://cdn.simple.lcl/runtime.js', version: '2.0.0' }
+  const client = await connectWithHost(port, { kind: 'standalone' }, {}, runtime)
+
+  const uiSymbol = Symbol.for('@simpleplatform/sdk/space/managed-ui/v1')
+  const bridge = client[uiSymbol]
+
+  assert.ok(bridge, 'client must have the private UI bridge attached')
+  assert.equal(typeof bridge.graphql, 'function')
+  assert.deepEqual(bridge.runtime, runtime)
+  assert.equal(Object.isFrozen(bridge), true)
+  assert.equal(Object.isFrozen(bridge.runtime), true)
+
+  const descriptor = Object.getOwnPropertyDescriptor(client, uiSymbol)
+  assert.equal(descriptor?.enumerable, false)
+  assert.equal(descriptor?.configurable, false)
+  assert.equal(descriptor?.writable, false)
+  assert.equal(Object.keys(client).includes(uiSymbol.toString()), false)
+
+  const publicKeys = Object.keys(client).sort()
+  assert.deepEqual(publicKeys, [
+    'actions',
+    'context',
+    'data',
+    'documents',
+    'navigation',
+    'records',
+    'tasks',
+    'ui',
+  ])
+  assert.equal(typeof client.records.current, 'function')
+  assert.equal(typeof client.records.open, 'function')
+  assert.deepEqual(Object.keys(client.records).sort(), ['current', 'open'])
+
+  const queryPromise = bridge.graphql('query { me { id } }', { flag: true })
+  assert.equal(port.sent.length, 1)
+  assert.equal(port.sent[0].type, 'GRAPHQL_REQUEST')
+  assert.equal(port.sent[0].payload.query, 'query { me { id } }')
+  assert.deepEqual(port.sent[0].payload.variables, { flag: true })
+
+  port.emit({
+    data: { me: { id: 'user-1' } },
+    id: port.sent[0].payload.id,
+    type: 'GRAPHQL_RESPONSE',
+  })
+  const queryResult = await queryPromise
+  assert.deepEqual(queryResult, { me: { id: 'user-1' } })
+})
+
+test('attaches a private UI bridge without runtime when host omits runtime descriptor', async () => {
+  const port = new FakePort()
+  const client = await connectWithHost(port, { kind: 'standalone' }, {})
+  const uiSymbol = Symbol.for('@simpleplatform/sdk/space/managed-ui/v1')
+  const bridge = client[uiSymbol]
+
+  assert.ok(bridge, 'client must have the private UI bridge attached')
+  assert.equal(bridge.runtime, undefined)
+  assert.equal(typeof bridge.graphql, 'function')
+})
+
+async function waitForPortMessage(port, predicate) {
+  for (let turn = 0; turn < 30; turn++) {
+    const message = port.sent.find(predicate)
+    if (message)
+      return message
+    await new Promise(resolve => setImmediate(resolve))
+  }
+  assert.fail('Expected a MessagePort response.')
+}
+
+let formRequestId = 0
+function requestHostForm(port, sessionId, operation, values) {
+  const id = `form-request-${++formRequestId}`
+  port.emit({ id, operation, sessionId, type: 'SPACE_RECORD_FORM_REQUEST', ...(values === undefined ? {} : { values }) })
+  return waitForPortMessage(port, message => message.type === 'SPACE_RECORD_FORM_RESULT' && message.id === id)
+}
+
+async function openLifecycleRecord(port) {
+  const client = await connectWithHost(port, recordContext, { form: 3, record: 1 })
+  const opening = client.records.current()
+  const response = primaryRecordResponse(port.sent.at(-1).request.requestId)
+  response.result.form = { fields: [] }
+  port.emit({ response, type: 'SPACE_PROTOCOL_RESPONSE' })
+  return await opening
+}
+
+test('host form lifecycle aggregates drafts, prepares file values, and discards without submitting', async () => {
+  const port = new FakePort()
+  const record = await openLifecycleRecord(port)
+  const bridge = getRecordFormBridge(record)
+  let firstDirty = true
+  let secondDirty = false
+  const stopFirst = bridge.registerDraftState(() => firstDirty)
+  const stopSecond = bridge.registerDraftState(() => secondDirty)
+  assert.deepEqual(port.sent.at(-1), { dirty: true, sessionId: record.id, type: 'SPACE_RECORD_FORM_DRAFT' })
+  const before = port.sent.length
+  assert.deepEqual(await requestHostForm(port, record.id, 'check'), {
+    busy: false,
+    dirty: true,
+    id: `form-request-${formRequestId}`,
+    ok: true,
+    sessionId: record.id,
+    type: 'SPACE_RECORD_FORM_RESULT',
+  })
+  assert.equal(port.sent.slice(before).some(message => message.request), false, 'Checking must not upload or update')
+
+  firstDirty = false
+  secondDirty = true
+  bridge.onDraftChange()
+  assert.equal(port.sent.at(-1).dirty, true)
+  stopFirst()
+  assert.equal(port.sent.at(-1).dirty, true, 'One unmounted form cannot clear another form draft')
+  bridge.registerSubmitPreparation(async () => ({ attachment: [{ file_hash: 'prepared-file' }] }))
+  const preparing = requestHostForm(port, record.id, 'prepare')
+  const update = (await waitForPortMessage(port, message => message.request?.operation === 'record.update')).request
+  assert.deepEqual(update.payload.values, { attachment: [{ file_hash: 'prepared-file' }] })
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, true)
+  assert.equal((await requestHostForm(port, record.id, 'discard', {})).ok, false)
+  await assert.rejects(record.submit(), /still being prepared/)
+  port.emit({
+    response: { ok: true, protocol: 1, requestId: update.requestId, result: { ok: true, snapshot: { ...record.snapshot(), revision: 1 } } },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  })
+  const prepared = await preparing
+  assert.equal(prepared.ok, true)
+  assert.deepEqual({ busy: prepared.busy, dirty: prepared.dirty }, { busy: false, dirty: true })
+  assert.equal(port.sent.some(message => message.request?.operation === 'record.submit'), false)
+
+  let discardedValues
+  bridge.registerDiscard(async (values) => {
+    discardedValues = values
+    secondDirty = false
+  })
+  const updatesBeforeDiscard = port.sent.filter(message => message.request?.operation === 'record.update').length
+  const discarded = await requestHostForm(port, record.id, 'discard', { status: 'draft' })
+  assert.equal(discarded.ok, true)
+  assert.deepEqual({ busy: discarded.busy, dirty: discarded.dirty }, { busy: false, dirty: false })
+  assert.deepEqual(discardedValues, { status: 'draft' })
+  assert.equal(port.sent.filter(message => message.request?.operation === 'record.update').length, updatesBeforeDiscard)
+  assert.equal((await requestHostForm(port, record.id, 'check')).dirty, false)
+  stopSecond()
+})
+
+test('host form requests fail closed for unknown sessions, bad operations, and failed preparation', async () => {
+  const port = new FakePort()
+  const record = await openLifecycleRecord(port)
+  const bridge = getRecordFormBridge(record)
+  for (const [sessionId, operation, values, error] of [
+    ['unknown-session', 'check', undefined, /unavailable/],
+    [record.id, 'unsupported', undefined, /unsupported/],
+    [record.id, 'discard', [], /original record values/],
+  ]) {
+    const result = await requestHostForm(port, sessionId, operation, values)
+    assert.equal(result.ok, false)
+    assert.equal(result.sessionId, sessionId)
+    assert.match(result.error, error)
+  }
+  const stopPreparation = bridge.registerSubmitPreparation(async () => {
+    throw new Error('Upload failed')
+  })
+  const failed = await requestHostForm(port, record.id, 'prepare')
+  assert.equal(failed.ok, false)
+  assert.match(failed.error, /Upload failed/)
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, false)
+  stopPreparation()
+  assert.equal((await requestHostForm(port, record.id, 'prepare')).ok, true)
+})
+
+test('SDK submit keeps host form busy during preparation and clears it after failure or completion', async () => {
+  const port = new FakePort()
+  const record = await openLifecycleRecord(port)
+  const bridge = getRecordFormBridge(record)
+  let rejectPreparation
+  const stopPreparation = bridge.registerSubmitPreparation(() => new Promise((_resolve, reject) => {
+    rejectPreparation = reject
+  }))
+  const failedSubmit = record.submit()
+  const failedSubmitAssertion = assert.rejects(failedSubmit, /Upload failed/)
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, true)
+  assert.equal((await requestHostForm(port, record.id, 'discard', {})).ok, false)
+  rejectPreparation(new Error('Upload failed'))
+  await failedSubmitAssertion
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, false)
+  stopPreparation()
+
+  const submitting = record.submit()
+  const request = (await waitForPortMessage(port, message => message.request?.operation === 'record.submit')).request
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, true)
+  port.emit({
+    response: { ok: true, protocol: 1, requestId: request.requestId, result: { ok: true, snapshot: record.snapshot() } },
+    type: 'SPACE_PROTOCOL_RESPONSE',
+  })
+  assert.equal((await submitting).ok, true)
+  assert.equal((await requestHostForm(port, record.id, 'check')).busy, false)
 })

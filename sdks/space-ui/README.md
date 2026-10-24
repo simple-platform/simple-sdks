@@ -7,9 +7,11 @@ workflow; use the Space SDK directly when you need to own the UI yourself.
 ## Status
 
 This package is in alpha. `StatusBadge` is the current simple component.
-Managed `RecordForm` and `RecordActivity` are pre-release interfaces and still require deployed
-browser-parity approval. Record-header actions are exposed by the companion
-Space SDK as `simple.ui.header`; they are not a UI Kit export.
+Managed `RecordForm`, `RecordActivity`, and database-backed record views are
+pre-release React interfaces. Their local fixture implementations have been
+browser-verified; they are not yet a stable compatibility promise. Record-header
+actions are exposed by the companion Space SDK as `simple.ui.header`; they are
+not a UI Kit export.
 Do not treat alpha APIs as a stable compatibility promise until they are
 released with an explicit support policy.
 
@@ -19,10 +21,14 @@ released with an explicit support policy.
 pnpm add @simpleplatform/ui-kit @simpleplatform/sdk
 ```
 
-The kit needs version 3 of `@simpleplatform/sdk`, and React 18.3 or 19 for its
-React bridges. Its peer range also accepts `0.0.0`, the number the SDK carries
-inside this repository, so a Space that links both packages by folder path
-installs without a warning.
+Managed views require the SDK's private managed-view bridge. The peer and
+scaffold requirement is `@simpleplatform/sdk@^3.2.0`; 3.2.0 is the planned
+compatible release and is not yet published. Published SDK 3.1.0 lacks the
+bridge. Publish the compatible SDK before the UI Kit; the UI Kit release check
+verifies the published SDK artifact's bridge. For local review, use matching
+SDK/UI Kit feature builds. React bridges support React 18.3 or 19. The `0.0.0`
+peer exception supports linked workspace builds and does not prove registry
+compatibility.
 
 Releases are tagged `v<version>-kit`. The package is below 1.0: a breaking
 change raises the minor, and the default range `^0.1.0` never moves onto `0.2`
@@ -121,30 +127,28 @@ with other UI that uses the platform theme; they are not component-local
 ### Runtime boundary
 
 The Simple host supplies the exact UI Runtime to the managed component bridge
-during the Space handshake. `<RecordForm />` and `<RecordActivity />` load it automatically; the runtime
-loader and URL are private implementation details, not supported Space APIs.
+during the Space handshake. `RecordForm`, `RecordActivity`, and the managed
+database-backed views load it automatically; the runtime loader and URL are
+private implementation details, not supported Space APIs.
 Space authors should never choose or hard-code a runtime URL.
 
-The UI Kit reads host metadata and authorized callbacks from SDK-created record
-handles through a versioned symbol. Space authors use the `RecordForm` and
-`RecordActivity` components; there is no managed UI adapter package entry point.
+`RecordForm` and `RecordActivity` use a bridge on SDK-created record handles.
+Managed views take the SDK client, a table source, and a validated preset. The
+public adapter entry point is `@simpleplatform/ui-kit/react`; runtime elements
+and bridge metadata remain private.
 
 ### Framework support
 
-The managed `RecordForm` and `RecordActivity` exports are currently available only from
-`@simpleplatform/ui-kit/react`. Simple's renderer itself runs inside the Space
-iframe, so React is not an architectural requirement for customer Spaces; the
-current limitation is that a public framework-neutral form or activity element has not
-been shipped. The private runtime elements are not supported HTML APIs.
+Managed `RecordForm`, `RecordActivity`, and record-view components are currently
+available only from `@simpleplatform/ui-kit/react`. Simple's renderer itself runs
+inside the Space iframe, so React is not an architectural requirement for customer
+Spaces; no public framework-neutral managed form, activity, or view element has
+shipped. Private runtime elements are not supported HTML APIs.
 
-The intended direction is to expose a public element from
-`@simpleplatform/ui-kit/elements` and make the React component a thin adapter
-over it. Vue, Svelte, or plain JavaScript could then pass a `RecordHandle` as an
-element property and use the same managed form. Until that element has a
-documented lifecycle, property, error, loading, and cleanup contract, non-React
-Spaces can use `@simpleplatform/sdk/space` to build custom controls with
-`simple.records.current()` or `simple.records.open()`. The managed `RecordForm`
-itself remains available only through the React entry point.
+`StatusBadge` has a public Web Component entry. Non-React Spaces can use
+`@simpleplatform/sdk/space` to build their own record and view controls with the
+authorized SDK APIs. The private managed UI runtime elements are not a supported
+cross-framework contract.
 
 ## RecordForm
 
@@ -237,8 +241,9 @@ Simple and are not supported extension APIs:
 - field editor registry or per-field renderer replacement;
 - RecordForm's document attachment/promotion lifecycle, reference search,
   secret decryption, and JSON-editor internals. Document upload and promotion
-  are handled by the managed form's private host adapter; a standalone file
-  staging API is not currently exposed to Spaces.
+  are handled by the managed form's private host adapter. Customer-owned
+  uploads can use the separate public `simple.documents.stage({ file })` API;
+  staging does not attach the file to a record.
 - Record Behavior scheduling and host session events.
 
 This boundary lets Simple improve complex field workflows without requiring
@@ -267,7 +272,7 @@ export function ActivityView() {
   useEffect(() => {
     let active = true
     void client
-      .then(simple => simple.record())
+      .then(simple => simple.records.current())
       .then((value) => {
         if (active)
           setRecord(value)
@@ -293,9 +298,9 @@ export function ActivityView() {
 }
 ```
 
-| Prop     | Type           | Required | Purpose                                                            |
-| -------- | -------------- | -------- | ------------------------------------------------------------------ |
-| `record` | `RecordHandle` | Yes      | A record handle from `simple.record()` or `simple.records.open()`. |
+| Prop     | Type           | Required | Purpose                                                                     |
+| -------- | -------------- | -------- | --------------------------------------------------------------------------- |
+| `record` | `RecordHandle` | Yes      | A record handle from `simple.records.current()` or `simple.records.open()`. |
 
 ### Supported context and behavior
 
@@ -327,7 +332,226 @@ It receives `applicationId`, `tableId`, `recordId`, `fields`, `graphql`, and the
 existing optional decrypt capability from the private record UI bridge. The
 runtime descriptor, loader, and underlying GraphQL operations are
 private implementation details and not customer extension points. This integration
-is pre-release and subject to deployed browser-parity approval.
+remains pre-release; local browser parity has been verified in the fixture.
+
+## Managed database-backed views
+
+Managed views render authorized records from a table through the existing host
+bridge. They accept configuration rather than row arrays, GraphQL documents, or
+render callbacks. The platform validates preset fields against the current
+readable schema and keeps authorization, filtering, ordering, paging, and field
+formatting in its existing record path.
+
+The package exports `ListView`, `DataGrid`, and `Board` from
+`@simpleplatform/ui-kit/react`. Their contracts are exported from
+`@simpleplatform/ui-kit/contracts`.
+
+Inbox remains a platform Custom View preset and renderer. Spaces do not expose
+an `InboxView`; they can use List, DataGrid, and Board while platform routes
+continue to use Inbox.
+
+List, DataGrid, and Board provide their platform-owned filter controls.
+Standalone `ConditionBuilder` and `ConditionSummary` components are not public
+Space APIs yet.
+
+### Maintaining the shared contract fixtures
+
+`test/fixtures/record-view-contract-v1.json` in this package is the authority;
+the platform keeps a tracked mirror so each repo can run its tests independently.
+Edit the authority, then run these commands from the SDK repo with both checkouts available:
+
+```sh
+node scripts/sync-record-view-contract.mjs ../simple
+node scripts/sync-record-view-contract.mjs ../simple --check
+```
+
+Commit both copies together. The corpus covers legacy Board page-size normalization
+and current Show more with numeric summaries.
+
+Public TypeScript names omit a version suffix. The saved `views` preset-set
+envelope, filter expressions, and tile layouts retain their `version: 1` fields.
+
+```tsx
+import type { SimpleClient } from '@simpleplatform/sdk/space'
+import type {
+  FilterExpression,
+  ListPreset,
+  TableRecordSource,
+  ViewItemReference,
+} from '@simpleplatform/ui-kit/contracts'
+import { ListView } from '@simpleplatform/ui-kit/react'
+import { useState } from 'react'
+
+const source: TableRecordSource = {
+  appId: 'com.example.crm',
+  kind: 'table',
+  tableId: 'TBL000123',
+}
+
+const preset: ListPreset = {
+  config: {
+    tile: {
+      presentation: 'row',
+      subtitleFieldName: 'status',
+      titleFieldName: 'title',
+      version: 1,
+    },
+  },
+  iconId: 'list',
+  id: 'open-tickets',
+  kind: 'list',
+  title: 'Open tickets',
+}
+
+export function TicketList({ client, openTicket }: {
+  client: SimpleClient
+  openTicket: (reference: ViewItemReference) => void
+}) {
+  const [filter, setFilter] = useState<FilterExpression | undefined>(preset.filter)
+
+  return (
+    <ListView
+      client={client}
+      source={source}
+      preset={preset}
+      filter={filter}
+      onFilterChange={setFilter}
+      onItemOpen={openTicket}
+    />
+  )
+}
+```
+
+Import `ViewItemReference` from `@simpleplatform/ui-kit/contracts` for the
+callback type in this example. The source is `{ kind: 'table', appId, tableId }`;
+`tableId` is the platform table metadata record ID, not the logical SCL table
+name. The platform resolves it and verifies app ownership before using its
+existing record hooks. Presets are versioned and discriminated as `list`, `table`,
+`board`, or `inbox`; Inbox is platform-only. Fields use logical SCL names. `onItemOpen` receives only
+`{ kind: 'record', appId, tableName, recordId }`. Navigation and record actions
+stay with the Space. Controlled views pass both `filter` and
+`onFilterChange`; otherwise the preset's filter initializes view state.
+
+The view's built-in filter controls share the versioned `FilterExpression`
+with saved preset filters. A Space may control that view state with `filter`
+and `onFilterChange`; filter-builder components remain platform-owned. Preset
+`iconId` is optional and accepts only IDs exported in
+`RECORD_VIEW_ICON_IDS`; existing presets with `version: 1` and no icon remain valid.
+QuickFilterBar is excluded from the first phase.
+`DataGrid` mounts the existing platform TanStack GenericTable, including its
+column configuration, sorting/resizing/pinning, cell menus, filter dialog,
+refresh, page export and pager. Narrow containers use platform tiles with the
+same fetched rows and sorting state. With no tile configured, the first visible
+selected column becomes the labeled title and every other selected column is
+shown as a labeled value. A configured tile emphasizes its bound fields and
+appends the remaining visible columns once. Filter changes preserve user sort;
+changed sort defaults apply intentionally. `onItemOpen` handles record and reference
+opens; omitting it makes navigation unavailable. Route-only New/custom actions
+are supplied by the platform route host.
+
+Configured email tiles also retain the remaining selected DataGrid columns as
+labeled values. Ordinary List/Inbox email tiles keep their sender/date,
+subject, and preview layout.
+
+Simple and advanced filters reject numeric input that JavaScript cannot
+represent without changing its value; invalid text stays visible for correction.
+JSON key operands remain strings, including keys such as `"123"` or `"true"`.
+Nested AND/OR groups and multi-value operands retain their complete meaning
+when opening the advanced editor or adding a simple field filter.
+
+`Board` may call `onMoveRequest`; it does not persist a move by itself.
+Use `client.records.open()`, check `update()` and `submit()` results, and reject
+the callback when the managed workflow fails. Lanes must use an enum field.
+Narrow boards load cards only for the selected lane and keep each lane's Show
+more limit when switching. Lane totals are queried independently for all lanes,
+even when no numeric summaries are configured. Pending totals show a loading
+indicator; failed totals show unavailable rather than zero. At narrow widths
+the Board uses horizontally scrollable lane tabs, a full-width vertical record
+stack, and a per-card **Move** action listing every destination lane. Wider
+boards retain multi-lane drag-and-drop. Configure the initial batch with
+`loadMoreSizePerLane`; the default is 25. Optional `summaries` display up to
+three database-backed numeric aggregates over all matching authorized records
+in each lane after its preset and active filters, using `sum`, `average`,
+`min`, or `max`. The platform validates summary fields against the table
+schema. Set `config.orderBy` to sort cards within each lane by up to five fields;
+`laneOrder` controls the lane order. `pageSizePerLane` remains a deprecated
+alias for the load-more batch size.
+
+```ts
+import type { BoardPreset } from '@simpleplatform/ui-kit/contracts'
+
+const boardPreset: BoardPreset = {
+  id: 'opportunities',
+  title: 'Opportunities',
+  kind: 'board',
+  config: {
+    laneFieldName: 'stage',
+    loadMoreSizePerLane: 25,
+    orderBy: [{ fieldName: 'amount', direction: 'desc' }],
+    summaries: [
+      { fieldName: 'amount', operation: 'sum' },
+      { fieldName: 'amount', operation: 'average' },
+    ],
+    tile: { version: 1, presentation: 'row', titleFieldName: 'name' },
+  },
+}
+```
+
+Preset selectors on the platform and fixture show the family icon beside the
+title. On a platform Custom View route, the most recently selected preset is
+stored in local browser preferences per application and Custom View. An
+explicit `?preset=<id>` URL selection takes precedence; if a remembered preset
+was removed, the platform uses `defaultPresetId`. A Space receives an explicit
+`preset` prop and owns preset selection state.
+
+Space tiles use the same `RecordTileLayout` in List/Table/Board `config.tile`.
+The platform Inbox uses `config.listTile`. The compositions are `row`, `person`, `media`,
+`editorial`, `email`, `status`, and `spotlight`. Email uses `titleFieldName` for
+the subject, `eyebrowFieldName` for the sender, `subtitleFieldName` for a
+two-line plain-text preview, and `trailingFieldName` for the received date/time.
+The platform Inbox displays sender and relative date together above the subject.
+List/Inbox email tiles omit generic badges, detail fields, and icons; DataGrid
+retains selected fields as labeled values. Bind
+title/subtitle/eyebrow/trailing, badge/detail fields, a safe catalog icon, an
+enum icon map, or an authorized document image. Values stay inline and safe inside the parent open action;
+references request only the target ID/display field and fall back to the ID
+when unavailable. Arbitrary HTML/CSS, image URLs, row arrays and render callbacks
+are not supported.
+
+`InboxPreset` describes platform Custom View configuration only. The
+Space UI Kit does not export an Inbox renderer.
+
+The Space collection components do not expose an imperative ref. Space code
+owns source, preset, and navigation state; managed List, DataGrid, and Board do
+not host an editable record-detail session.
+
+Public components take an explicit preset. To reuse a saved Custom View, load
+its active List-type record with the existing SDK query, verify target table,
+call `validateViewPresetSet(customization.views)`, and choose a List, Table, or
+Board preset. Skip platform-only Inbox presets. Initialize controlled filters from `selected.filter` when
+desired; controlled `filter={undefined}` deliberately means unfiltered. The
+fixture uses this approach rather than separate hardcoded presets.
+
+Contract bounds are 20 presets, 80-character IDs, 120-character titles, 200-character
+unpadded field names, 40 fields per column/detail/badge array, 5 sort fields,
+80–800px column widths, and 20 total Board lanes with batches of at most 25
+records per lane. Enum icon maps allow 100 unpadded nonempty values of at most 200
+characters and only exported catalog icons. Portable SDK and schema-aware
+platform validators remain separate and run matching versioned conformance
+fixtures. The legacy local `table.config.narrowPresentation` option is read
+and normalized away; the platform always chooses responsive presentation.
+
+The `dev.simple.ui_fixtures` Space API Demo includes a database-backed tile
+playground: saved presets, Apply/Reset tile JSON, List/Table/Board previews,
+phone/full widths, simple/advanced filters, and generated component code. Its
+14 scenario families are seeded database records; preview JSON supplies layout
+only. Final deployed visual/device acceptance for these additions is tracked
+separately from passing unit/package checks.
+
+See `simple/architecture_history/space-views.md` for the current platform
+contract, implementation status, verification, and release gates. Future view
+API designs are in `simple/architecture_history/space-view-roadmap.md`.
+This API is pre-release.
 
 ## Build a custom form instead
 
@@ -510,10 +734,12 @@ the `onChange` callback once, deduplicating the response and event.
 
 ## Multiple records
 
-The first release supports the route-owned primary record only. A future
-secondary-record API will let a Space explicitly define a multi-record save
-plan. `RecordForm` does not infer a save order from the forms on screen, and a
-header action never silently submits every visible form.
+`simple.records.current()` returns the route-owned primary record;
+`simple.records.open({ appId, tableName, recordId })` opens an independently
+authorized session for another record. Opened sessions live until the Space
+connection ends. Each handle submits independently; the SDK does not provide an
+atomic multi-record transaction or infer save order from the forms on screen.
+A header action never silently submits every visible form.
 
 For all-or-nothing multi-record workflows, use a server-side transactional
 Action when that capability is available; sequential browser submits cannot

@@ -183,8 +183,8 @@ cannot be opened again as a secondary session (`already_current`).
 
 ### Managed record UI and header actions (pre-release)
 
-The companion UI Kit currently implements a managed React form for Record
-Spaces:
+The companion UI Kit provides pre-release managed React `RecordForm` and
+`RecordActivity` components for record handles:
 
 ```tsx
 <RecordForm record={record} />
@@ -194,6 +194,12 @@ It renders the complete Simple form without exposing field schemas, editor
 registries, document/reference/secret internals, or Record Behavior timing as
 public APIs. When a Space needs fully custom presentation, keep using the
 record handle's `snapshot()`, `update()`, and `submit()` commands.
+
+For collections, the UI Kit also provides database-backed `ListView`,
+`DataGrid`, and `Board`. Their private bridge requires the planned SDK
+`^3.2.0` release, which is not yet published. Inbox remains platform-only;
+standalone filter-builder components are private. See the
+[UI Kit collection contracts](../space-ui/README.md#managed-database-backed-views).
 
 Record Spaces can replace the platform main actions in the header while
 mounted:

@@ -1,10 +1,11 @@
 import type { GraphQLVariables, SpaceDataTransport } from './core.js'
 import type { SpaceNavigationTransport } from './navigation.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
-import type { RecordFormCapabilities } from './record-form.js'
+import type { RecordFormCapabilities, RecordFormHostLifecycle } from './record-form.js'
 import type { SpaceThemeSnapshot } from './theme.js'
 import type { HeaderAction, SpaceHeaderStatus, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
+  isObjectRecord,
   SpaceDataError,
   SpaceProtocolError,
 } from './protocol.js'
@@ -30,9 +31,12 @@ export function createMessagePortTransport(
   port: MessagePortLike,
   targetOrigin: string,
   onThemeChanged?: (theme: SpaceThemeSnapshot) => void,
+  formLifecycleEnabled = false,
 ): BrowserSpaceTransport {
   const headerCallbacks = new Map<string, () => Promise<void> | void>()
   const formModelManager = createFormModelSubscriptionManager()
+  const formLifecycles = new Map<string, Set<RecordFormHostLifecycle>>()
+  const activeFormRequests = new Set<string>()
   const pendingData = new Map<string, {
     reject: (reason?: unknown) => void
     resolve: (result: unknown) => void
@@ -50,6 +54,8 @@ export function createMessagePortTransport(
   if (typeof (port as unknown as EventTarget).addEventListener === 'function') {
     (port as unknown as EventTarget).addEventListener('close', () => {
       isPortClosed = true
+      formLifecycles.clear()
+      activeFormRequests.clear()
     })
   }
 
@@ -70,6 +76,50 @@ export function createMessagePortTransport(
     }>
     if (envelope.type === 'SPACE_RECORD_FORM_UPDATE') {
       formModelManager.handleUpdate(envelope.form)
+      return
+    }
+
+    if (envelope.type === 'SPACE_RECORD_FORM_REQUEST' && formLifecycleEnabled) {
+      const request = message as Partial<{ id: unknown, operation: unknown, sessionId: unknown, values: unknown }>
+      if (typeof request.id !== 'string' || !request.id || typeof request.sessionId !== 'string' || !request.sessionId)
+        return
+      const { id, sessionId } = request
+      Promise.resolve().then(async () => {
+        const handlers = formLifecycles.get(sessionId)
+        if (!handlers?.size)
+          throw new Error('The managed record session is unavailable.')
+        const check = () => {
+          const states = [...handlers].map(handler => handler.check())
+          return { busy: activeFormRequests.has(sessionId) || states.some(state => state.busy), dirty: states.some(state => state.dirty) }
+        }
+        if (request.operation === 'check')
+          return check()
+        if (request.operation !== 'prepare' && request.operation !== 'discard')
+          throw new Error('The managed record form operation is unsupported.')
+        if (activeFormRequests.has(sessionId) || [...handlers].some(handler => handler.check().busy))
+          throw new Error('The record is still being prepared or saved.')
+        if (request.operation === 'discard' && !isObjectRecord(request.values))
+          throw new Error('Discard requires the original record values.')
+        activeFormRequests.add(sessionId)
+        try {
+          for (const handler of handlers) {
+            if (request.operation === 'prepare')
+              await handler.prepare()
+            else
+              await handler.discard(request.values as Readonly<Record<string, unknown>>)
+          }
+        }
+        finally {
+          activeFormRequests.delete(sessionId)
+        }
+        return check()
+      }).then((state) => {
+        if (!isPortClosed)
+          port.postMessage({ ...state, id, ok: true, sessionId, type: 'SPACE_RECORD_FORM_RESULT' })
+      }).catch((error: unknown) => {
+        if (!isPortClosed)
+          port.postMessage({ error: error instanceof Error ? error.message : 'The managed record form request failed.', id, ok: false, sessionId, type: 'SPACE_RECORD_FORM_RESULT' })
+      })
       return
     }
 
@@ -198,7 +248,38 @@ export function createMessagePortTransport(
   }
 
   return {
-    capabilities: createRecordFormCapabilities(requestCapability, msg => port.postMessage(msg), targetOrigin),
+    capabilities: {
+      ...createRecordFormCapabilities(requestCapability, msg => port.postMessage(msg), targetOrigin),
+      ...(formLifecycleEnabled
+        ? {
+            notifyFormDraft: (sessionId: string) => {
+              if (isPortClosed)
+                return
+              let dirty = true
+              try {
+                dirty = [...formLifecycles.get(sessionId) ?? []].some(handler => handler.check().dirty)
+              }
+              catch {
+                // A broken draft getter must not let navigation discard edits.
+              }
+              port.postMessage({ dirty, sessionId, type: 'SPACE_RECORD_FORM_DRAFT' })
+            },
+            registerFormLifecycle: (sessionId: string, lifecycle: RecordFormHostLifecycle) => {
+              let handlers = formLifecycles.get(sessionId)
+              if (!handlers) {
+                handlers = new Set()
+                formLifecycles.set(sessionId, handlers)
+              }
+              handlers.add(lifecycle)
+              return () => {
+                handlers.delete(lifecycle)
+                if (!handlers.size)
+                  formLifecycles.delete(sessionId)
+              }
+            },
+          }
+        : {}),
+    },
     execute: <TResult>(document: string, variables?: GraphQLVariables) => {
       return new Promise<TResult>((resolve, reject) => {
         const id = createDataRequestId()

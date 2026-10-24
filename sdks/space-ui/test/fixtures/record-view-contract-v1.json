@@ -1,0 +1,1387 @@
+{
+  "cases": [
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition row",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "person",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition person",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "media",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition media",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "editorial",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition editorial",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "status",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition status",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "spotlight",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile composition spotlight",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "eyebrowFieldName": "sender",
+            "presentation": "email",
+            "subtitleFieldName": "preview",
+            "titleFieldName": "title",
+            "trailingFieldName": "received_at",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "email tile composition",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "email",
+            "subtitleFieldName": "preview",
+            "titleFieldName": "title",
+            "trailingFieldName": "received_at",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "email tile requires a sender",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "eyebrowFieldName": "sender",
+            "presentation": "email",
+            "subtitleFieldName": "preview",
+            "titleFieldName": "title",
+            "trailingFieldName": "received_at",
+            "version": 1,
+            "badgeFieldNames": [
+              "status"
+            ]
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "email tile rejects workflow badges",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "detail": "fields",
+          "detailFieldNames": [
+            "title"
+          ],
+          "listTile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "inbox",
+        "title": "Review"
+      },
+      "name": "inbox detail fields",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "detail": "record",
+          "detailFieldNames": [
+            "title"
+          ],
+          "listTile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "inbox",
+        "title": "Review"
+      },
+      "name": "inbox detail record",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "fieldName": "title"
+            }
+          ],
+          "narrowPresentation": "tiles"
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "legacy grid narrow mode normalizes",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "fieldName": "title"
+            }
+          ]
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "grid default tile omitted",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "done": "check",
+                "todo": "clock"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "enum icons with fallback",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "altFieldName": "title",
+              "fieldName": "image",
+              "fit": "cover",
+              "kind": "image"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "authorized document visual",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": " Review "
+      },
+      "name": "preset whitespace padding",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "iconId": "arbitrary",
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "unknown preset icon",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "style": "unsafe",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "unknown tile property",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "className": "unsafe",
+              "iconId": "mail",
+              "kind": "icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "unknown visual property",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "todo": "arbitrary"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "unknown enum icon",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "detail": "custom-html",
+          "detailFieldNames": [
+            "title"
+          ],
+          "listTile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "inbox",
+        "title": "Review"
+      },
+      "name": "unknown inbox detail",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "fieldName": "title"
+            }
+          ],
+          "tile": null
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "grid null tile",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "fieldName": "title"
+            }
+          ],
+          "narrowPresentation": "custom"
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "unknown legacy grid narrow mode",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "css": "unsafe",
+              "fieldName": "title"
+            }
+          ]
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "unknown grid column property",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "columns": [
+            {
+              "fieldName": "title",
+              "width": 79
+            }
+          ]
+        },
+        "id": "review",
+        "kind": "table",
+        "title": "Review"
+      },
+      "name": "grid width below minimum",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "detailFieldNames": [
+              "title",
+              "title"
+            ],
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "duplicate tile fields",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "orderBy": [
+            {
+              "direction": "asc",
+              "fieldName": "title",
+              "nulls": "first"
+            }
+          ],
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "unknown sort property",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "root": {
+          "fieldName": "title",
+          "kind": "predicate",
+          "operator": "eq",
+          "value": "review"
+        },
+        "version": 1
+      },
+      "name": "text predicate",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "root": {
+          "fieldName": "updated_at",
+          "kind": "predicate",
+          "operator": "last_n_days",
+          "value": 7
+        },
+        "version": 1
+      },
+      "name": "relative date predicate",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "root": {
+          "fieldName": "enabled",
+          "kind": "predicate",
+          "operator": "is_true"
+        },
+        "version": 1
+      },
+      "name": "no operand predicate",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "root": {
+          "fieldName": "age",
+          "kind": "predicate",
+          "operator": "between",
+          "value": 1,
+          "value2": 5
+        },
+        "version": 1
+      },
+      "name": "scalar bounds",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "root": {
+          "fieldName": "metadata",
+          "kind": "predicate",
+          "operator": "contains",
+          "value": {
+            "labels": [
+              "urgent",
+              {
+                "source": "mobile"
+              }
+            ]
+          }
+        },
+        "version": 1
+      },
+      "name": "nested JSON value",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "title",
+          "kind": "predicate",
+          "operator": "eq"
+        },
+        "version": 1
+      },
+      "name": "missing operand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "enabled",
+          "kind": "predicate",
+          "operator": "is_true",
+          "value": true
+        },
+        "version": 1
+      },
+      "name": "extraneous operand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "age",
+          "kind": "predicate",
+          "operator": "between",
+          "value": 1
+        },
+        "version": 1
+      },
+      "name": "missing upper bound",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "title",
+          "kind": "predicate",
+          "operator": "eq",
+          "value": "x",
+          "value2": "y"
+        },
+        "version": 1
+      },
+      "name": "unexpected upper bound",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "updated_at",
+          "kind": "predicate",
+          "operator": "last_n_days",
+          "value": "7"
+        },
+        "version": 1
+      },
+      "name": "non numeric relative operand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "age",
+          "kind": "predicate",
+          "operator": "between",
+          "value": [
+            1
+          ],
+          "value2": 5
+        },
+        "version": 1
+      },
+      "name": "non scalar bounds",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "metadata",
+          "kind": "predicate",
+          "operator": "contains",
+          "value": {
+            "": "x"
+          }
+        },
+        "version": 1
+      },
+      "name": "unsafe JSON key ''",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "metadata",
+          "kind": "predicate",
+          "operator": "contains",
+          "value": {
+            "constructor": "x"
+          }
+        },
+        "version": 1
+      },
+      "name": "unsafe JSON key 'constructor'",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "metadata",
+          "kind": "predicate",
+          "operator": "contains",
+          "value": {
+            "prototype": "x"
+          }
+        },
+        "version": 1
+      },
+      "name": "unsafe JSON key 'prototype'",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldName": "metadata",
+          "kind": "predicate",
+          "operator": "contains",
+          "value": {
+            "__proto__": "x"
+          }
+        },
+        "version": 1
+      },
+      "name": "unsafe JSON key '__proto__'",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "root": {
+          "fieldId": "legacy",
+          "fieldName": "title",
+          "kind": "predicate",
+          "operator": "eq",
+          "value": "x"
+        },
+        "version": 1
+      },
+      "name": "unknown filter node property",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "laneFieldName": "status",
+          "laneOrder": [
+            "todo",
+            "doing",
+            "done"
+          ],
+          "pageSizePerLane": 25,
+          "tile": {
+            "badgeFieldNames": [
+              "status"
+            ],
+            "presentation": "status",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "iconId": "clock",
+              "kind": "icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "board",
+        "title": "Review"
+      },
+      "name": "board shared rich tile",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "laneFieldName": "status",
+          "laneOrder": [
+            "todo",
+            "doing",
+            "done"
+          ],
+          "loadMoreSizePerLane": 25,
+          "orderBy": [
+            {
+              "fieldName": "age",
+              "direction": "desc"
+            }
+          ],
+          "summaries": [
+            {
+              "fieldName": "age",
+              "operation": "average"
+            }
+          ],
+          "tile": {
+            "badgeFieldNames": [
+              "status"
+            ],
+            "presentation": "status",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "iconId": "clock",
+              "kind": "icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "board",
+        "title": "Review"
+      },
+      "name": "board load more and numeric summary",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "laneFieldName": "status",
+          "tile": {
+            "html": "unsafe",
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "board",
+        "title": "Review"
+      },
+      "name": "board unknown tile property",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "laneFieldName": "status",
+          "laneOrder": [
+            "todo",
+            "todo"
+          ],
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "board",
+        "title": "Review"
+      },
+      "name": "board duplicate lanes",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "laneFieldName": "status",
+          "pageSizePerLane": 26,
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "board",
+        "title": "Review"
+      },
+      "name": "board page limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "preset ID limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "name": "preset title limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile titleFieldName length limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "subtitleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile subtitleFieldName length limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "eyebrowFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile eyebrowFieldName length limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "trailingFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "tile trailingFieldName length limit",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "0": "mail",
+                "1": "mail",
+                "10": "mail",
+                "11": "mail",
+                "12": "mail",
+                "13": "mail",
+                "14": "mail",
+                "15": "mail",
+                "16": "mail",
+                "17": "mail",
+                "18": "mail",
+                "19": "mail",
+                "2": "mail",
+                "20": "mail",
+                "21": "mail",
+                "22": "mail",
+                "23": "mail",
+                "24": "mail",
+                "25": "mail",
+                "26": "mail",
+                "27": "mail",
+                "28": "mail",
+                "29": "mail",
+                "3": "mail",
+                "30": "mail",
+                "31": "mail",
+                "32": "mail",
+                "33": "mail",
+                "34": "mail",
+                "35": "mail",
+                "36": "mail",
+                "37": "mail",
+                "38": "mail",
+                "39": "mail",
+                "4": "mail",
+                "40": "mail",
+                "41": "mail",
+                "42": "mail",
+                "43": "mail",
+                "44": "mail",
+                "45": "mail",
+                "46": "mail",
+                "47": "mail",
+                "48": "mail",
+                "49": "mail",
+                "5": "mail",
+                "50": "mail",
+                "51": "mail",
+                "52": "mail",
+                "53": "mail",
+                "54": "mail",
+                "55": "mail",
+                "56": "mail",
+                "57": "mail",
+                "58": "mail",
+                "59": "mail",
+                "6": "mail",
+                "60": "mail",
+                "61": "mail",
+                "62": "mail",
+                "63": "mail",
+                "64": "mail",
+                "65": "mail",
+                "66": "mail",
+                "67": "mail",
+                "68": "mail",
+                "69": "mail",
+                "7": "mail",
+                "70": "mail",
+                "71": "mail",
+                "72": "mail",
+                "73": "mail",
+                "74": "mail",
+                "75": "mail",
+                "76": "mail",
+                "77": "mail",
+                "78": "mail",
+                "79": "mail",
+                "8": "mail",
+                "80": "mail",
+                "81": "mail",
+                "82": "mail",
+                "83": "mail",
+                "84": "mail",
+                "85": "mail",
+                "86": "mail",
+                "87": "mail",
+                "88": "mail",
+                "89": "mail",
+                "9": "mail",
+                "90": "mail",
+                "91": "mail",
+                "92": "mail",
+                "93": "mail",
+                "94": "mail",
+                "95": "mail",
+                "96": "mail",
+                "97": "mail",
+                "98": "mail",
+                "99": "mail"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "enum icon map boundary",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "0": "mail",
+                "1": "mail",
+                "10": "mail",
+                "100": "mail",
+                "11": "mail",
+                "12": "mail",
+                "13": "mail",
+                "14": "mail",
+                "15": "mail",
+                "16": "mail",
+                "17": "mail",
+                "18": "mail",
+                "19": "mail",
+                "2": "mail",
+                "20": "mail",
+                "21": "mail",
+                "22": "mail",
+                "23": "mail",
+                "24": "mail",
+                "25": "mail",
+                "26": "mail",
+                "27": "mail",
+                "28": "mail",
+                "29": "mail",
+                "3": "mail",
+                "30": "mail",
+                "31": "mail",
+                "32": "mail",
+                "33": "mail",
+                "34": "mail",
+                "35": "mail",
+                "36": "mail",
+                "37": "mail",
+                "38": "mail",
+                "39": "mail",
+                "4": "mail",
+                "40": "mail",
+                "41": "mail",
+                "42": "mail",
+                "43": "mail",
+                "44": "mail",
+                "45": "mail",
+                "46": "mail",
+                "47": "mail",
+                "48": "mail",
+                "49": "mail",
+                "5": "mail",
+                "50": "mail",
+                "51": "mail",
+                "52": "mail",
+                "53": "mail",
+                "54": "mail",
+                "55": "mail",
+                "56": "mail",
+                "57": "mail",
+                "58": "mail",
+                "59": "mail",
+                "6": "mail",
+                "60": "mail",
+                "61": "mail",
+                "62": "mail",
+                "63": "mail",
+                "64": "mail",
+                "65": "mail",
+                "66": "mail",
+                "67": "mail",
+                "68": "mail",
+                "69": "mail",
+                "7": "mail",
+                "70": "mail",
+                "71": "mail",
+                "72": "mail",
+                "73": "mail",
+                "74": "mail",
+                "75": "mail",
+                "76": "mail",
+                "77": "mail",
+                "78": "mail",
+                "79": "mail",
+                "8": "mail",
+                "80": "mail",
+                "81": "mail",
+                "82": "mail",
+                "83": "mail",
+                "84": "mail",
+                "85": "mail",
+                "86": "mail",
+                "87": "mail",
+                "88": "mail",
+                "89": "mail",
+                "9": "mail",
+                "90": "mail",
+                "91": "mail",
+                "92": "mail",
+                "93": "mail",
+                "94": "mail",
+                "95": "mail",
+                "96": "mail",
+                "97": "mail",
+                "98": "mail",
+                "99": "mail"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "enum icon map over limit",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "": "mail"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "empty enum icon value",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                " todo ": "mail"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "padded enum icon value",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1,
+            "visual": {
+              "fallbackIconId": "help",
+              "fieldName": "status",
+              "iconsByValue": {
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": "mail"
+              },
+              "kind": "enum-icon"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "enum icon value length limit",
+      "target": "preset"
+    }
+  ],
+  "fields": [
+    {
+      "name": "title",
+      "type": "string"
+    },
+    {
+      "constraints": {
+        "values": [
+          "todo",
+          "doing",
+          "done"
+        ]
+      },
+      "name": "status",
+      "type": "enum"
+    },
+    {
+      "name": "image",
+      "type": "document"
+    },
+    {
+      "name": "updated_at",
+      "type": "datetime"
+    },
+    {
+      "name": "enabled",
+      "type": "boolean"
+    },
+    {
+      "name": "age",
+      "type": "integer"
+    },
+    {
+      "name": "metadata",
+      "type": "jsonb"
+    },
+    {
+      "name": "sender",
+      "type": "string"
+    },
+    {
+      "name": "preview",
+      "type": "string"
+    },
+    {
+      "name": "received_at",
+      "type": "datetime"
+    }
+  ]
+}

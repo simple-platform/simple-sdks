@@ -2,16 +2,17 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const contracts = await import(new URL('../dist/contracts/index.js', import.meta.url).href)
 const root = await import(new URL('../dist/index.js', import.meta.url).href)
 const react = await import(new URL('../dist/react/index.js', import.meta.url).href)
+const sdkReleaseCheck = fileURLToPath(new URL('../../../scripts/check-managed-ui-sdk.mjs', import.meta.url))
 
 test('ships local typography and semantic token defaults without component-specific variables', async () => {
   const theme = await readFile(new URL('../theme.css', import.meta.url), 'utf8')
@@ -88,14 +89,41 @@ test('ships local typography and semantic token defaults without component-speci
   assert.equal(packageJson.dependencies['@fontsource-variable/geist-mono'], '5.2.8')
 })
 
-test('publishes only the supported prop-driven UI Kit bridges', () => {
+test('publishes only the supported prop-driven UI Kit bridges', async () => {
   assert.equal('loadRuntime' in root, false)
   assert.equal('RuntimeLoadError' in root, false)
   assert.equal(typeof react.StatusBadge, 'function')
   assert.equal(typeof react.RecordForm, 'function')
   assert.equal(typeof react.RecordActivity, 'function')
+  assert.equal(typeof react.ListView, 'function')
+  assert.equal(typeof react.DataGrid, 'function')
+  assert.equal(typeof react.Board, 'function')
+  assert.equal('InboxView' in react, false)
+  assert.equal('ConditionBuilder' in react, false)
+  assert.equal('ConditionSummary' in react, false)
   assert.equal('SimpleProvider' in react, false)
   assert.equal('useSimpleClient' in react, false)
+
+  const reactTypes = await readFile(new URL('../dist/react/index.d.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(reactTypes, /\bInboxView\b|\bRecordViewHandleV1\b|\bConditionBuilderPropsV1\b|\bConditionSummaryPropsV1\b/)
+})
+
+test('requires the SDK release that provides the managed UI bridge', async () => {
+  const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(packageJson.peerDependencies['@simpleplatform/sdk'], '^3.2.0 || 0.0.0')
+})
+
+test('release check refuses an SDK client without the managed UI bridge', async () => {
+  const destination = await mkdtemp(join(tmpdir(), 'simple-sdk-no-ui-bridge-'))
+  try {
+    await mkdir(join(destination, 'dist/space'), { recursive: true })
+    await writeFile(join(destination, 'package.json'), JSON.stringify({ name: '@simpleplatform/sdk', type: 'module', version: '3.1.0' }))
+    await writeFile(join(destination, 'dist/space/core.js'), 'export function createSimpleClient() { return {} }')
+    assert.throws(() => execFileSync(process.execPath, [sdkReleaseCheck, destination], { encoding: 'utf8', stdio: 'pipe' }), /3\.1\.0 lacks the managed UI bridge/)
+  }
+  finally {
+    await rm(destination, { force: true, recursive: true })
+  }
 })
 
 test('packs and imports every supported public entry point without private source files', async () => {
@@ -117,6 +145,7 @@ test('packs and imports every supported public entry point without private sourc
     const packedPackage = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'package/package.json'], { encoding: 'utf8' }))
 
     assert.equal(packedPackage.name, '@simpleplatform/ui-kit')
+    assert.equal(packedPackage.peerDependencies['@simpleplatform/sdk'], '^3.2.0 || 0.0.0')
     assert.ok(packedPackage.sideEffects.includes('./theme.css'))
     assert.equal(packedPackage.dependencies['@fontsource-variable/geist'], '5.2.9')
     assert.equal(packedPackage.dependencies['@fontsource-variable/geist-mono'], '5.2.8')
@@ -149,7 +178,13 @@ test('packs and imports every supported public entry point without private sourc
     await mkdir(packedNodeModules)
     await symlink(reactDirectory, join(packedNodeModules, 'react'), 'dir')
     await mkdir(join(packedNodeModules, '@simpleplatform'))
-    await symlink(new URL('../../ts', import.meta.url), join(packedNodeModules, '@simpleplatform/sdk'), 'dir')
+    const sdkDestination = join(destination, 'sdk')
+    await mkdir(sdkDestination)
+    execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', sdkDestination], { cwd: new URL('../../ts', import.meta.url), stdio: 'pipe' })
+    const [sdkTarball] = await readdir(sdkDestination)
+    execFileSync('tar', ['-xzf', join(sdkDestination, sdkTarball), '-C', sdkDestination])
+    execFileSync(process.execPath, [sdkReleaseCheck, join(sdkDestination, 'package')], { stdio: 'pipe' })
+    await symlink(join(sdkDestination, 'package'), join(packedNodeModules, '@simpleplatform/sdk'), 'dir')
 
     const packedContracts = await import(pathToFileURL(join(destination, 'package/dist/contracts/index.js')).href)
     const packedElements = await import(pathToFileURL(join(destination, 'package/dist/elements/index.js')).href)
@@ -157,11 +192,18 @@ test('packs and imports every supported public entry point without private sourc
     const packedRuntime = await import(pathToFileURL(join(destination, 'package/dist/runtime.js')).href)
 
     assert.equal('SIMPLE_THEME_CONTRACT_VERSION' in packedContracts, false)
+    assert.equal(typeof packedContracts.validateDataGridPreset, 'function')
+    assert.equal(typeof packedContracts.validateViewPresetSet, 'function')
+    assert.equal('validateDataGridPresetV1' in packedContracts, false)
+    assert.ok(Object.keys(packedContracts).every(name => !name.endsWith('V1')))
     assert.equal(typeof packedElements.SimpleStatusBadge, 'function')
     assert.equal(typeof packedReact.StatusBadge, 'function')
     assert.equal(typeof packedRuntime.loadRuntime, 'function')
     assert.equal(typeof packedReact.RecordForm, 'function')
     assert.equal(typeof packedReact.RecordActivity, 'function')
+    assert.equal(typeof packedReact.DataGrid, 'function')
+    assert.equal(typeof packedReact.ListView, 'function')
+    assert.equal(typeof packedReact.Board, 'function')
   }
   finally {
     await rm(destination, { force: true, recursive: true })

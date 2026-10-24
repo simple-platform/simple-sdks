@@ -315,26 +315,32 @@ export class ProtocolRecordHandle implements RecordHandle {
   }
 
   async submit(): Promise<RecordSubmitResult> {
-    const values = await this.#formLifecycle?.prepareSubmit() ?? {}
+    const endSubmission = this.#formLifecycle?.beginSubmit()
+    try {
+      const values = await this.#formLifecycle?.prepareSubmit() ?? {}
 
-    const request: RecordSubmitRequest = {
-      operation: 'record.submit',
-      payload: {
-        sessionId: this.id,
-        ...(Object.keys(values).length > 0 ? { values } : {}),
-      },
-      protocol: PROTOCOL_VERSION,
-      requestId: this.#nextRequestId(),
+      const request: RecordSubmitRequest = {
+        operation: 'record.submit',
+        payload: {
+          sessionId: this.id,
+          ...(Object.keys(values).length > 0 ? { values } : {}),
+        },
+        protocol: PROTOCOL_VERSION,
+        requestId: this.#nextRequestId(),
+      }
+      const response = await this.#transport.request<RecordSubmitResult>(request)
+      const result = readResponse(response, request)
+
+      if (!isRecordSubmitResult(result))
+        throw invalidResponse('The record-submit response is malformed.')
+
+      const snapshot = immutableSnapshot(result.snapshot)
+      this.setSnapshot(snapshot)
+      return { ok: result.ok, snapshot }
     }
-    const response = await this.#transport.request<RecordSubmitResult>(request)
-    const result = readResponse(response, request)
-
-    if (!isRecordSubmitResult(result))
-      throw invalidResponse('The record-submit response is malformed.')
-
-    const snapshot = immutableSnapshot(result.snapshot)
-    this.setSnapshot(snapshot)
-    return { ok: result.ok, snapshot }
+    finally {
+      endSubmission?.()
+    }
   }
 }
 
