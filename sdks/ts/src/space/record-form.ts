@@ -2,7 +2,7 @@ import type { RecordHandle, RecordSnapshot, RecordUiBridge, RecordUiMetadata } f
 import type { SpaceToastOptions } from './ui.js'
 import { deepFreeze, invalidResponse, isObjectRecord } from './protocol.js'
 
-export const MANAGED_RECORD_FORM_PROTOCOL_VERSION = 2 as const
+export const MANAGED_RECORD_FORM_PROTOCOL_VERSION = 3 as const
 
 export interface UiRuntimeDescriptor {
   readonly url: string
@@ -33,7 +33,15 @@ export interface ManagedRecordFormModel {
 export type ManagedRecordFormSnapshotListener = (snapshot: RecordSnapshot) => void
 export type RecordFormSubmitPreparation = () => Promise<Readonly<Record<string, unknown>> | undefined>
 
+export interface RecordFormHostLifecycle {
+  check: () => { busy: boolean, dirty: boolean }
+  discard: (values: Readonly<Record<string, unknown>>) => Promise<void>
+  prepare: () => Promise<void>
+}
+
 export interface RecordFormCapabilities {
+  notifyFormDraft?: (sessionId: string) => void
+  registerFormLifecycle?: (sessionId: string, lifecycle: RecordFormHostLifecycle) => () => void
   createDocumentHandle: (request: {
     bytes: ArrayBuffer
     lifecycle?: 'pending' | 'record' | 'staged'
@@ -58,6 +66,9 @@ export interface RecordFormBridge extends RecordUiBridge {
   blurField: (fieldName: string) => Promise<void>
   focusField: (fieldName: string) => Promise<void>
   form: unknown
+  onDraftChange: () => void
+  registerDiscard: (discard: (values: Readonly<Record<string, unknown>>) => Promise<void>) => () => void
+  registerDraftState: (getDirty: () => boolean) => () => void
   registerSubmitPreparation: (preparation: RecordFormSubmitPreparation) => () => void
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
   subscribe: (listener: ManagedRecordFormSnapshotListener) => () => void
@@ -68,6 +79,7 @@ export interface RecordFormModelTransport {
 }
 
 export interface RecordFormLifecycle {
+  beginSubmit: () => () => void
   notifySnapshot: (snapshot: RecordSnapshot) => void
   prepareSubmit: () => Promise<Record<string, unknown>>
 }
@@ -143,7 +155,58 @@ export function initRecordFormLifecycle(
   const metadataListeners = new Set<(metadata: RecordUiMetadata) => void>()
   const snapshotListeners = new Set<ManagedRecordFormSnapshotListener>()
   const submitPreparations = new Set<RecordFormSubmitPreparation>()
+  const draftStates = new Set<() => boolean>()
+  const discardHandlers = new Set<(values: Readonly<Record<string, unknown>>) => Promise<void>>()
+  let submissions = 0
+  let formOperationPending = false
   let currentMetadata = currentForm ? recordUiMetadata(currentForm) : undefined
+
+  const onDraftChange = () => capabilities?.notifyFormDraft?.(record.id)
+  const check = () => ({ busy: submissions > 0 || formOperationPending, dirty: [...draftStates].some(getDirty => getDirty()) })
+  const prepareSubmit = async () => {
+    const values: Record<string, unknown> = {}
+    for (const preparation of submitPreparations) {
+      const preparedValues = await preparation()
+      if (preparedValues)
+        Object.assign(values, preparedValues)
+    }
+    return values
+  }
+
+  capabilities?.registerFormLifecycle?.(record.id, {
+    check,
+    discard: async (values) => {
+      if (check().busy)
+        throw new Error('The record is still being prepared or saved.')
+      formOperationPending = true
+      try {
+        for (const discard of discardHandlers)
+          await discard(values)
+      }
+      finally {
+        formOperationPending = false
+        onDraftChange()
+      }
+    },
+    prepare: async () => {
+      if (check().busy)
+        throw new Error('The record is still being prepared or saved.')
+      formOperationPending = true
+      onDraftChange()
+      try {
+        const values = await prepareSubmit()
+        if (Object.keys(values).length > 0) {
+          const result = await record.update(values)
+          if (!result.ok)
+            throw new Error('Record validation rejected the prepared fields.')
+        }
+      }
+      finally {
+        formOperationPending = false
+        onDraftChange()
+      }
+    },
+  })
 
   const publishFormModel = (updatedForm: unknown) => {
     if (!isManagedRecordFormModel(updatedForm))
@@ -218,6 +281,19 @@ export function initRecordFormLifecycle(
     get metadata() {
       return currentMetadata
     },
+    onDraftChange,
+    registerDiscard: (discard) => {
+      discardHandlers.add(discard)
+      return () => discardHandlers.delete(discard)
+    },
+    registerDraftState: (getDirty) => {
+      draftStates.add(getDirty)
+      onDraftChange()
+      return () => {
+        draftStates.delete(getDirty)
+        onDraftChange()
+      }
+    },
     registerSubmitPreparation: (preparation) => {
       submitPreparations.add(preparation)
       return () => submitPreparations.delete(preparation)
@@ -248,19 +324,21 @@ export function initRecordFormLifecycle(
   Object.defineProperty(record, MANAGED_RECORD_UI_SYMBOL, { value: bridge })
 
   return {
+    beginSubmit: () => {
+      if (formOperationPending)
+        throw new Error('The record is still being prepared or discarded.')
+      submissions++
+      onDraftChange()
+      return () => {
+        submissions--
+        onDraftChange()
+      }
+    },
     notifySnapshot: (snapshot: RecordSnapshot) => {
       for (const listener of snapshotListeners)
         listener(snapshot)
     },
-    prepareSubmit: async () => {
-      const values: Record<string, unknown> = {}
-      for (const preparation of submitPreparations) {
-        const preparedValues = await preparation()
-        if (preparedValues)
-          Object.assign(values, preparedValues)
-      }
-      return values
-    },
+    prepareSubmit,
   }
 }
 

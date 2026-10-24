@@ -432,10 +432,10 @@ jobs:
     # The UI Kit is the one job that shares an environment. It is a second
     # package on this registry, and npm trusts a publish by the environment it
     # comes from, so `publish-ui-kit` below names `npmjs.org` too. On a run
-    # where both packages
-    # changed, one approval therefore releases both. They are reviewed together
-    # because they are used together: a kit that needs a new SDK call ships with
-    # the SDK that has it.
+    # where both packages changed, one approval therefore permits both. They
+    # are reviewed together because they are used together: a kit that needs a
+    # new SDK call ships with the SDK that has it. The publish jobs run in
+    # dependency order when a UI Kit release requires a new SDK version.
     environment:
       name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/sdk/v/${{ needs.version.outputs.ts-version }}
@@ -715,8 +715,14 @@ jobs:
 
   publish-ui-kit:
     name: Publish UI Kit
-    needs: [version, build-ui-kit]
-    if: needs.version.outputs.kit-changed == 'true' && github.ref == 'refs/heads/main' && !github.event.pull_request
+    needs: [version, build-ui-kit, publish-typescript]
+    if: >-
+      !cancelled() &&
+      needs.version.outputs.kit-changed == 'true' &&
+      needs.build-ui-kit.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      !github.event.pull_request &&
+      (needs.version.outputs.ts-changed != 'true' || needs.publish-typescript.result == 'success')
     runs-on: ubuntu-24.04
     # Published without a token, as the SDK is; the note on `publish-typescript`
     # says how.
@@ -725,8 +731,8 @@ jobs:
       id-token: write
     # The same environment and the same queue as `publish-typescript`: this is
     # the second package on npm, and npm is told to trust both from this one
-    # environment. The note on that job says what sharing the environment means
-    # for an approval.
+    # environment. The `needs` dependency ensures a changed SDK is published
+    # before this package advertises that SDK version as a peer.
     environment:
       name: npmjs.org
       url: https://www.npmjs.com/package/@simpleplatform/ui-kit/v/${{ needs.version.outputs.kit-version }}
@@ -774,6 +780,15 @@ jobs:
       - name: Install dependencies
         if: steps.released.outputs.on-registry != 'true'
         run: pnpm install
+
+      - name: Verify the published SDK provides the managed UI bridge
+        if: steps.released.outputs.on-registry != 'true'
+        run: |
+          UI_KIT_REQUIRED_SDK_RANGE=$(node -p "require('./sdks/space-ui/package.json').peerDependencies['@simpleplatform/sdk'].split(' || ')[0]")
+          mkdir -p "${RUNNER_TEMP}/ui-kit-sdk"
+          npm pack "@simpleplatform/sdk@${UI_KIT_REQUIRED_SDK_RANGE}" --ignore-scripts --pack-destination "${RUNNER_TEMP}/ui-kit-sdk"
+          tar -xzf "${RUNNER_TEMP}"/ui-kit-sdk/*.tgz -C "${RUNNER_TEMP}/ui-kit-sdk"
+          node scripts/check-managed-ui-sdk.mjs "${RUNNER_TEMP}/ui-kit-sdk/package"
 
       - name: Download changelog
         if: steps.released.outputs.tagged != 'true'

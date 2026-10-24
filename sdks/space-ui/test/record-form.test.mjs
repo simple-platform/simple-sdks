@@ -69,6 +69,9 @@ test('mounts the runtime-owned element inside the Space for protocol v2', async 
   assert.ok(element)
   assert.equal(element.record, record)
   assert.deepEqual(element.formModel, { fields: [] })
+  assert.equal(typeof element.registerDraftState, 'function')
+  assert.equal(typeof element.onDraftChange, 'function')
+  assert.equal(typeof element.registerDiscard, 'function')
   assert.equal(container.querySelector('[aria-busy="true"]'), null)
 
   await act(async () => root.unmount())

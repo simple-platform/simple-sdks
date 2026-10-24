@@ -37,3 +37,15 @@ test('rejects a runtime artifact whose exported version is not pinned', async ()
       && error.received === '0.2.0',
   )
 })
+
+test('loads runtime artifact with exported capabilities and preserves frozen array', async () => {
+  const url = moduleUrl(`
+    export const version = '0.1.0'
+    export const capabilities = ['feature-a', 123, null, 'custom-feature']
+  `)
+
+  const info = await loadRuntime({ url, version: '0.1.0' })
+  assert.equal(info.version, '0.1.0')
+  assert.deepEqual(info.capabilities, ['feature-a', 'custom-feature'])
+  assert.equal(Object.isFrozen(info.capabilities), true)
+})

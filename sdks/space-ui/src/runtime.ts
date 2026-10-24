@@ -4,10 +4,12 @@ export interface RuntimeDescriptor {
 }
 
 export interface RuntimeInfo {
+  capabilities?: readonly string[]
   version: string
 }
 
 export interface RuntimeModule {
+  capabilities?: unknown
   version?: unknown
 }
 
@@ -69,5 +71,12 @@ function readRuntimeInfo(module: RuntimeModule, expected: string): RuntimeInfo {
     )
   }
 
-  return { version: module.version }
+  const rawCapabilities = Array.isArray(module.capabilities)
+    ? module.capabilities.filter((c): c is string => typeof c === 'string')
+    : undefined
+
+  return {
+    ...(rawCapabilities !== undefined ? { capabilities: Object.freeze(rawCapabilities) } : {}),
+    version: module.version,
+  }
 }

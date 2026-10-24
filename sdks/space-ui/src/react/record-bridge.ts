@@ -22,6 +22,9 @@ interface ManagedRecordBridge {
   form?: unknown
   graphql: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
   metadata?: ManagedRecordMetadata
+  onDraftChange?: () => void
+  registerDiscard?: (discard: (values: Readonly<Record<string, unknown>>) => Promise<void>) => () => void
+  registerDraftState?: (getDirty: () => boolean) => () => void
   registerSubmitPreparation: (preparation: () => Promise<Readonly<Record<string, unknown>> | undefined>) => () => void
   runtime?: RuntimeDescriptor
   subscribe: (listener: (snapshot: unknown) => void) => () => void
@@ -36,4 +39,20 @@ export function getManagedRecordBridge(record: RecordHandle): ManagedRecordBridg
 
   const bridge = (record as unknown as Record<symbol, unknown>)[MANAGED_RECORD_UI_SYMBOL]
   return bridge && typeof bridge === 'object' ? bridge as ManagedRecordBridge : undefined
+}
+
+const MANAGED_UI_SYMBOL = Symbol.for('@simpleplatform/sdk/space/managed-ui/v1')
+
+export interface ManagedUiBridge {
+  graphql: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
+  runtime?: RuntimeDescriptor
+}
+
+/** Finds the SDK-owned client UI bridge without adding a public member to SimpleClient. */
+export function getManagedUiBridge(client: unknown): ManagedUiBridge | undefined {
+  if (!client || typeof client !== 'object')
+    return undefined
+
+  const bridge = (client as Record<symbol, unknown>)[MANAGED_UI_SYMBOL]
+  return bridge && typeof bridge === 'object' ? bridge as ManagedUiBridge : undefined
 }

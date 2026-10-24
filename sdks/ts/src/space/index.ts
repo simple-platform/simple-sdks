@@ -169,8 +169,8 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
           }
         : undefined
 
-      const transport: BrowserSpaceTransport = createMessagePortTransport(port, targetOrigin, onThemeChanged)
       const protocols = event.data.protocols
+      const transport: BrowserSpaceTransport = createMessagePortTransport(port, targetOrigin, onThemeChanged, protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION)
       const hasRecord = protocols?.record === PROTOCOL_VERSION
       const hasRecords = protocols?.records === RECORDS_PROTOCOL_VERSION
       resolve(createSimpleClient({
@@ -179,7 +179,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         context: event.data.context,
         dataTransport: transport,
         documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
-        formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION ? transport : undefined,
+        formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION || protocols?.form === 2 ? transport : undefined,
         headerStatusTransport: hasRecord && protocols?.headerStatus === HEADER_STATUS_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
         hostOrigin: targetOrigin,
@@ -198,7 +198,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
       protocols: {
         action: [PROTOCOL_VERSION],
         document: [PROTOCOL_VERSION],
-        form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION],
+        form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION, 2],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
         headerStatus: [HEADER_STATUS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
@@ -264,7 +264,8 @@ function isUiRuntimeDescriptor(value: unknown): value is UiRuntimeDescriptor {
     return false
 
   try {
-    const protocol = new URL(url).protocol
+    const runtimeUrl = new URL(url)
+    const protocol = runtimeUrl.protocol
     return protocol === 'http:' || protocol === 'https:'
   }
   catch {
