@@ -22,10 +22,9 @@ pnpm add @simpleplatform/ui-kit @simpleplatform/sdk
 ```
 
 Managed views require the SDK's private managed-view bridge. The peer and
-scaffold requirement is `@simpleplatform/sdk@^3.2.0`; 3.2.0 is the planned
-compatible release and is not yet published. Published SDK 3.1.0 lacks the
-bridge. Publish the compatible SDK before the UI Kit; the UI Kit release check
-verifies the published SDK artifact's bridge. For local review, use matching
+scaffold requirement is `@simpleplatform/sdk@^3.1.1`, the first published SDK
+with the bridge (3.1.0 lacks it). The UI Kit release check verifies the
+published SDK artifact's bridge. For local review, use matching
 SDK/UI Kit feature builds. React bridges support React 18.3 or 19. The `0.0.0`
 peer exception supports linked workspace builds and does not prove registry
 compatibility.
