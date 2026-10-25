@@ -1,0 +1,5 @@
+error: a member's description is its doc comment. Write `/// …` above `days` instead.
+ --> tests/ui/refuses/a_description_written_here.rs:9:14
+  |
+9 |     #[simple(description = "How many days back to look.")]
+  |              ^^^^^^^^^^^

@@ -57,6 +57,18 @@ export function execute(actionName, params, context) {
 }
 
 /**
+ * A reply that is a run of bytes reaches only a server action: the browser
+ * runtime has no way to hand one over. Refused here, before anything is sent.
+ * @returns {Promise<import('./types').SimpleResponse<Uint8Array>>} A promise that rejects
+ */
+export function executeBytes(actionName) {
+  return Promise.reject(new Error(
+    `${actionName} answers with bytes, which only a server action can receive. `
+    + 'Set the action\'s execution environment to server.',
+  ))
+}
+
+/**
  * Worker-compatible fire-and-forget implementation.
  */
 export function executeAsync(actionName, params, context) {

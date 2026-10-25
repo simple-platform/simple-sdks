@@ -1,0 +1,11 @@
+error: `range(min = 10, max = 1)` accepts nothing, because min is above max.
+ --> tests/ui/refuses/a_minimum_above_the_maximum.rs:9:26
+  |
+9 |     #[simple(range(min = 10, max = 1))]
+  |                          ^^
+
+error: `length(min = 500, max = 1)` accepts nothing, because min is above max.
+  --> tests/ui/refuses/a_minimum_above_the_maximum.rs:12:27
+   |
+12 |     #[simple(length(min = 500, max = 1))]
+   |                           ^^^

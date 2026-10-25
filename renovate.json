@@ -6,5 +6,17 @@
     ":approveMajorUpdates",
     ":maintainLockFilesWeekly"
   ],
-  "osvVulnerabilityAlerts": true
+  "osvVulnerabilityAlerts": true,
+  "cargo": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "security:minimumReleaseAgeNpm covers the npm datastore. This rule gives cargo updates the same three-day wait, so both registries are held to one posture.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "minimumReleaseAge": "3 days"
+    }
+  ]
 }

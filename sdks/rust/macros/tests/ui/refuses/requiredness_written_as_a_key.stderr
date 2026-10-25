@@ -1,0 +1,17 @@
+error: whether `as_of` is required is its type, not a key. Write `Option<T>` or `#[serde(default)]` to make it optional, and neither to require it.
+ --> tests/ui/refuses/requiredness_written_as_a_key.rs:9:14
+  |
+9 |     #[simple(required = false)]
+  |              ^^^^^^^^
+
+error: whether `round` is required is its type, not a key. Write `Option<T>` or `#[serde(default)]` to make it optional, and neither to require it.
+  --> tests/ui/refuses/requiredness_written_as_a_key.rs:13:14
+   |
+13 |     #[simple(optional)]
+   |              ^^^^^^^^
+
+error: whether `notify` is required is its type, not a key. Write `Option<T>` or `#[serde(default)]` to make it optional, and neither to require it.
+  --> tests/ui/refuses/requiredness_written_as_a_key.rs:17:14
+   |
+17 |     #[simple(nullable = true)]
+   |              ^^^^^^^^

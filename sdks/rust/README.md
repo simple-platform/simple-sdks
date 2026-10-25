@@ -1,0 +1,839 @@
+# Rust SDK
+
+> **Official Rust SDK for the Simple Platform** — Build fast, type-safe actions with AI, GraphQL, HTTP, settings, storage and a first-class testing seam, with no lifetimes, no `async` and no `unsafe`
+
+## Installation
+
+Install the SDK using [cargo](https://doc.rust-lang.org/cargo/):
+
+```bash
+cargo add simpleplatform-sdk serde serde_json
+```
+
+`serde` and `serde_json` are direct dependencies of your action: a
+`#[derive(Deserialize)]` expands to code that names `serde` by crate, so an
+action depends on it even though the prelude re-exports the derive. An action
+that would rather not add them can write
+`#[serde(crate = "simpleplatform_sdk::serde")]` and use the re-export.
+
+`#[derive(Schema)]` and the `#[simple(…)]` attribute arrive with the default
+`derive` feature, the way `serde` ships its own derive. An action that writes no
+member constraints turns it off with `default-features = false`.
+
+### What an action's crate names
+
+- `simpleplatform-sdk`, `serde` and `serde_json` as dependencies, as above.
+- An `async` feature that hands the flag on to this crate:
+
+  ```toml
+  [features]
+  async = [ "simpleplatform-sdk/async" ]
+  ```
+
+  This is what makes the browser artifact buildable. The two builds below select
+  between two import sets, and they select with `--features async` — a flag
+  cargo resolves against the crate being **built**, which is your action, not
+  its dependency. So the action needs a feature of that name to pass along.
+  Without it the browser build stops at `does not contain this feature: async`.
+  An action whose execution environment is `server` never needs it.
+
+- A release profile: `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
+  `strip = true`.
+- Nothing else. `allocate_buffer` and `set_response_buffer` reach the module's
+  export table from this crate on their own; no `--export` linker argument and no
+  macro invocation in the action is needed.
+
+## Quick Start
+
+Create your first Simple Platform action. This is the whole of `src/main.rs` —
+what the action is, what it accepts, and what it does:
+
+```rust
+use simpleplatform_sdk::prelude::*;
+
+/// The lead to close, and the one it is a duplicate of.
+#[derive(Deserialize, Schema)]
+struct Input {
+    /// The lead to close, by identifier.
+    #[simple(pattern = "^LEAD", length(min = 5, max = 64))]
+    lead_id: String,
+
+    /// The lead that survives, and that the closed one points at.
+    #[simple(pattern = "^LEAD", length(min = 5, max = 64))]
+    duplicate_of: String,
+
+    /// Close it only once it has been idle for this many days.
+    #[simple(range(min = 1, max = 90))]
+    idle_days: u32,
+}
+
+#[derive(Deserialize)]
+struct Found {
+    leads: Vec<Value>,
+}
+
+#[derive(Deserialize)]
+struct Closed {
+    result: Affected,
+}
+
+#[derive(Deserialize)]
+struct Affected {
+    affected_rows: i64,
+}
+
+#[derive(Serialize)]
+struct Output {
+    closed: String,
+    merged_into: String,
+    rows_changed: i64,
+}
+
+const IDLE_LEAD: &str = r#"
+  query IdleLead($id: ID!, $days: Int!) {
+    leads: crm__lead(where: {id: {_eq: $id}, idle_days: {_gte: $days}}, limit: 1) {
+      id
+    }
+  }"#;
+
+const CLOSE_LEAD: &str = r#"
+  mutation CloseLead($id: ID!, $merged: ID!) {
+    result: update_crm__lead(
+      where: {id: {_eq: $id}}
+      _set: {status: "closed", merged_into: $merged}
+    ) {
+      affected_rows
+    }
+  }"#;
+
+/// Close a duplicate lead and point it at the record that survives.
+///
+/// The surviving lead keeps its activity; the duplicate is marked closed and
+/// linked to it, so a later report still reaches both records.
+///
+/// @tool
+/// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+/// @usewhen A lead is a duplicate of one already in the system.
+/// @usewhen Two leads share a contact and one should be retired.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    if request.data.lead_id == request.data.duplicate_of {
+        return Err(Error::invalid("A lead cannot be a duplicate of itself.")
+            .hint("Pass two different lead identifiers."));
+    }
+
+    let found: Found = simple::graphql::query(
+        IDLE_LEAD,
+        json!({ "id": request.data.lead_id, "days": request.data.idle_days }),
+    )?;
+
+    if found.leads.is_empty() {
+        return Err(Error::invalid("That lead has been active too recently.")
+            .hint("Raise idle_days, or close the lead by hand."));
+    }
+
+    let closed: Closed = simple::graphql::mutate(
+        CLOSE_LEAD,
+        json!({ "id": request.data.lead_id, "merged": request.data.duplicate_of }),
+    )?;
+
+    Ok(Output {
+        rows_changed: closed.result.affected_rows,
+        closed: request.data.lead_id,
+        merged_into: request.data.duplicate_of,
+    })
+}
+
+fn main() { simple::run(handler) }
+```
+
+No lifetimes, no `async`, no `unsafe`, no envelope, no context threading, one
+import line.
+
+### Build it, and run its tests
+
+```bash
+simple build com.mycompany.crm/close-duplicate-lead   # one action
+simple build com.mycompany.crm                        # every action in an app
+simple build --all                                    # every app
+
+simple test com.mycompany.crm -a close-duplicate-lead # one action's tests
+simple test com.mycompany.crm                         # every test in an app
+simple test                                           # every test
+```
+
+`simple build` takes `--concurrency` to set how many builds run at once, and
+`simple test` takes `--coverage`. Both take `--json` when something other than a
+person is reading the result.
+
+## Core Modules
+
+The Rust SDK is organised into focused modules for different capabilities:
+
+| Module       | Import                        | Purpose                                                |
+| ------------ | ----------------------------- | ------------------------------------------------------ |
+| **Core**     | `simpleplatform_sdk::prelude` | Request handling and action execution                  |
+| **Schema**   | `simple::Schema`              | Member constraints, checked as you write them          |
+| **AI**       | `simple::ai`                  | AI operations (extract, summarize, transcribe)         |
+| **GraphQL**  | `simple::graphql`             | Database queries and mutations                         |
+| **HTTP**     | `simple::http`                | External HTTP requests                                 |
+| **Settings** | `simple::settings`            | Application settings retrieval                         |
+| **Storage**  | `simple::storage`             | File upload, and reading a stored file's bytes         |
+| **Tasks**    | `simple::tasks`               | Creating tasks from server actions                     |
+| **Errors**   | `simple::{Error, Fault}`      | Typed failures, and what `?` converts into             |
+| **Codes**    | `simple::codes`               | The canonical failure vocabulary: `Code`, `Category`   |
+| **Host**     | `simple::host`                | The `Transport` an action reaches the platform through |
+| **Testing**  | `simple::testing`             | Host seam for tests, with no wasm build                |
+
+Every one of them is reached through `simple`, which the prelude brings in — so
+the one import line above is still the whole of what an action imports. The
+prelude also carries the types a call site has to write down: the options a call
+takes, and the value it answers with. What a call chooses _inside_ one of those
+keeps its module path and needs no import of its own, such as
+`simple::ai::Model::Large` or `simple::storage::Auth::bearer("t-1234")`.
+
+---
+
+## API Documentation
+
+### Core
+
+`simple::run` takes your handler and drives one execution: it reads the
+execution context, hands your handler its typed input, and reports the outcome.
+`Request<T>` carries `data`, the input deserialised into your own type.
+
+Every public function returns `Result`, and `?` works on anything that
+implements `Display`, so an action propagates a failure without naming a type.
+
+### Describing an Action
+
+What an action is, and what its input looks like, is written where the code is —
+in the doc comments and on the members themselves. There is nothing to keep in
+step by hand.
+
+#### The four tags
+
+Four tags describe the action, written with `///` in the doc comment above the
+handler — the same comment that carries its description:
+
+```rust
+/// Close a duplicate lead and point it at the record that survives.
+///
+/// The surviving lead keeps its activity; the duplicate is marked closed and
+/// linked to it, so a later report still reaches both records.
+///
+/// @tool
+/// @shortdesc Close a duplicate lead, pointing it at the surviving record.
+/// @usewhen A lead is a duplicate of one already in the system.
+/// @usewhen Two leads share a contact and one should be retired.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    // ...
+}
+```
+
+Give the handler a name to hang them on, and pass it to `simple::run`:
+
+```rust
+fn main() { simple::run(handler) }
+```
+
+| Tag             | Shape                                           | What it says                                                                                                                              |
+| --------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tool`         | bare, no value                                  | This action can be reached as a tool                                                                                                      |
+| `@shortdesc`    | one line, up to 300 characters, written once    | What this is, read in a listing of tools                                                                                                  |
+| `@usewhen`      | one line, up to 100 characters, up to ten times | One occasion for reaching for this rather than something else                                                                             |
+| `@parallelsafe` | bare, no value, only alongside `@tool`          | This tool changes no stored data and sends nothing, so it may run at the same time as the other parallel-safe calls next to it in a batch |
+
+`@parallelsafe` is a claim you make about your own action; the platform does not
+verify it. It changes only which calls of a batch may overlap — consecutive
+parallel-safe calls may run at the same time, and every other call still runs
+alone, in the order asked. It never changes whether a failed call is retried,
+nor the platform's assumption that a failed call may have changed stored data.
+The build refuses it without `@tool`, with a value, or written twice. Write it
+only when the action is read-only:
+
+```rust
+/// Look up a lead's open activity.
+///
+/// @tool
+/// @shortdesc Look up a lead's open activity.
+/// @usewhen A caller wants a lead's current open activity.
+/// @parallelsafe
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    // reads only — no writes, no outbound calls
+}
+```
+
+**The prose above the tags is the full description.** It stays exactly as
+written — the first paragraph and everything under it — so the long form of what
+this action does is the same text a developer opening the file reads.
+
+#### Member constraints
+
+`#[derive(Schema)]` makes `#[simple(…)]` legal on a member and checks what is
+written in it. The grammar is grouped, the way the Rust ecosystem spells it:
+
+```rust
+use simpleplatform_sdk::prelude::*;
+
+/// The leads to consider.
+#[derive(Deserialize, Schema)]
+struct Input {
+    /// The leads to close, by identifier.
+    #[simple(length(min = 1, max = 500))]
+    ids: Vec<String>,
+
+    /// How far back to look for activity.
+    #[simple(range(min = 1, max = 90))]
+    days: u32,
+
+    /// Consider only leads whose reference starts here.
+    #[simple(pattern = "^KNOW", length(max = 64))]
+    prefix: Option<String>,
+
+    /// Where to send the summary.
+    #[simple(format = "email", default = "nobody@example.com", example = "a@b.co")]
+    notify: String,
+
+    /// Kept for callers that still send it.
+    #[simple(deprecated)]
+    legacy: bool,
+}
+```
+
+| Written                    | Applies to              | Becomes                                                                        |
+| -------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `range(min = …, max = …)`  | numbers                 | `minimum` / `maximum`                                                          |
+| `length(min = …, max = …)` | strings and collections | `minLength` / `maxLength` on a string, `minItems` / `maxItems` on a collection |
+| `pattern = "…"`            | strings                 | `pattern`                                                                      |
+| `format = "…"`             | strings                 | `format`                                                                       |
+| `default = …`              | any member              | `default`                                                                      |
+| `example = …`              | any member              | `example`                                                                      |
+| `deprecated`               | any member              | `deprecated`                                                                   |
+
+`length` is type-directed: the same two bounds mean characters on a `String` and
+elements on a `Vec<T>`, so there is one length to remember rather than two.
+Either bound may be written on its own, and equal bounds are a single accepted
+value.
+
+Several constraints go in one attribute, separated by commas, or in attributes
+of their own — `#[simple(pattern = "^KNOW", length(max = 64))]` and
+`#[simple(pattern = "^KNOW")] #[simple(length(max = 64))]` are the same thing.
+Either way each constraint is written once per member. Structs, tuple structs
+and enums all carry them, and a generic type needs no bounds.
+
+Three things are deliberately absent from `#[simple(…)]`, because each already
+has one place:
+
+- **The description** is the doc comment on the member — the `///` line above it,
+  and there is one place to write it.
+- **Requiredness** is the type. A member is optional when it is `Option<T>` or
+  carries `#[serde(default)]`, and required otherwise, so the signature and the
+  schema cannot disagree.
+- **The property name** is what `serde` says it is. `#[serde(rename = "…")]` and
+  `#[serde(rename_all = "…")]` name the property, so the name on the wire and
+  the name serde reads are the same name.
+
+The derive generates nothing at all: a member that carries constraints costs a
+built module exactly what a member without them costs. What it does is read what
+was written, so a bound in the wrong shape is a compile error at the span that
+holds it, with the accepted grammar in the message.
+
+### AI Module
+
+The AI module works on unstructured data: a document handle, a piece of text, or
+an object you already hold.
+
+The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribe_pages` selects the reader for scanned pages; omission or `Transcription::Standard` preserves the default behavior.
+`Transcription::Precise` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
+
+```rust
+use simpleplatform_sdk::ai::{self, TranscribePagesOptions, Transcription};
+
+let read = ai::transcribe_pages(
+    &document_handle,
+    None,
+    TranscribePagesOptions {
+        transcription: Some(Transcription::Precise),
+        ..Default::default()
+    },
+)?;
+```
+
+#### Extract Structured Data
+
+The schema is the contract the answer is held to, and the type parameter is what
+that answer is decoded into — so an extraction lands in your own struct:
+
+```rust
+#[derive(Deserialize)]
+struct Invoice {
+    number: String,
+    total: f64,
+}
+
+let read: Execution<Invoice> = simple::ai::extract(
+    json!({ "file_hash": "9f2c…", "mime_type": "application/pdf" }),
+    "Read the invoice number and the total.",
+    json!({
+        "type": "object",
+        "properties": {
+            "number": { "type": "string" },
+            "total": { "type": "number" }
+        },
+        "required": ["number", "total"]
+    }),
+    Options::default(),
+)?;
+
+read.data.total; // 240.0, as an f64, because that is what Invoice declares
+read.metadata.input_tokens; // what the run cost, without a second call
+```
+
+Every operation answers with an `Execution<T>`: the data, and the `Metadata`
+beside it.
+
+#### Summarize Content
+
+```rust
+let written = simple::ai::summarize(
+    json!({ "file_hash": "3a91…", "mime_type": "application/pdf" }),
+    "Summarise what was agreed, in one sentence.",
+    Options {
+        model: Some(simple::ai::Model::Large),
+        ..Options::default()
+    },
+)?;
+
+written.data; // "A refund was agreed."
+```
+
+#### Transcribe Audio/Video
+
+The prompt and the schema are written for you from what you ask for, which is
+why the answer is a `Transcript` rather than a type you have to name:
+
+```rust
+let heard = simple::ai::transcribe(
+    json!({ "file_hash": "c07b…", "mime_type": "audio/mpeg" }),
+    TranscribeOptions {
+        include_transcript: true,
+        include_timestamps: true,
+        summarize: true,
+        participants: simple::ai::Participants::Named(vec![
+            "Customer".to_string(),
+            "Agent".to_string(),
+        ]),
+    },
+    Options::default(),
+)?;
+
+heard.data.language; // "en"
+heard.data.transcript; // Some("[00:15] Customer: My order is late…")
+heard.data.summary; // Some("The customer was refunded.")
+```
+
+#### Transcribe PDF Pages
+
+Read the pages of a PDF that have no usable text of their own — scans,
+image-only exhibits — from their images. Each such page is transcribed once,
+and it is the same transcription an `extract` or `summarize` that asks for text
+is given in the page's place, so the text you hold for an image page is exactly
+the text the answer was built on. Pages with a readable text layer are not
+returned.
+
+```rust
+use simple::ai::{PageTranscription, Pages, TranscribePagesOptions};
+
+let read = simple::ai::transcribe_pages(
+    &contract, // a DocumentHandle
+    Some(Pages::new(40, 52)),
+    TranscribePagesOptions::default(),
+)?;
+
+for page in &read.data {
+    match page {
+        PageTranscription::Read { page, text } => println!("{page}: {text}"),
+        PageTranscription::Unread { page, error } => println!("page {page} could not be read: {error}"),
+    }
+}
+```
+
+Pages are numbered in the original document. A page has its text or the reason
+it has none, never both, so partial text is never handed on. Transcriptions are
+kept per version of the file and page, so a page already read for an `extract`
+or `summarize` that asked for text (`Delivery::Text`) is not read again.
+Anything that is not a PDF is refused before the platform is asked.
+
+A page is not transcribed twice to check itself: that would be the same model
+reading the same image again, doubling the cost of every scanned page without
+adding independence. To check an answer independently, read the pages a second
+way — as the document itself (`Delivery::Document`) — and compare.
+
+#### How Files Travelled
+
+A file asked for as text is not always sent as text: a page with no text of its
+own is read from its image, and when that reading fails the document is sent
+instead. Every answer says which happened, per file and in input order, in
+`metadata.delivery`: `delivered_as` (`DeliveredAs::Document`, `Text` or
+`Image`), the range the file was cut to, the pages transcribed from their
+images, and — when text was asked for and the document went instead — a
+`fallback` naming the pages that could not be read and why.
+
+```rust
+let read: Execution<Invoice> = simple::ai::extract(json!(contract), prompt, schema, Options::default())?;
+
+for file in &read.metadata.delivery {
+    if let Some(fallback) = &file.fallback {
+        println!("{} was read as a PDF: {}", file.filename, fallback.message);
+    }
+}
+```
+
+Pages are numbered in the original document. An answer with no report, or an
+entry this SDK cannot read, leaves `delivery` without it rather than failing
+the call.
+
+#### The Face Collection
+
+`simple::ai::enroll_face` adds a face under the subject it belongs to and
+answers with its id, `simple::ai::search_face` finds the matches for an image,
+and `simple::ai::delete_face` removes faces by the ids they were enrolled under:
+
+```rust
+let face_id = simple::ai::enroll_face("EMP-42", json!("iVBORw0KGgo…"))?;
+
+let found: Value = simple::ai::search_face(
+    json!("iVBORw0KGgo…"),
+    FaceSearch {
+        max_faces: Some(3),
+        similarity_threshold: Some(92.5),
+    },
+)?;
+
+let removed = simple::ai::delete_face(&[face_id])?;
+```
+
+A document handle whose file is still pending is uploaded before the operation
+runs, and the operation is given the handle that upload answered with. Nothing
+at a call site changes: pass the handle you were given.
+
+### GraphQL Module
+
+Reads and writes are separate calls, and which one you call is the declaration
+of intent:
+
+```rust
+// A read.
+let open: Open = simple::graphql::query(OPEN_INVOICES, json!({ "id": id }))?;
+
+// A write.
+let closed: Value = simple::graphql::mutate(CLOSE_LEAD, json!({ "id": id }))?;
+```
+
+Each reports its own outcome, so a failure says which kind of call produced it
+without the action having to describe it.
+
+### HTTP Module
+
+The answer is the response body, read into the type the call site asked for. A
+body the service sent as JSON is read as JSON; one it sent as text is what an
+answer type of `String` receives; and a body with nothing in it reads as null,
+which is what `()` and `Option<_>` receive.
+
+```rust
+// A read. Most calls carry no headers, so most calls are one line.
+let rate: Rate = simple::http::get("https://api.example.com/rates/eur")?;
+
+// A write.
+let created: Value = simple::http::post(
+    "https://api.example.com/leads",
+    json!({ "email": "lead@example.com" }),
+)?;
+```
+
+`put`, `patch` and `delete` are there too. A call that carries headers, or that
+wants a method named alongside them, builds an `http::Request` — every field has
+a default, so a literal names the ones it sets:
+
+```rust
+let updated: Value = simple::http::fetch(simple::http::Request {
+    url: "https://api.example.com/leads/L1".to_string(),
+    method: simple::http::Method::Patch,
+    headers: simple::http::headers(&[("Authorization", "Bearer token123")]),
+    body: Some(json!({ "status": "qualified" })),
+    ..simple::http::Request::default()
+})?;
+```
+
+A request made from the browser can carry the page's own cookies and HTTP
+authentication by naming the browser's credentials mode — `Omit`, `SameOrigin`
+or `Include`:
+
+```rust
+let session: Value = simple::http::fetch(simple::http::Request {
+    url: "https://api.example.com/session".to_string(),
+    credentials: Some(simple::http::Credentials::Include),
+    ..simple::http::Request::default()
+})?;
+```
+
+A request that names none sends none, and the browser host then omits
+credentials. A cross-origin request that includes them still needs the service
+to allow the page's origin and credentials through CORS. The server host has no
+browser credentials and ignores the mode.
+
+An outbound request keeps its module path, the way everything a call chooses
+does, so this adds no import line. It also keeps the two `Request`s apart: the
+bare `Request<T>` a handler takes is the prelude's, and the one a call builds is
+`simple::http::Request`, so a handler that builds an outbound request writes both
+in the same file and each reads as what it is.
+
+Three outcomes, told apart at the call site by the variant they match on and the
+code they report:
+
+| What happened                          | Variant         | Code                       |
+| -------------------------------------- | --------------- | -------------------------- |
+| the request produced no answer         | `Error::Host`   | `ACTION_FAILED`            |
+| the service answered outside 2xx       | `Error::Domain` | `HTTP_STATUS_<status>`     |
+| the answer did not fit the answer type | `Error::Json`   | `HTTP_RESPONSE_UNREADABLE` |
+
+So a 404 and an unreachable service are two different things to an action, and
+the status a service refused on travels in the code, the message and the details.
+
+### Settings Module
+
+Read the settings an application was configured with, into your own type:
+
+```rust
+#[derive(Deserialize)]
+struct Billing {
+    region: String,
+    retries: u8,
+}
+
+let billing: Billing = simple::settings::get("dev.simple.myapp", &["region", "retries"])?;
+
+billing.region; // "eu-west"
+billing.retries; // 3, as a u8, because that is what Billing declares
+```
+
+The keys asked for and the fields read back are declared together, and a value
+that does not fit the declaration is reported once, at the call. When the keys
+are chosen at runtime, ask for a `Value` and the map arrives exactly as it was
+sent — same call, same wire, and the type on the left decides:
+
+```rust
+let settings: Value = simple::settings::get("dev.simple.myapp", &[chosen])?;
+```
+
+### Tasks Module
+
+Create a task from a server action. It is assigned to the user the action runs
+as. The platform generates the task and first-message ids. Check the action's
+own record first if it must not start the same work twice.
+
+On refusal, the task service's message begins with its code, such as
+`TASK_INPUT_INVALID: /title`. The SDK surfaces the full host error message.
+**What is not yet true.** Not every service refusal keeps its internal code.
+Input/schema (`TASK_INPUT_INVALID`, `TASK_INPUT_TOO_LARGE`), assignee
+(`TASK_ASSIGNEE_INVALID`), and other public refusals retain their codes.
+Unlisted internal refusals, including an unknown task type
+(`TASK_RELATION_NOT_FOUND`), arrive as `TASK_RUNTIME_REMOTE_FAILURE`, just as
+on the page path.
+
+```rust
+let created = simple::tasks::create(
+    "TTY000003",
+    "Review the invoice",
+    json!({ "invoice_id": "INV000017" }),
+)?;
+
+created.task.id;       // "TASK000042", generated by the platform
+created.task.revision; // 0, also returned by the page's tasks.create
+created.task.status;   // "queued"
+```
+
+### Storage Module
+
+Two ways in — bytes this action already holds, and a file behind a URL — and one
+thing out of both: a `DocumentHandle`, which is the value a `:document` field
+holds.
+
+```rust
+let handle = simple::storage::upload_buffer(
+    &rendered,
+    "invoice.pdf",
+    "application/pdf",
+    Target::new("dev.simple.myapp", "documents", "attachment"),
+)?;
+
+let handle = simple::storage::upload_external(
+    Source::url("https://example.com/invoice.pdf")
+        .with_auth(simple::storage::Auth::bearer("your-token-here")),
+    Target::new("dev.simple.myapp", "documents", "attachment"),
+)?;
+
+handle.file_hash; // the SHA-256 of the contents, which is the file's identity
+handle.mime_type; // "application/pdf"
+handle.size; // the size in bytes
+```
+
+The store is addressed by content, so identical bytes land under the identical
+hash and are kept once: uploading a file the store already holds answers with the
+handle that was already there.
+
+The way back out takes the same handle and answers with the file's bytes:
+
+```rust
+let bytes: Vec<u8> = simple::storage::read(&handle)?;
+
+let size = simple::storage::size(&handle)?; // without reading any of it
+let head = simple::storage::read_range(&handle, 0, 1024)?; // the first kilobyte
+```
+
+The bytes cross from the host as they are, with no JSON and no base64. `read`
+asks for the size first, allocates once at exactly that size, and has each range
+of at most `MAX_RANGE_BYTES` written by the host straight into its place in that
+buffer. `read_range` asks for the size first too, so a range that runs past the
+end answers with exactly the bytes up to the end, and one that starts at or past
+the end is refused before any of it is read. Reading is for server actions; a
+browser action is refused.
+
+In a test, `Session::with_bytes` answers the reads:
+
+```rust
+let _session = testing::install(|_name, _params| Ok(json!({ "size": 4 })))
+    .with_bytes(|_name, _params| Ok(b"%PDF".to_vec()));
+```
+
+Storing the file and attaching it are separate steps, and attaching it is the
+one that changes tenant data — write the handle into the `:document` field with
+`simple::graphql::mutate` once you have it. A credential is rendered by its
+`Debug` as its scheme and its username, so a token never lands in a log line.
+
+### Errors
+
+`Error` is a typed enum and `Code` holds the canonical vocabulary. Build one
+directly when an action wants to be specific:
+
+```rust
+return Err(Error::invalid("customer_id is required")
+    .hint("Pass the customer's id as a string."));
+```
+
+`message` and `hint` each travel within 1000 bytes and are cut on a character
+boundary, so what arrives is always valid UTF-8.
+
+### Testing Module
+
+Install a closure in place of the host and call your handler directly:
+
+```rust
+#[test]
+fn it_totals_the_open_invoices() {
+    let session = simple::testing::install(|name, params| {
+        assert_eq!(name, "action:db/execute");
+        assert_eq!(params["variables"]["id"], json!("CUS1"));
+
+        Ok(json!({ "invoices": [{ "amount": 12.5 }, { "amount": 7.5 }] }))
+    });
+
+    let output = handler(Request::new(Input { customer_id: "CUS1".into() })).unwrap();
+
+    assert_eq!(output.total, 20.0);
+    assert_eq!(session.calls().len(), 1);
+}
+```
+
+`simple::run` also works under a session, so a test can assert the exact
+`__done__` document the platform reads — `session.done()`.
+
+```bash
+simple test com.mycompany.crm -a close-duplicate-lead
+```
+
+runs all of it on the host. No wasm, no toolchain, no emulator. Add `--coverage`
+when you want the report.
+
+---
+
+## Development
+
+This section is for contributors to this crate. An action author builds and
+tests with `simple build` and `simple test`, above.
+
+### The two artifacts
+
+Two artifacts from one source. Each declares exactly the imports its host binds,
+which is why there are two build lines rather than one.
+
+This crate is a library, and linking it into a binary is what emits a `.wasm`
+module — an example here, an action in production. `--examples` is on these
+lines so that the modules exist to be inspected.
+
+```sh
+# The server build. Answers a host call synchronously.
+cargo build --target wasm32-wasip1 --release --examples
+
+# The browser build. A host call parks the module; wasm-opt resumes it.
+cargo build --target wasm32-wasip1 --release --features async --examples
+wasm-opt build/release.ori.async.wasm \
+  -Oz --disable-gc \
+  --enable-bulk-memory --enable-bulk-memory-opt --enable-sign-ext \
+  --enable-nontrapping-float-to-int --enable-multivalue --enable-reference-types \
+  --asyncify --pass-arg=asyncify-imports@simple.__call \
+  -o build/release.async.wasm
+```
+
+**Pass the `--enable-*` flags.** Rust's `wasm32-wasip1` target emits bulk memory,
+sign extension and friends by default, and binaryen validates a module against
+the features it has been told to enable. These flags are the ones this crate's
+output uses, so they are what `wasm-opt` needs in order to accept and optimise
+it.
+
+### Checks
+
+```sh
+cargo test                                                   # host, no wasm
+cargo test --doc                                             # every example compiles
+RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --workspace       # the rendered docs
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings                    # host
+cargo clippy --all-targets --features async -- -D warnings   # host, async cfg
+cargo clippy --target wasm32-wasip1 --lib --examples -- -D warnings
+cargo clippy --target wasm32-wasip1 --lib --examples --features async -- -D warnings
+cargo build --target wasm32-wasip1 --release --examples
+cargo build --target wasm32-wasip1 --release --features async --examples
+```
+
+Run them from `sdks/rust`. This directory is a two-crate workspace — the SDK and
+the `Schema` derive in `macros/` — and `default-members` names both, so one
+command covers the pair.
+
+CI additionally reads the import section out of both built modules and asserts
+each declares exactly what its host binds — six names for the server, four for
+the browser — and that the two sets differ. The guarantee then rests on the
+modules themselves rather than on the builds having been run.
+
+`--all-targets` is deliberately absent from the two wasm lines: the tests are
+host-only by design, and asking clippy to build them for wasm asks it to build
+`testing`, which is not compiled there.
+
+### The examples are the acceptance tests
+
+`examples/load_knowledge.rs` builds for `wasm32-wasip1` as a real action does,
+and its own `#[cfg(test)] mod tests` runs under `cargo test`.
+`examples/close_duplicate_lead.rs` is a second action written against the crate:
+two host calls — a read, then a write — and several ways to refuse.
+`examples/file_expense_receipt.rs` is the modules composing in one handler —
+settings for the policy, storage for the file, AI for what the file says, and
+GraphQL for the record — with the same `DocumentHandle` travelling through all
+four.
+
+`macros/tests/ui/` holds the derive's compile-error suite: one file per
+diagnostic, each recording the exact message and span an author sees.
+`TRYBUILD=overwrite cargo test -p simpleplatform-sdk-macros` re-records them.
+
+## License
+
+Apache-2.0. See [LICENSE](../../LICENSE) at the repository root.
