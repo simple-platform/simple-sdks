@@ -73,8 +73,8 @@ availability and contracts.
 `@simpleplatform/ui-kit` is the companion package for supported Space UI. The
 current alpha contains the `StatusBadge` element/React bridge and pre-release
 managed React `RecordForm`, `RecordActivity`, `ListView`, `DataGrid`, and
-`Board` components. Managed views require the planned SDK `^3.2.0`
-release, which is not yet published. Check the UI Kit README for release status
+`Board` components. Managed views require SDK `^4.0.0`, the first published
+release with the private managed-view bridge. Check the UI Kit README for release status
 and supported contracts before depending on them.
 
 **[→ View UI Kit documentation](sdks/space-ui/README.md)**
