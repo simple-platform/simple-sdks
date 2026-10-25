@@ -82,7 +82,7 @@ function createMockClient({ graphql = async () => ({}), runtime } = {}) {
 
 const sampleTile = {
   detailFieldNames: ['status'],
-  presentation: 'row',
+  presentation: 'standard',
   titleFieldName: 'title',
   version: 1,
 }
@@ -142,8 +142,7 @@ test('exports unversioned managed-view names and validators from @simpleplatform
   assert.ok(contracts.FILTER_OPERATORS.includes('eq'))
   assert.ok(contracts.FILTER_OPERATORS.includes('between'))
   assert.ok(Array.isArray(contracts.RECORD_TILE_PRESENTATIONS))
-  assert.ok(contracts.RECORD_TILE_PRESENTATIONS.includes('row'))
-  assert.ok(contracts.RECORD_TILE_PRESENTATIONS.includes('editorial'))
+  assert.deepEqual(contracts.RECORD_TILE_PRESENTATIONS, ['standard', 'media', 'message'])
   assert.ok(Array.isArray(contracts.RECORD_VIEW_ICON_IDS))
   assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('lucide:list'))
   assert.ok(contracts.RECORD_VIEW_ICON_IDS.includes('lucide:check'))
@@ -292,23 +291,23 @@ test('validates RecordSort shape and fails closed on legacy fieldId', () => {
 test('validates RecordTileLayout shape and compositions', () => {
   assert.deepEqual(contracts.validateRecordTileLayout(sampleTile), sampleTile)
   assert.equal(contracts.isRecordTileLayout(sampleTile), true)
-  assert.ok(contracts.RECORD_TILE_PRESENTATIONS.includes('email'))
-
   const personTile = {
     badgeFieldNames: ['priority'],
+    badgeStyle: 'filled',
     detailFieldNames: ['department'],
+    emphasis: 'prominent',
     eyebrowFieldName: 'team',
-    presentation: 'person',
-    subtitleFieldName: 'role',
+    presentation: 'standard',
+    subtitleFieldNames: ['role'],
     titleFieldName: 'name',
     trailingFieldName: 'updatedAt',
     version: 1,
-    visual: { altFieldName: 'name', fieldName: 'avatar', fit: 'cover', kind: 'image' },
+    visual: { altFieldName: 'name', fieldName: 'avatar', kind: 'avatar' },
   }
   assert.deepEqual(contracts.validateRecordTileLayout(personTile), personTile)
 
   const enumIconTile = {
-    presentation: 'status',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { fallbackIconId: 'lucide:circle-question-mark', fieldName: 'state', iconsByValue: { active: 'lucide:check' }, kind: 'enum-icon' },
@@ -316,7 +315,7 @@ test('validates RecordTileLayout shape and compositions', () => {
   assert.deepEqual(contracts.validateRecordTileLayout(enumIconTile), enumIconTile)
 
   const iconTile = {
-    presentation: 'spotlight',
+    presentation: 'standard',
     titleFieldName: 'headline',
     version: 1,
     visual: { iconId: 'lucide:star', kind: 'icon' },
@@ -325,8 +324,8 @@ test('validates RecordTileLayout shape and compositions', () => {
 
   const emailTile = {
     eyebrowFieldName: 'sender',
-    presentation: 'email',
-    subtitleFieldName: 'preview',
+    presentation: 'message',
+    subtitleFieldNames: ['preview'],
     titleFieldName: 'subject',
     trailingFieldName: 'received_at',
     version: 1,
@@ -336,28 +335,34 @@ test('validates RecordTileLayout shape and compositions', () => {
   assert.throws(() => contracts.validateRecordTileLayout({ ...emailTile, badgeFieldNames: ['state'] }), /do not support badges, details, or visuals/)
 
   assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'unknown', titleFieldName: 'x', version: 1 }))
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldName: '', version: 1 }))
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldName: 'x', version: 2 }))
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldName: 'x', version: 1 }))
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'email', titleFieldName: 'x', version: 1 }))
+  assert.throws(() => contracts.validateRecordTileLayout({ emphasis: 'subtle', presentation: 'standard', titleFieldName: 'x', version: 1 }), /emphasis/i)
+  assert.throws(() => contracts.validateRecordTileLayout({ badgeStyle: 'filled', presentation: 'media', titleFieldName: 'x', version: 1 }), /badgeStyle/i)
+  assert.throws(() => contracts.validateRecordTileLayout({ ...emailTile, badgeStyle: 'filled' }), /standard tiles/i)
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'media', titleFieldName: 'x', version: 1, visual: { fieldName: 'portrait', kind: 'avatar' } }), /avatar visuals are only supported on standard tiles/i)
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldName: '', version: 1 }))
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldName: 'x', version: 2 }))
 
   // Legacy titleFieldId fails closed
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldId: 'name', version: 1 }), /Record tile layout titleFieldName must be a non-empty string/)
-  assert.equal(contracts.isRecordTileLayout({ presentation: 'row', titleFieldId: 'name', version: 1 }), false)
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldId: 'name', version: 1 }), /Record tile layout titleFieldName must be a non-empty string/)
+  assert.equal(contracts.isRecordTileLayout({ presentation: 'standard', titleFieldId: 'name', version: 1 }), false)
 
   // Legacy visual image fieldId fails closed
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'person',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { fieldId: 'avatar', kind: 'image' },
   }), /Tile image visual requires fieldName/)
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'person',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { altFieldId: 'avatar', fieldId: 'avatar', kind: 'image' },
   }), /Tile image visual requires fieldName/)
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'person',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { altFieldName: '', fieldName: 'avatar', kind: 'image' },
@@ -365,7 +370,7 @@ test('validates RecordTileLayout shape and compositions', () => {
 
   // Unknown visual keys fail closed instead of being silently dropped
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'person',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { altFieldId: 'legacy-alt', fieldName: 'avatar', kind: 'image' },
@@ -373,7 +378,7 @@ test('validates RecordTileLayout shape and compositions', () => {
 
   // Legacy visual enum-icon fieldId fails closed
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'status',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
     visual: { fallbackIconId: 'help', fieldId: 'state', iconsByValue: { active: 'check' }, kind: 'enum-icon' },
@@ -382,32 +387,32 @@ test('validates RecordTileLayout shape and compositions', () => {
   // Empty string elements in badgeFieldNames / detailFieldNames fail closed
   assert.throws(() => contracts.validateRecordTileLayout({
     badgeFieldNames: [''],
-    presentation: 'row',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
   }), /badgeFieldNames must be an array of non-empty strings/)
   assert.throws(() => contracts.validateRecordTileLayout({
     detailFieldNames: [''],
-    presentation: 'row',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
   }), /detailFieldNames must be an array of non-empty strings/)
 
-  // Empty string in eyebrowFieldName / subtitleFieldName / trailingFieldName fail closed
+  // Empty string in eyebrowFieldName / subtitleFieldNames / trailingFieldName fail closed
   assert.throws(() => contracts.validateRecordTileLayout({
     eyebrowFieldName: '',
-    presentation: 'row',
+    presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
   }), /eyebrowFieldName must be a non-empty string/)
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'row',
-    subtitleFieldName: '',
+    presentation: 'standard',
+    subtitleFieldNames: [''],
     titleFieldName: 'name',
     version: 1,
-  }), /subtitleFieldName must be a non-empty string/)
+  }), /subtitleFieldNames must be an array of non-empty strings/)
   assert.throws(() => contracts.validateRecordTileLayout({
-    presentation: 'row',
+    presentation: 'standard',
     titleFieldName: 'name',
     trailingFieldName: '',
     version: 1,

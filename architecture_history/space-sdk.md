@@ -150,10 +150,11 @@ const preset: ListPreset = {
     orderBy: [{ direction: 'asc', fieldName: 'display_name' }],
     tile: {
       detailFieldNames: ['team'],
-      presentation: 'person',
-      subtitleFieldName: 'role',
+      presentation: 'standard',
+      subtitleFieldNames: ['role'],
       titleFieldName: 'display_name',
       version: 1,
+      visual: { kind: 'avatar', fieldName: 'profile_photo' },
     },
   },
   id: 'people',
@@ -1018,6 +1019,12 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Decision:** Export managed-view contracts and validators with stable unversioned names such as `DataGridPreset` and `validateDataGridPreset`. Keep `V1` suffixes in internal SDK implementation symbols only.
 - **Reason:** Public names describe the API concept; the serialized JSON already carries its format version.
 - **Boundary:** Saved view, filter, and tile objects keep `version: 1`. This is a source-level and export-name change only; existing serialized Custom View data remains readable.
+
+### 2026-10-24 — Keep three tile presentations in the first release
+
+- **Decision:** Support only `standard`, `media`, and `message`. Standard carries optional avatar initials fallback, prominent emphasis, and filled/outline badges; message replaces the email-specific presentation name while retaining its sender/date/subject/preview layout.
+- **Reason:** The former row, person, editorial, status, and spotlight values duplicated field arrangement options and made the public contract harder to learn. The first release has no need to accept those pre-release values.
+- **Boundary:** Portable and platform validators reject old presentation names. Saved fixture presets and the playground use the three-value contract.
 
 ### 2026-10-25 — Require the first published SDK with the managed UI bridge
 

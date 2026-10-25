@@ -5,7 +5,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -14,7 +14,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition row",
+      "name": "tile composition standard",
       "target": "preset"
     },
     {
@@ -22,16 +22,26 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "person",
+            "presentation": "standard",
             "titleFieldName": "title",
-            "version": 1
+            "version": 1,
+            "badgeFieldNames": [
+              "status"
+            ],
+            "badgeStyle": "filled",
+            "emphasis": "prominent",
+            "visual": {
+              "altFieldName": "title",
+              "fieldName": "image",
+              "kind": "avatar"
+            }
           }
         },
         "id": "review",
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition person",
+      "name": "standard tile options and avatar",
       "target": "preset"
     },
     {
@@ -52,7 +62,7 @@
       "target": "preset"
     },
     {
-      "accepted": true,
+      "accepted": false,
       "input": {
         "config": {
           "tile": {
@@ -65,11 +75,11 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition editorial",
+      "name": "legacy editorial presentation rejected",
       "target": "preset"
     },
     {
-      "accepted": true,
+      "accepted": false,
       "input": {
         "config": {
           "tile": {
@@ -82,11 +92,11 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition status",
+      "name": "legacy status presentation rejected",
       "target": "preset"
     },
     {
-      "accepted": true,
+      "accepted": false,
       "input": {
         "config": {
           "tile": {
@@ -99,7 +109,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition spotlight",
+      "name": "legacy spotlight presentation rejected",
       "target": "preset"
     },
     {
@@ -108,8 +118,8 @@
         "config": {
           "tile": {
             "eyebrowFieldName": "sender",
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": ["preview"],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1
@@ -119,7 +129,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile composition",
+      "name": "message tile composition",
       "target": "preset"
     },
     {
@@ -127,8 +137,8 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": ["preview"],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1
@@ -138,7 +148,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile requires a sender",
+      "name": "message tile requires a sender",
       "target": "preset"
     },
     {
@@ -147,8 +157,8 @@
         "config": {
           "tile": {
             "eyebrowFieldName": "sender",
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": ["preview"],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1,
@@ -161,7 +171,71 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile rejects workflow badges",
+      "name": "message tile rejects workflow badges",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "eyebrowFieldName": "sender",
+            "presentation": "email",
+            "subtitleFieldNames": ["preview"],
+            "titleFieldName": "title",
+            "trailingFieldName": "received_at",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "legacy email presentation rejected",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "person",
+            "titleFieldName": "title",
+            "version": 1,
+            "badgeFieldNames": [
+              "status"
+            ],
+            "badgeStyle": "filled",
+            "emphasis": "prominent",
+            "visual": {
+              "altFieldName": "title",
+              "fieldName": "image",
+              "kind": "avatar"
+            }
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "legacy person presentation rejected",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "legacy row presentation rejected",
       "target": "preset"
     },
     {
@@ -173,7 +247,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -191,7 +265,7 @@
         "config": {
           "detail": "record",
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -242,7 +316,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -268,7 +342,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -291,7 +365,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -308,7 +382,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -326,7 +400,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "style": "unsafe",
             "titleFieldName": "title",
             "version": 1
@@ -344,7 +418,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -366,7 +440,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -395,7 +469,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -488,7 +562,7 @@
               "title",
               "title"
             ],
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -512,7 +586,7 @@
         ],
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -781,7 +855,7 @@
             "badgeFieldNames": [
               "status"
             ],
-            "presentation": "status",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -824,7 +898,7 @@
             "badgeFieldNames": [
               "status"
             ],
-            "presentation": "status",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -848,7 +922,7 @@
           "laneFieldName": "status",
           "tile": {
             "html": "unsafe",
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -870,7 +944,7 @@
             "todo"
           ],
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -888,7 +962,7 @@
         "config": {
           "laneFieldName": "status",
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           },
@@ -906,7 +980,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -923,7 +997,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -940,7 +1014,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "version": 1
           }
@@ -957,8 +1031,8 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
-            "subtitleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "presentation": "standard",
+            "subtitleFieldNames": ["xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
             "titleFieldName": "title",
             "version": 1
           }
@@ -967,7 +1041,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile subtitleFieldName length limit",
+      "name": "tile subtitleFieldNames length limit",
       "target": "preset"
     },
     {
@@ -976,7 +1050,7 @@
         "config": {
           "tile": {
             "eyebrowFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -993,7 +1067,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "trailingFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "version": 1
@@ -1011,7 +1085,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1135,7 +1209,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1260,7 +1334,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1285,7 +1359,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1310,7 +1384,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1335,7 +1409,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1356,7 +1430,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1381,7 +1455,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -1404,7 +1478,7 @@
             }
           ],
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }

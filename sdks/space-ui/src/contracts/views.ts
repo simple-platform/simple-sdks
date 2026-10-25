@@ -103,19 +103,16 @@ export interface RecordViewSummaryV1 {
 }
 
 export const RECORD_TILE_PRESENTATIONS_V1 = [
-  'editorial',
-  'email',
+  'standard',
   'media',
-  'person',
-  'row',
-  'spotlight',
-  'status',
+  'message',
 ] as const
 
 export type RecordTilePresentationV1 = typeof RECORD_TILE_PRESENTATIONS_V1[number]
 
 export type RecordTileVisualV1
   = | { altFieldName?: string, fieldName: string, fit?: 'contain' | 'cover', kind: 'image' }
+    | { altFieldName?: string, fieldName: string, kind: 'avatar' }
     | { iconId: RecordViewIconIdV1, kind: 'icon' }
     | {
       fallbackIconId: RecordViewIconIdV1
@@ -126,10 +123,12 @@ export type RecordTileVisualV1
 
 export interface RecordTileLayoutV1 {
   badgeFieldNames?: string[]
+  badgeStyle?: 'filled' | 'outline'
   detailFieldNames?: string[]
+  emphasis?: 'prominent'
   eyebrowFieldName?: string
   presentation: RecordTilePresentationV1
-  subtitleFieldName?: string
+  subtitleFieldNames?: string[]
   titleFieldName: string
   trailingFieldName?: string
   version: 1
@@ -530,16 +529,22 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
   if (!isNonEmptyString(value.titleFieldName)) {
     throw new RecordViewContractError('Record tile layout titleFieldName must be a non-empty string.')
   }
-  if (value.presentation === 'email') {
-    if (!isNonEmptyString(value.eyebrowFieldName) || !isNonEmptyString(value.subtitleFieldName) || !isNonEmptyString(value.trailingFieldName)) {
-      throw new RecordViewContractError('Email tiles require sender, preview, and received-at fields.')
+  if (value.emphasis !== undefined && (value.presentation !== 'standard' || value.emphasis !== 'prominent')) {
+    throw new RecordViewContractError('Tile emphasis is only supported as prominent on standard tiles.')
+  }
+  if (value.badgeStyle !== undefined && (value.presentation !== 'standard' || (value.badgeStyle !== 'filled' && value.badgeStyle !== 'outline'))) {
+    throw new RecordViewContractError('Tile badgeStyle must be filled or outline on standard tiles.')
+  }
+  if (value.presentation === 'message') {
+    if (!isNonEmptyString(value.eyebrowFieldName) || !Array.isArray(value.subtitleFieldNames) || value.subtitleFieldNames.length === 0 || !isNonEmptyString(value.trailingFieldName)) {
+      throw new RecordViewContractError('Message tiles require sender, preview, and received-at fields.')
     }
     if (value.badgeFieldNames !== undefined || value.detailFieldNames !== undefined || value.visual !== undefined) {
-      throw new RecordViewContractError('Email tiles do not support badges, details, or visuals.')
+      throw new RecordViewContractError('Message tiles do not support badges, details, or visuals.')
     }
   }
-  assertOnlyKeys(value, ['badgeFieldNames', 'detailFieldNames', 'eyebrowFieldName', 'presentation', 'subtitleFieldName', 'titleFieldName', 'trailingFieldName', 'version', 'visual'], 'Record tile layout')
-  for (const name of ['titleFieldName', 'eyebrowFieldName', 'subtitleFieldName', 'trailingFieldName'] as const) {
+  assertOnlyKeys(value, ['badgeFieldNames', 'badgeStyle', 'detailFieldNames', 'emphasis', 'eyebrowFieldName', 'presentation', 'subtitleFieldNames', 'titleFieldName', 'trailingFieldName', 'version', 'visual'], 'Record tile layout')
+  for (const name of ['titleFieldName', 'eyebrowFieldName', 'trailingFieldName'] as const) {
     const fieldName = value[name]
     if (fieldName !== undefined && (typeof fieldName !== 'string' || fieldName.length > 200))
       throw new RecordViewContractError(`Record tile layout ${name} must be at most 200 characters.`)
@@ -550,25 +555,34 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
     if (!isPlainObject(value.visual)) {
       throw new RecordViewContractError('Tile visual must be an object.')
     }
-    if (value.visual.kind === 'image') {
+    if (value.visual.kind === 'image' || value.visual.kind === 'avatar') {
+      if (value.visual.kind === 'avatar' && value.presentation !== 'standard') {
+        throw new RecordViewContractError('Tile avatar visuals are only supported on standard tiles.')
+      }
       if (!isNonEmptyString(value.visual.fieldName)) {
-        throw new RecordViewContractError('Tile image visual requires fieldName.')
+        throw new RecordViewContractError(`Tile ${value.visual.kind} visual requires fieldName.`)
       }
       if (value.visual.altFieldName !== undefined && !isNonEmptyString(value.visual.altFieldName)) {
-        throw new RecordViewContractError('Tile image visual altFieldName must be a non-empty string.')
+        throw new RecordViewContractError(`Tile ${value.visual.kind} visual altFieldName must be a non-empty string.`)
       }
       if (value.visual.fieldName.length > 200 || (typeof value.visual.altFieldName === 'string' && value.visual.altFieldName.length > 200))
-        throw new RecordViewContractError('Tile image visual field names must be at most 200 characters.')
-      if (value.visual.fit !== undefined && value.visual.fit !== 'cover' && value.visual.fit !== 'contain') {
+        throw new RecordViewContractError(`Tile ${value.visual.kind} visual field names must be at most 200 characters.`)
+      if (value.visual.kind === 'image' && value.visual.fit !== undefined && value.visual.fit !== 'cover' && value.visual.fit !== 'contain') {
         throw new RecordViewContractError(`Tile image visual fit must be 'cover' or 'contain', got ${String(value.visual.fit)}.`)
       }
-      assertOnlyKeys(value.visual, ['altFieldName', 'fieldName', 'fit', 'kind'], 'Tile image visual')
-      visual = {
-        ...(value.visual.altFieldName ? { altFieldName: value.visual.altFieldName } : {}),
-        fieldName: value.visual.fieldName,
-        ...(value.visual.fit ? { fit: value.visual.fit } : {}),
-        kind: 'image',
-      }
+      assertOnlyKeys(value.visual, value.visual.kind === 'image' ? ['altFieldName', 'fieldName', 'fit', 'kind'] : ['altFieldName', 'fieldName', 'kind'], `Tile ${value.visual.kind} visual`)
+      visual = value.visual.kind === 'image'
+        ? {
+            ...(value.visual.altFieldName ? { altFieldName: value.visual.altFieldName } : {}),
+            fieldName: value.visual.fieldName,
+            ...(value.visual.fit ? { fit: value.visual.fit as 'contain' | 'cover' } : {}),
+            kind: 'image',
+          }
+        : {
+            ...(value.visual.altFieldName ? { altFieldName: value.visual.altFieldName } : {}),
+            fieldName: value.visual.fieldName,
+            kind: 'avatar',
+          }
     }
     else if (value.visual.kind === 'icon') {
       if (!isNonEmptyString(value.visual.iconId)) {
@@ -622,11 +636,10 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
     return arr
   }
 
+  const subtitleFieldNames = checkOptionalStringArray(value.subtitleFieldNames, 'subtitleFieldNames')
+
   if (value.eyebrowFieldName !== undefined && !isNonEmptyString(value.eyebrowFieldName)) {
     throw new RecordViewContractError('Tile layout eyebrowFieldName must be a non-empty string.')
-  }
-  if (value.subtitleFieldName !== undefined && !isNonEmptyString(value.subtitleFieldName)) {
-    throw new RecordViewContractError('Tile layout subtitleFieldName must be a non-empty string.')
   }
   if (value.trailingFieldName !== undefined && !isNonEmptyString(value.trailingFieldName)) {
     throw new RecordViewContractError('Tile layout trailingFieldName must be a non-empty string.')
@@ -634,10 +647,12 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
 
   return {
     ...(value.badgeFieldNames !== undefined ? { badgeFieldNames: checkOptionalStringArray(value.badgeFieldNames, 'badgeFieldNames') } : {}),
+    ...(value.badgeStyle !== undefined ? { badgeStyle: value.badgeStyle as RecordTileLayoutV1['badgeStyle'] } : {}),
     ...(value.detailFieldNames !== undefined ? { detailFieldNames: checkOptionalStringArray(value.detailFieldNames, 'detailFieldNames') } : {}),
+    ...(value.emphasis !== undefined ? { emphasis: value.emphasis as RecordTileLayoutV1['emphasis'] } : {}),
     ...(isNonEmptyString(value.eyebrowFieldName) ? { eyebrowFieldName: value.eyebrowFieldName } : {}),
     presentation: value.presentation as RecordTilePresentationV1,
-    ...(isNonEmptyString(value.subtitleFieldName) ? { subtitleFieldName: value.subtitleFieldName } : {}),
+    ...(subtitleFieldNames?.length ? { subtitleFieldNames } : {}),
     titleFieldName: value.titleFieldName,
     ...(isNonEmptyString(value.trailingFieldName) ? { trailingFieldName: value.trailingFieldName } : {}),
     version: 1,

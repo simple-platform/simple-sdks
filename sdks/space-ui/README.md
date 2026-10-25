@@ -395,8 +395,8 @@ const source: TableRecordSource = {
 const preset: ListPreset = {
   config: {
     tile: {
-      presentation: 'row',
-      subtitleFieldName: 'status',
+      presentation: 'standard',
+      subtitleFieldNames: ['status', 'owner'],
       titleFieldName: 'title',
       version: 1,
     },
@@ -452,8 +452,8 @@ changed sort defaults apply intentionally. `onItemOpen` handles record and refer
 opens; omitting it makes navigation unavailable. Route-only New/custom actions
 are supplied by the platform route host.
 
-Configured email tiles also retain the remaining selected DataGrid columns as
-labeled values. Ordinary List/Inbox email tiles keep their sender/date,
+Configured message tiles also retain the remaining selected DataGrid columns as
+labeled values. Ordinary List/Inbox message tiles keep their sender/date,
 subject, and preview layout.
 
 Simple and advanced filters reject numeric input that JavaScript cannot
@@ -490,7 +490,7 @@ const boardPreset: BoardPreset = {
       { fieldName: 'amount', operation: 'sum' },
       { fieldName: 'amount', operation: 'average' },
     ],
-    tile: { presentation: 'row', titleFieldName: 'name', version: 1 },
+    tile: { presentation: 'standard', titleFieldName: 'name', version: 1 },
   },
   id: 'opportunities',
   kind: 'board',
@@ -509,15 +509,20 @@ was removed, the platform uses `defaultPresetId`. A Space receives an explicit
 Space tiles use the same `RecordTileLayout` in List/Table/Board `config.tile`.
 The platform Inbox uses `config.listTile`. Its `detail` defaults to `fields`,
 which requires `detailFieldNames`; `detail: 'record'` renders the platform
-RecordPage and does not accept `detailFieldNames`. The compositions are `row`,
-`person`, `media`, `editorial`, `email`, `status`, and `spotlight`. Email uses `titleFieldName` for
-the subject, `eyebrowFieldName` for the sender, `subtitleFieldName` for a
-two-line plain-text preview, and `trailingFieldName` for the received date/time.
+RecordPage and does not accept `detailFieldNames`. The tile presentations are
+`standard`, `media`, and `message`; other presentation values are rejected.
+Standard handles common records and supports title/subtitle/eyebrow/trailing,
+badges, details, icons, enum icons, document images, and an avatar visual with
+initials fallback. Its optional `emphasis: 'prominent'` and
+`badgeStyle: 'filled' | 'outline'` preserve useful hierarchy without separate
+templates. Media reserves space for a thumbnail. Message uses `titleFieldName`
+for the subject, `eyebrowFieldName` for the sender, `subtitleFieldNames` for a
+two-line plain-text preview (multiple values are joined with `·`), and `trailingFieldName` for the received date/time.
 The platform Inbox displays sender and relative date together above the subject.
-List/Inbox email tiles omit generic badges, detail fields, and icons; DataGrid
+List/Inbox message tiles omit generic badges, detail fields, and visuals; DataGrid
 retains selected fields as labeled values. Bind
 title/subtitle/eyebrow/trailing, badge/detail fields, a safe catalog icon, an
-enum icon map, or an authorized document image. Values stay inline and safe inside the parent open action;
+enum icon map, an authorized document image, or a standard avatar. Values stay inline and safe inside the parent open action;
 references request only the target ID/display field and fall back to the ID
 when unavailable. Arbitrary HTML/CSS, image URLs, row arrays and render callbacks
 are not supported.
