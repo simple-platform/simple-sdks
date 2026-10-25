@@ -1,5 +1,5 @@
-- **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires the compatible SDK 3.2.0 bridge; published 3.1.0 lacks it. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
-- **Last updated:** 2026-10-23
+- **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires SDK `^4.0.0`, the first published release with the compatible bridge; SDK 3.2.0 was never released and published 3.1.0 lacks it. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
+- **Last updated:** 2026-10-25
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -963,7 +963,7 @@ secret decryption, and parent-frame navigation.
 ### 2026-10-11 — Require the SDK bridge before publishing managed views
 
 - **Decision:** Set the UI Kit SDK peer range and the generated Space dependency to `@simpleplatform/sdk@^3.1.0`; retain the `0.0.0` peer exception for linked packages in this workspace. Make the release workflow publish a changed SDK before UI Kit and confirm a compatible SDK is already present on npm before staging UI Kit.
-- **Historical assumption, corrected October 23:** This decision incorrectly attributed the bridge to published SDK 3.1.0. Its artifact lacks the bridge. The corrected floor is the planned 3.2.0 release, and artifact execution replaces version-presence checks.
+- **Historical assumption, corrected October 23 and October 25:** This decision incorrectly attributed the bridge to published SDK 3.1.0. Its artifact lacks the bridge. October 23 proposed a 3.2.0 floor, but that version was never released; SDK 4.0.0 is the first published release with the bridge. Artifact execution replaces version-presence checks.
 - **Boundary:** The bridge stays private and is not added to the SDK's exports or public client type. Future UI Kit-only releases remain possible once an SDK satisfying the peer range is published.
 
 ### 2026-10-12 — Keep managed views database-backed and compose them through the existing bridge
@@ -1011,9 +1011,16 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Decision:** Require SDK `^3.2.0` for managed collection views, retain the explicit local `0.0.0` override, publish SDK before UI Kit, and execute the registry SDK artifact to verify bridge and GraphQL forwarding. Correct invalid-source recovery and remove the Space reference override so all record links follow `onItemOpen`.
 - **Private lifecycle:** Prefer managed form protocol v3 while retaining v2 model rendering. Correlated host check/prepare/discard requests aggregate mounted managed forms, serialize mutations, and report dirty/busy state. Preparation applies validated updates before the host submits; discard waits for local work before the host resets its baseline. Unsupported or disconnected draft coordination blocks platform Inbox navigation with an error. No public lifecycle or standalone filter API is added.
 - **Evidence:** SDK 242 tests and UI Kit 115 tests pass. Published 3.1.0 fails the built-bridge check; the local packed SDK passes. SDK 3.2.0 is planned and remains unpublished; final clean registry installation follows its release.
+- **Historical assumption, corrected October 25:** SDK 3.2.0 was never released. SDK 4.0.0 carries the bridge, and the UI Kit now requires `^4.0.0` with the local `0.0.0` override retained.
 
 ### 2026-10-23 — Keep version suffixes out of public managed-view names
 
 - **Decision:** Export managed-view contracts and validators with stable unversioned names such as `DataGridPreset` and `validateDataGridPreset`. Keep `V1` suffixes in internal SDK implementation symbols only.
 - **Reason:** Public names describe the API concept; the serialized JSON already carries its format version.
 - **Boundary:** Saved view, filter, and tile objects keep `version: 1`. This is a source-level and export-name change only; existing serialized Custom View data remains readable.
+
+### 2026-10-25 — Require the first published SDK with the managed UI bridge
+
+- **Decision:** Require SDK `^4.0.0` for managed views, retaining the explicit local `0.0.0` peer override.
+- **Reason:** SDK 3.2.0 was never released; SDK 4.0.0 carries the bridge. The UI Kit release failed because the registry could not resolve the obsolete `^3.2.0` requirement.
+- **Supersedes:** The planned 3.2.0 floor in the October 11 correction and October 23 release decision. SDK-before-UI-Kit publication and the registry artifact bridge check remain unchanged.

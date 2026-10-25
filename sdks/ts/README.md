@@ -196,8 +196,8 @@ public APIs. When a Space needs fully custom presentation, keep using the
 record handle's `snapshot()`, `update()`, and `submit()` commands.
 
 For collections, the UI Kit also provides database-backed `ListView`,
-`DataGrid`, and `Board`. Their private bridge requires the planned SDK
-`^3.2.0` release, which is not yet published. Inbox remains platform-only;
+`DataGrid`, and `Board`. Their private bridge first shipped in SDK `4.0.0`, and
+the UI Kit requires `^4.0.0`. Inbox remains platform-only;
 standalone filter-builder components are private. See the
 [UI Kit collection contracts](../space-ui/README.md#managed-database-backed-views).
 
