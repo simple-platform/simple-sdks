@@ -3,7 +3,7 @@ import type { SpaceNavigationTransport } from './navigation.js'
 import type { ProtocolRequest, ProtocolResponse, SpaceTransport } from './protocol.js'
 import type { RecordFormCapabilities, RecordFormHostLifecycle } from './record-form.js'
 import type { SpaceThemeSnapshot } from './theme.js'
-import type { HeaderAction, SpaceHeaderStatus, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
+import type { HeaderAction, SpaceHeaderTransport, SpaceTabsSelectionEvent, SpaceTabsTransport, SpaceToastOptions, SpaceToastTransport } from './ui.js'
 import {
   isObjectRecord,
   SpaceDataError,
@@ -22,7 +22,7 @@ export interface MessagePortLike {
   start?: () => void
 }
 
-export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderStatusTransport, SpaceHeaderTransport, SpaceNavigationTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
+export interface BrowserSpaceTransport extends SpaceDataTransport, SpaceHeaderTransport, SpaceNavigationTransport, SpaceTabsTransport, SpaceToastTransport, SpaceTransport {
   capabilities: RecordFormCapabilities
   subscribeFormModel: (listener: (form: unknown) => void) => () => void
 }
@@ -329,9 +329,6 @@ export function createMessagePortTransport(
         })),
         type: 'SPACE_HEADER_ACTIONS_SET',
       })
-    },
-    setStatus: (status: SpaceHeaderStatus | null) => {
-      port.postMessage({ status, type: 'SPACE_HEADER_STATUS_SET' })
     },
     showToast: (options: SpaceToastOptions) => {
       port.postMessage({ options, type: 'SPACE_TOAST_SHOW' })

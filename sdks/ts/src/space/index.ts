@@ -6,7 +6,6 @@ import { createMessagePortTransport } from './browser-transport.js'
 import {
   createSimpleClient,
   HEADER_ACTIONS_PROTOCOL_VERSION,
-  HEADER_STATUS_PROTOCOL_VERSION,
   isSpaceContext,
   MANAGED_RECORD_FORM_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
@@ -19,7 +18,7 @@ import {
 import { isObjectRecord } from './protocol.js'
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_PROTOCOL_VERSION } from './theme.js'
 
-export { HEADER_ACTIONS_PROTOCOL_VERSION, HEADER_STATUS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
+export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
@@ -50,7 +49,6 @@ export type {
   SimpleDocumentsClient,
   SimpleHeaderActionsClient,
   SimpleHeaderClient,
-  SimpleHeaderStatusClient,
   SimpleNavigationClient,
   SimpleRecordsClient,
   SimpleTabsClient,
@@ -58,11 +56,8 @@ export type {
   SimpleToastClient,
   SpaceContext,
   SpaceDataErrorPayload,
-  SpaceHeaderStatus,
-  SpaceHeaderStatusTransport,
   SpaceNavigationTransport,
   SpaceProtocolErrorPayload,
-  SpaceStatusTone,
   SpaceTab,
   SpaceTabsSelectionEvent,
   SpaceTabsTransport,
@@ -180,7 +175,6 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         dataTransport: transport,
         documentTransport: protocols?.document === PROTOCOL_VERSION ? transport : undefined,
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION || protocols?.form === 2 ? transport : undefined,
-        headerStatusTransport: hasRecord && protocols?.headerStatus === HEADER_STATUS_PROTOCOL_VERSION ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
         hostOrigin: targetOrigin,
         navigationTransport: transport,
@@ -200,7 +194,6 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         document: [PROTOCOL_VERSION],
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION, 2],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
-        headerStatus: [HEADER_STATUS_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
         records: [RECORDS_PROTOCOL_VERSION],
         tabs: [TABS_PROTOCOL_VERSION],
@@ -237,7 +230,6 @@ function isInitializationMessage(value: unknown): value is {
     document?: unknown
     form?: unknown
     header?: unknown
-    headerStatus?: unknown
     record?: unknown
     records?: unknown
     tabs?: unknown
