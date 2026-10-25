@@ -154,7 +154,7 @@ const preset: ListPreset = {
       subtitleFieldNames: ['role'],
       titleFieldName: 'display_name',
       version: 1,
-      visual: { kind: 'avatar', fieldName: 'profile_photo' },
+      visual: { fieldName: 'profile_photo', kind: 'avatar' },
     },
   },
   id: 'people',
