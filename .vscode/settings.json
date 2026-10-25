@@ -70,22 +70,74 @@
     "astro"
   ],
   "rust-analyzer.linkedProjects": [
-    "apps/simple_db/native/simpledb_ast/Cargo.toml",
-    "apps/simple_core/native/simplecore_utils_jq/Cargo.toml",
-    "packages/simple-ts-runtime/Cargo.toml"
+    "sdks/rust/Cargo.toml"
   ],
   "cSpell.words": [
     "Asyncify",
+    "authorises",
+    "binaryen",
+    "clippy",
+    "codegen",
+    "deserialise",
+    "deserialised",
+    "destructures",
     "DEVBOX",
+    "esac",
     "esbuild",
+    "feff",
     "financials",
+    "initialisation",
     "Javy",
     "jetify",
+    "licence",
+    "multibyte",
+    "multivalue",
+    "myapp",
+    "mycompany",
+    "nontrapping",
     "npmjs",
+    "optimise",
+    "organised",
     "paulhatch",
+    "pipefail",
+    "Requiredness",
+    "retryability",
     "rustc",
     "rustup",
+    "serde",
+    "serialise",
+    "serialised",
+    "serialises",
+    "serialising",
     "simpleplatform",
-    "softprops"
-  ]
+    "softprops",
+    "Summarise",
+    "travelling",
+    "TRYBUILD",
+    "unencodable",
+    "unreportable",
+    "unrepresentable",
+    "unwritable",
+    "unwriteable",
+    "wasip"
+  ],
+  "rust-analyzer.server.extraEnv": {
+    "RUSTUP_HOME": "${workspaceFolder}/.rustup",
+    "RUSTC": "${workspaceFolder}/.devbox/nix/profile/default/bin/rustc"
+  },
+  "rust-analyzer.cargo.extraEnv": {
+    "RUSTUP_HOME": "${workspaceFolder}/.rustup",
+    "RUSTC": "${workspaceFolder}/.devbox/nix/profile/default/bin/rustc"
+  },
+  "rust-analyzer.check.extraEnv": {
+    "RUSTUP_HOME": "${workspaceFolder}/.rustup",
+    "RUSTC": "${workspaceFolder}/.devbox/nix/profile/default/bin/rustc"
+  },
+  "kestra.schema.match-path": "flows",
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": [
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml"
+    ]
+  }
 }

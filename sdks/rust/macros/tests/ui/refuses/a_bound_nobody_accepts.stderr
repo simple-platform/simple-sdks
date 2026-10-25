@@ -1,0 +1,13 @@
+error: `minimum` is not a bound of `range`. Did you mean `min`?
+       `range` takes `min` and `max`: `range(min = 1, max = 90)`
+ --> tests/ui/refuses/a_bound_nobody_accepts.rs:9:20
+  |
+9 |     #[simple(range(minimum = 1))]
+  |                    ^^^^^^^
+
+error: `exactly` is not a bound of `length`.
+       `length` takes `min` and `max`: `length(min = 1, max = 500)`
+  --> tests/ui/refuses/a_bound_nobody_accepts.rs:12:21
+   |
+12 |     #[simple(length(exactly = 3))]
+   |                     ^^^^^^^

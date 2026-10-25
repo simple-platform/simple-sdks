@@ -1,0 +1,5 @@
+error: `length(min = …)` counts things and is never below zero, and `-1` is.
+ --> tests/ui/refuses/a_length_below_zero.rs:9:27
+  |
+9 |     #[simple(length(min = -1))]
+  |                           ^
