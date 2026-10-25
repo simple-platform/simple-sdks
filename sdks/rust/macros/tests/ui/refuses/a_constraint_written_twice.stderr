@@ -1,0 +1,17 @@
+error: `range` is written twice on `days`. Write it once.
+ --> tests/ui/refuses/a_constraint_written_twice.rs:9:30
+  |
+9 |     #[simple(range(min = 1), range(max = 90))]
+  |                              ^^^^^
+
+error: `length` is written twice on `prefix`. Write it once.
+  --> tests/ui/refuses/a_constraint_written_twice.rs:13:14
+   |
+13 |     #[simple(length(max = 16))]
+   |              ^^^^^^
+
+error: `range` is given `min` twice. Write it once.
+  --> tests/ui/refuses/a_constraint_written_twice.rs:16:29
+   |
+16 |     #[simple(range(min = 1, min = 2))]
+   |                             ^^^

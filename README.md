@@ -13,11 +13,16 @@ Welcome to the **Simple Platform SDK monorepo** — a collection of official SDK
 
 ### Multi-Language Support
 
-| Language       | Status         | Documentation               |
-| -------------- | -------------- | --------------------------- |
-| **TypeScript** | ✅ Available   | [View Docs](sdks/ts#readme) |
-| **Go**         | 🚧 Coming Soon | `sdks/go`                   |
-| **Python**     | 🚧 Coming Soon | `sdks/python`               |
+| Language       | Package                        | Status         | Documentation                 |
+| -------------- | ------------------------------ | -------------- | ----------------------------- |
+| **TypeScript** | npm `@simpleplatform/sdk`      | ✅ Available   | [View Docs](sdks/ts#readme)   |
+| **Rust**       | crates.io `simpleplatform-sdk` | ✅ Available   | [View Docs](sdks/rust#readme) |
+| **Go**         | —                              | 🚧 Coming Soon | `sdks/go`                     |
+| **Python**     | —                              | 🚧 Coming Soon | `sdks/python`                 |
+
+The two package names are not the same shape because the two registries are not.
+npm has scopes and crates.io does not, so `@simpleplatform/sdk` has no crates.io
+equivalent and the Rust crate takes the bare name `simpleplatform-sdk`.
 
 All SDKs provide a **unified API surface** with consistent patterns across languages, enabling developers to leverage the Simple Platform's powerful primitives regardless of their language preference.
 
@@ -33,6 +38,8 @@ The Simple Platform SDKs provide first-class support for:
 - **🔐 Security Policies**: Author declarative, role-based access control with a fluent API
 - **⚙️ Settings Management**: Access application configuration securely
 - **📁 Storage Operations**: Upload and manage files with content-addressable storage
+- **🧾 Embedded Record Spaces**: Use behavior-aware record workflows through the browser-safe Space entry point
+- **🧩 Managed Space UI**: Reuse supported React UI for complex platform workflows without rebuilding them
 - **⚡ WASM Performance**: Optimized for the Simple Platform's high-performance runtime
 
 ---
@@ -55,6 +62,70 @@ simple.Handle(async (request) => {
 ```
 
 **[→ View full TypeScript SDK documentation](sdks/ts#readme)**
+
+### Space SDK and UI Kit
+
+The browser-safe `@simpleplatform/sdk/space` entry includes the Space data,
+record, document-staging, task, header-action, and platform-toast APIs. See the
+[Space SDK documentation](sdks/ts/README.md#embedded-spaces) for their current
+availability and contracts.
+
+`@simpleplatform/ui-kit` is the companion package for supported Space UI. The
+current alpha contains the `StatusBadge` element/React bridge and pre-release
+managed React `RecordForm`, `RecordActivity`, `ListView`, `DataGrid`, and
+`Board` components. Managed views require the planned SDK `^3.2.0`
+release, which is not yet published. Check the UI Kit README for release status
+and supported contracts before depending on them.
+
+**[→ View UI Kit documentation](sdks/space-ui/README.md)**
+
+### Rust
+
+```bash
+cargo add simpleplatform-sdk
+```
+
+```rust
+use simpleplatform_sdk::prelude::*;
+
+#[derive(Deserialize, Schema)]
+struct Input {
+    /// Who to greet.
+    #[simple(length(min = 1, max = 80))]
+    name: String,
+}
+
+#[derive(Serialize)]
+struct Output {
+    message: String,
+}
+
+/// Greet someone by name.
+///
+/// @tool
+/// @shortdesc Greet someone by name.
+/// @usewhen A caller wants a greeting for a person.
+fn handler(request: Request<Input>) -> Result<Output, Error> {
+    Ok(Output {
+        message: format!("Hello, {}!", request.data.name),
+    })
+}
+
+fn main() { simple::run(handler) }
+```
+
+Build it and run its tests with the platform CLI:
+
+```bash
+simple build com.mycompany.crm/greet
+simple test com.mycompany.crm -a greet
+```
+
+No lifetimes, no `async`, no `unsafe`, no envelope, one import line. The handler
+is a plain `fn`, what the action is and what it accepts are written in the doc
+comments beside it, and its tests run on the host with no wasm and no emulator.
+
+**[→ View full Rust SDK documentation](sdks/rust#readme)**
 
 ### Go (Coming Soon)
 
@@ -93,10 +164,11 @@ curl -fsSL https://get.jetify.com/devbox | bash
    devbox shell
    ```
 
-   This automatically installs:
-   - Node.js 25.2.1
-   - Rust 1.90.0 (for WASM tooling)
-   - pnpm (via Corepack)
+   This installs Node.js, Rust and the `wasm32-wasip1` target, and enables pnpm
+   via Corepack. The versions are the ones `devbox.json` pins; they are
+   deliberately not repeated here, because a version written down in two places
+   is a version that drifts. CI reads the Rust one out of `devbox.json` for the
+   same reason.
 
 3. **Install dependencies**:
 
@@ -104,28 +176,59 @@ curl -fsSL https://get.jetify.com/devbox | bash
    pnpm install
    ```
 
-4. **Build all SDKs**:
+4. **Build the TypeScript SDK**:
 
    ```bash
    cd sdks/ts
    pnpm build
    ```
 
+5. **Check the Rust SDK**:
+
+   ```bash
+   cd sdks/rust
+   cargo test                                # host; no wasm, no emulator
+   cargo clippy --all-targets -- -D warnings
+   cargo build --target wasm32-wasip1 --release --examples
+   ```
+
+   `sdks/rust` is a two-crate workspace — the SDK and the `Schema` derive in
+   `macros/` — and one command from that directory covers both.
+   `sdks/rust/README.md` lists the full check set, and
+   `.github/workflows/rust-sdk-test.yml` runs exactly that set.
+
+   An action author needs none of this: `simple build` and `simple test` are the
+   commands, and `sdks/rust/README.md` opens with them.
+
 ### Monorepo Structure
 
 ```
 simple-sdks/
 ├── sdks/
-│   ├── ts/              # TypeScript SDK
+│   ├── ts/              # TypeScript SDK  -> npm @simpleplatform/sdk
 │   │   ├── src/         # Source files
 │   │   ├── dist/        # Compiled output
 │   │   └── README.md    # TypeScript SDK docs
+│   ├── rust/            # Rust SDK        -> crates.io simpleplatform-sdk
+│   │   ├── src/         # Source files
+│   │   ├── macros/      # The Schema derive -> crates.io simpleplatform-sdk-macros
+│   │   ├── examples/    # Ported actions; also the acceptance tests
+│   │   ├── tests/       # Wire-bytes and public-surface guarantee suites
+│   │   ├── Cargo.toml   # Workspace, crate manifest and publish metadata
+│   │   └── README.md    # Rust SDK docs
 │   ├── go/              # Go SDK (coming soon)
 │   └── python/          # Python SDK (coming soon)
-├── devbox.json          # Devbox configuration
-├── pnpm-workspace.yaml  # Workspace configuration
+├── .github/workflows/
+│   ├── release.yml            # Versioning and publishing, one lane per SDK
+│   └── rust-sdk-test.yml      # The Rust gate
+├── devbox.json          # Devbox configuration; the toolchain versions live here
+├── pnpm-workspace.yaml  # Workspace configuration (sdks/rust is excluded)
 └── package.json         # Root package
 ```
+
+`sdks/rust` is a cargo crate, not a pnpm package: it is outside the pnpm
+workspace, eslint does not walk into it beyond its README and manifest, and
+`target/` is gitignored.
 
 ### Contributing
 
@@ -150,33 +253,56 @@ We welcome contributions! Here's how to get started:
 
 #### Commit Guidelines
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) with component scopes:
+Every commit, and every pull request title, is `type(scope): subject`. The
+rules live in `commitlint.config.cjs` and are checked in two places:
 
-**Commit Types:**
+- **Before the commit exists.** The `commit-msg` hook runs commitlint on the
+  message and refuses it. `pnpm install` installs the hooks.
+- **Before a pull request can merge.** The "Commit convention" check runs
+  commitlint on the pull request's title. This repository squash merges, so
+  the title is the subject that lands on `main`.
 
-- `feat:` New features
-- `fix:` Bug fixes
-- `docs:` Documentation changes
-- `refactor:` Code refactoring
-- `test:` Test additions or updates
-- `chore:` Build/tooling changes
+**Types:** `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`, `style`, `revert`.
 
-**Component Scopes:**
+**Scopes.** A scope is required, and a commit carries exactly one:
 
-For SDK-specific changes, use component names:
-
-- `feat(sdk-ts):` TypeScript SDK features
-- `fix(sdk-go):` Go SDK fixes
-- `docs(sdk-py):` Python SDK documentation
+| Scope              | What it covers                                                             |
+| ------------------ | -------------------------------------------------------------------------- |
+| `sdk-ts`           | `sdks/ts`, the TypeScript SDK                                              |
+| `sdk-space`        | `sdks/ts/src/space`, the Space SDK (part of the TypeScript SDK's package)  |
+| `sdk-rust`         | `sdks/rust`, the Rust SDK                                                  |
+| `sdk-ui`           | `sdks/space-ui`, the UI Kit (`@simpleplatform/ui-kit`)                     |
+| `sdk-go`, `sdk-py` | The Go and Python SDKs                                                     |
+| `repo`             | Everything that is not one package: workflows, tooling, the root documents |
+| `deps`, `deps-dev` | Dependency updates, as Renovate and Dependabot write them                  |
 
 **Examples:**
 
 ```bash
 git commit -m "feat(sdk-ts): add streaming AI response support"
-git commit -m "fix(sdk-ts): resolve GraphQL mutation error handling"
-git commit -m "docs: update monorepo setup instructions"
-git commit -m "refactor(sdk-go): delete deprecated utilities"
+git commit -m "fix(sdk-space): resolve a tab selection that arrives early"
+git commit -m "feat(sdk-rust): add the settings host call"
+git commit -m "fix(sdk-ui): update the status badge defaults"
+git commit -m "docs(repo): update monorepo setup instructions"
 ```
+
+**The scope decides which SDK releases.** Each package has its own version lane
+in `release.yml`, keyed on the files a commit touched and tagged in its own
+namespace — `v1.2.3-ts` for TypeScript, `v1.2.3-rust` for Rust, `v0.1.2-kit` for
+the UI Kit. A commit that touches only `sdks/ts` cannot publish the crate, and a
+commit that touches only `sdks/rust` cannot publish the npm package. A scope the
+lanes do not know is released as a patch and listed in no changelog, which is
+why the scope is checked.
+
+In the TypeScript lane a `feat` under `sdk-ts` or `sdk-space` is a minor, and
+the changelog lists both scopes. A major is cut only by a commit whose subject
+says `(sdk-ts)!: release the next major`.
+
+The Rust crate and the UI Kit are below 1.0: there a `feat` or a `!` under the
+lane's scope (`sdk-rust`, `sdk-ui`) raises the minor, and 1.0.0 is cut only by
+a subject that says `(sdk-rust) declares the API stable` or
+`(sdk-ui) declares the API stable`.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "@simpleplatform/sdk",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "Simple Platform Typescript SDK",
   "license": "Apache-2.0",
   "homepage": "https://docs.simple.dev",
@@ -41,13 +41,25 @@
       "types": "./dist/settings.d.ts",
       "default": "./dist/settings.js"
     },
+    "./tasks": {
+      "types": "./dist/tasks.d.ts",
+      "default": "./dist/tasks.js"
+    },
     "./security": {
       "types": "./dist/security.d.ts",
       "default": "./dist/security.js"
     },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "default": "./dist/storage.js"
+    },
     "./host": {
       "types": "./dist/host.d.ts",
       "default": "./dist/host.js"
+    },
+    "./space": {
+      "types": "./dist/space/index.d.ts",
+      "default": "./dist/space/index.js"
     },
     "./worker": "./dist/worker-override.js",
     "./package.json": "./package.json"
@@ -61,7 +73,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc && cp src/worker-override.js dist/ && cp cli/build.js dist/",
+    "build": "rm -rf dist && tsc && cp src/worker-override.js dist/ && cp cli/build.js dist/ && cp src/space/package.json dist/space/",
+    "test": "pnpm run build && node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
     "prepare": "pnpm run build"
   },
   "dependencies": {

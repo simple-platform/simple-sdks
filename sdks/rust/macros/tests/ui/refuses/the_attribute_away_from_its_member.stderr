@@ -1,0 +1,11 @@
+error: `#[simple(…)]` constrains a member. Write it on the member it applies to, not on `Payload`.
+ --> tests/ui/refuses/the_attribute_away_from_its_member.rs:8:1
+  |
+8 | #[simple(length(max = 64))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `#[simple(…)]` constrains a member. Write it on a member of `Named`, not on the variant itself.
+  --> tests/ui/refuses/the_attribute_away_from_its_member.rs:15:5
+   |
+15 |     #[simple(length(max = 8))]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/webcomponents/custom-elements-manifest/master/schema.json",
+  "schemaVersion": "1.0.0",
+  "readme": "README.md",
+  "modules": [
+    {
+      "kind": "javascript-module",
+      "path": "dist/elements/status-badge.js",
+      "declarations": [
+        {
+          "kind": "class",
+          "name": "SimpleStatusBadge",
+          "tagName": "simple-status-badge",
+          "customElement": true,
+          "members": [
+            { "kind": "field", "name": "description", "type": { "text": "string" } },
+            { "kind": "field", "name": "label", "type": { "text": "string" } },
+            { "kind": "field", "name": "tone", "type": { "text": "SimpleStatusBadgeTone" } }
+          ]
+        }
+      ]
+    }
+  ]
+}
