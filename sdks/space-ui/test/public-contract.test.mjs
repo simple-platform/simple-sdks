@@ -110,7 +110,7 @@ test('publishes only the supported prop-driven UI Kit bridges', async () => {
 
 test('requires the SDK release that provides the managed UI bridge', async () => {
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
-  assert.equal(packageJson.peerDependencies['@simpleplatform/sdk'], '^4.0.0 || 0.0.0')
+  assert.equal(packageJson.peerDependencies['@simpleplatform/sdk'], '^4.1.0 || 0.0.0')
 })
 
 test('release check refuses an SDK client without the managed UI bridge', async () => {
@@ -145,7 +145,7 @@ test('packs and imports every supported public entry point without private sourc
     const packedPackage = JSON.parse(execFileSync('tar', ['-xOzf', archive, 'package/package.json'], { encoding: 'utf8' }))
 
     assert.equal(packedPackage.name, '@simpleplatform/ui-kit')
-    assert.equal(packedPackage.peerDependencies['@simpleplatform/sdk'], '^4.0.0 || 0.0.0')
+    assert.equal(packedPackage.peerDependencies['@simpleplatform/sdk'], '^4.1.0 || 0.0.0')
     assert.ok(packedPackage.sideEffects.includes('./theme.css'))
     assert.equal(packedPackage.dependencies['@fontsource-variable/geist'], '5.2.9')
     assert.equal(packedPackage.dependencies['@fontsource-variable/geist-mono'], '5.2.8')

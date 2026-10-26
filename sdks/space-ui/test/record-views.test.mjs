@@ -53,11 +53,9 @@ const react = await import(new URL('../dist/react/index.js', import.meta.url).hr
 const { createSimpleClient } = await import(new URL('../../ts/dist/space/core.js', import.meta.url).href)
 const contractCorpus = JSON.parse(readFileSync(new URL('./fixtures/record-view-contract-v1.json', import.meta.url), 'utf8'))
 
-for (const sample of contractCorpus.cases) {
+for (const sample of contractCorpus.cases.filter(sample => sample.target === 'preset')) {
   test(`portable managed-view contract: ${sample.name}`, () => {
-    const validate = () => sample.target === 'filter'
-      ? contracts.validateFilterExpression(sample.input)
-      : contracts.validateViewPresetSet({ defaultPresetId: sample.input.id, presets: [sample.input], version: 1 })
+    const validate = () => contracts.validateViewPresetSet({ defaultPresetId: sample.input.id, presets: [sample.input], version: 1 })
     if (sample.accepted)
       assert.doesNotThrow(validate)
     else
@@ -138,9 +136,7 @@ const sampleSource = {
 }
 
 test('exports unversioned managed-view names and validators from @simpleplatform/ui-kit/contracts', () => {
-  assert.ok(Array.isArray(contracts.FILTER_OPERATORS))
-  assert.ok(contracts.FILTER_OPERATORS.includes('eq'))
-  assert.ok(contracts.FILTER_OPERATORS.includes('between'))
+  assert.equal(typeof contracts.FILTER_OPERATORS, 'undefined', 'RecordWhere uses SimpleDB operators, not a second UI operator vocabulary')
   assert.ok(Array.isArray(contracts.RECORD_TILE_PRESENTATIONS))
   assert.deepEqual(contracts.RECORD_TILE_PRESENTATIONS, ['standard', 'media', 'message'])
   assert.ok(Array.isArray(contracts.RECORD_VIEW_ICON_IDS))
@@ -152,11 +148,13 @@ test('exports unversioned managed-view names and validators from @simpleplatform
   assert.equal(typeof contracts.validateRecordSource, 'function')
   assert.equal(typeof contracts.validateTableRecordSource, 'function')
   assert.equal(typeof contracts.isViewItemReference, 'function')
-  assert.equal(typeof contracts.validateSourceFilterExpression, 'function')
+  assert.equal(typeof contracts.validateSourceRecordWhere, 'undefined')
+  assert.equal(typeof contracts.validateRecordWhere, 'undefined')
+  assert.equal(typeof contracts.isRecordWhere, 'undefined')
   assert.equal(typeof contracts.isRecordSource, 'function')
   assert.equal(typeof contracts.validateRecordReference, 'function')
   assert.equal(typeof contracts.validateViewItemReference, 'function')
-  assert.equal(typeof contracts.validateFilterExpression, 'function')
+  assert.equal(typeof contracts.validateFilterExpression, 'undefined')
   assert.equal(typeof contracts.validateRecordTileLayout, 'function')
   assert.equal(typeof contracts.validateRecordViewPreset, 'function')
   assert.equal(typeof contracts.validateListPreset, 'function')
@@ -185,9 +183,9 @@ test('validates database table record sources and references', () => {
   assert.throws(() => contracts.validateRecordSource({ appId: 'foo', kind: 'table', tableName: 'ticket' }), /tableName.*unsupported property|unsupported property.*tableName/i)
 })
 
-test('validates table filter expressions and record view references', () => {
-  const filter = { root: { fieldName: 'title', kind: 'predicate', operator: 'contains', value: 'notes' }, version: 1 }
-  assert.deepEqual(contracts.validateSourceFilterExpression(sampleSource, filter), filter)
+test('keeps native RecordWhere unchanged for host validation and validates record view references', () => {
+  const filter = { _and: [{ status: { _in: ['open', 'pending'] } }, { _not: { archived: { _eq: true } } }] }
+  assert.deepEqual(contracts.validateListPreset({ ...sampleListPreset, filter }).filter, filter)
   assert.deepEqual(contracts.validateViewItemReference({ appId: 'acme.crm', kind: 'record', recordId: 'REC1', tableName: 'ticket' }), {
     appId: 'acme.crm',
     kind: 'record',
@@ -202,76 +200,6 @@ test('validates table filter expressions and record view references', () => {
 test('rejects caller-owned JSON row sources at the public view boundary', () => {
   assert.equal(contracts.isRecordSource({ items: [], kind: 'items' }), false)
   assert.throws(() => contracts.validateRecordSource({ items: [], kind: 'items' }), /kind must be 'table'/)
-})
-
-test('validates FilterExpression shape', () => {
-  const validFilter = {
-    root: {
-      children: [
-        { fieldName: 'status', kind: 'predicate', operator: 'eq', value: 'open' },
-        { fieldName: 'age', kind: 'predicate', operator: 'between', value: 10, value2: 50 },
-      ],
-      kind: 'group',
-      operator: 'and',
-    },
-    version: 1,
-  }
-  assert.deepEqual(contracts.validateFilterExpression(validFilter), validFilter)
-  assert.equal(contracts.isFilterExpression(validFilter), true)
-
-  assert.throws(() => contracts.validateFilterExpression({ root: validFilter.root, version: 2 }))
-  assert.throws(() => contracts.validateFilterExpression({ root: { kind: 'predicate', operator: 'bad_op' }, version: 1 }))
-  assert.throws(() => contracts.validateFilterExpression({ root: { children: [], kind: 'group', operator: 'not' }, version: 1 }))
-
-  // Legacy fieldId and missing fieldName fail closed
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { fieldId: 'status', kind: 'predicate', operator: 'eq', value: 'open' },
-    version: 1,
-  }), /Filter predicate fieldName must be a non-empty string/)
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { fieldName: '', kind: 'predicate', operator: 'eq', value: 'open' },
-    version: 1,
-  }), /Filter predicate fieldName must be a non-empty string/)
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { kind: 'predicate', operator: 'eq', value: 'open' },
-    version: 1,
-  }), /Filter predicate fieldName must be a non-empty string/)
-  assert.equal(contracts.isFilterExpression({
-    root: { fieldId: 'status', kind: 'predicate', operator: 'eq', value: 'open' },
-    version: 1,
-  }), false)
-
-  const nestedJson = {
-    root: {
-      children: [{
-        fieldName: 'metadata',
-        kind: 'predicate',
-        operator: 'contains',
-        value: { labels: ['urgent', { source: 'mobile' }] },
-      }],
-      kind: 'group',
-      operator: 'and',
-    },
-    version: 1,
-  }
-  assert.deepEqual(contracts.validateFilterExpression(nestedJson), nestedJson)
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { fieldName: 'metadata', kind: 'predicate', operator: 'contains', value: () => 'not json' },
-    version: 1,
-  }), /JSON/i)
-
-  const cyclic = {}
-  cyclic.self = cyclic
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { fieldName: 'metadata', kind: 'predicate', operator: 'contains', value: cyclic },
-    version: 1,
-  }), /cycles/i)
-
-  assert.throws(() => contracts.validateFilterExpression({ extra: true, root: validFilter.root, version: 1 }), /unsupported property/i)
-  assert.throws(() => contracts.validateFilterExpression({
-    root: { ...validFilter.root, extra: true },
-    version: 1,
-  }), /unsupported property/i)
 })
 
 test('validates RecordSort shape and fails closed on legacy fieldId', () => {
@@ -295,16 +223,27 @@ test('validates RecordTileLayout shape and compositions', () => {
     badgeFieldNames: ['priority'],
     badgeStyle: 'filled',
     detailFieldNames: ['department'],
-    emphasis: 'prominent',
     eyebrowFieldName: 'team',
     presentation: 'standard',
     subtitleFieldNames: ['role'],
     titleFieldName: 'name',
     trailingFieldName: 'updatedAt',
     version: 1,
-    visual: { altFieldName: 'name', fieldName: 'avatar', kind: 'avatar' },
+    visual: { altFieldName: 'name', fieldName: 'avatar', fit: 'cover', kind: 'image' },
   }
   assert.deepEqual(contracts.validateRecordTileLayout(personTile), personTile)
+
+  const avatarTile = {
+    badgeFieldNames: ['priority'],
+    badgeStyle: 'outline',
+    presentation: 'standard',
+    titleFieldName: 'name',
+    version: 1,
+    visual: { altFieldName: 'name', fieldName: 'avatar', kind: 'avatar' },
+  }
+  assert.deepEqual(contracts.validateRecordTileLayout(avatarTile), avatarTile)
+  assert.throws(() => contracts.validateRecordTileLayout({ ...avatarTile, emphasis: 'prominent' }), /unsupported property: emphasis/i)
+  assert.throws(() => contracts.validateRecordTileLayout({ ...avatarTile, presentation: 'media' }), /badgeStyle must be filled or outline on standard tiles/)
 
   const enumIconTile = {
     presentation: 'standard',
@@ -335,14 +274,9 @@ test('validates RecordTileLayout shape and compositions', () => {
   assert.throws(() => contracts.validateRecordTileLayout({ ...emailTile, badgeFieldNames: ['state'] }), /do not support badges, details, or visuals/)
 
   assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'unknown', titleFieldName: 'x', version: 1 }))
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldName: 'x', version: 1 }))
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'email', titleFieldName: 'x', version: 1 }))
-  assert.throws(() => contracts.validateRecordTileLayout({ emphasis: 'subtle', presentation: 'standard', titleFieldName: 'x', version: 1 }), /emphasis/i)
-  assert.throws(() => contracts.validateRecordTileLayout({ badgeStyle: 'filled', presentation: 'media', titleFieldName: 'x', version: 1 }), /badgeStyle/i)
-  assert.throws(() => contracts.validateRecordTileLayout({ ...emailTile, badgeStyle: 'filled' }), /standard tiles/i)
-  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'media', titleFieldName: 'x', version: 1, visual: { fieldName: 'portrait', kind: 'avatar' } }), /avatar visuals are only supported on standard tiles/i)
   assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldName: '', version: 1 }))
   assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldName: 'x', version: 2 }))
+  assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'row', titleFieldName: 'x', version: 1 }), /Invalid tile presentation/)
 
   // Legacy titleFieldId fails closed
   assert.throws(() => contracts.validateRecordTileLayout({ presentation: 'standard', titleFieldId: 'name', version: 1 }), /Record tile layout titleFieldName must be a non-empty string/)
@@ -592,12 +526,13 @@ test('validates ViewPresetSet consistency', () => {
   }), /operation must be average/i)
 })
 
-test('validates ControlledFilterProps', () => {
+test('validates ControlledFilterProps ownership and preserves native filter data', () => {
   assert.equal(contracts.isControlledFilterProps({}), true)
   assert.equal(contracts.isControlledFilterProps({ filter: undefined, onFilterChange: () => {} }), true)
-  assert.equal(contracts.isControlledFilterProps({ filter: { root: { fieldName: 'x', kind: 'predicate', operator: 'eq', value: 'sample' }, version: 1 }, onFilterChange: () => {} }), true)
-
-  assert.throws(() => contracts.validateControlledFilterProps({ filter: { root: { fieldId: 'x', kind: 'predicate', operator: 'eq' }, version: 1 }, onFilterChange: () => {} }), /fieldName/i)
+  assert.equal(contracts.isControlledFilterProps({ filter: { x: { _eq: 'sample' } }, onFilterChange: () => {} }), true)
+  const filter = { _not: { _or: [{ status: { _in: ['open', 'pending'] } }, { archived: { _eq: true } }] } }
+  assert.deepEqual(contracts.validateControlledFilterProps({ filter, onFilterChange: () => {} }).filter, filter)
+  assert.deepEqual(contracts.validateControlledFilterProps({ filter: { x: 'sample' }, onFilterChange: () => {} }).filter, { x: 'sample' })
   assert.deepEqual(contracts.validateControlledFilterProps({ filter: undefined }), {})
   assert.throws(() => contracts.validateControlledFilterProps({ onFilterChange: () => {} }), /filter/i)
   assert.throws(() => contracts.validateControlledFilterProps({ filter: undefined, onFilterChange: 'not-a-fn' }), /function/i)
@@ -763,7 +698,7 @@ test('updates props on mounted <simple-record-view> element without remounting',
   const element1 = container.querySelector('simple-record-view')
   assert.ok(element1)
 
-  const updatedFilter = { root: { fieldName: 'status', kind: 'predicate', operator: 'eq', value: 'closed' }, version: 1 }
+  const updatedFilter = { status: { _eq: 'closed' } }
 
   await act(async () => {
     root.render(createElement(react.ListView, {

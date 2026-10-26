@@ -3,10 +3,10 @@ import type {
   BoardMoveRequestV1,
   BoardProps,
   DataGridProps,
-  FilterExpressionV1,
   ListViewProps,
   RecordSourceV1,
   RecordViewPresetV1,
+  RecordWhere,
   ViewItemReferenceV1,
 } from '../contracts/views.js'
 
@@ -18,7 +18,6 @@ import {
   validateDataGridPresetV1,
   validateListPresetV1,
   validateRecordSourceV1,
-  validateSourceFilterExpressionV1,
 } from '../contracts/views.js'
 import { loadRuntime, RuntimeLoadError } from '../runtime.js'
 import { waitForElementMount } from './mount-boundary.js'
@@ -31,11 +30,11 @@ export type ViewComponentKind
 
 interface RuntimeRecordViewElement extends HTMLElement {
   applyProperties?: (properties: RuntimeRecordViewProperties) => void
-  filter?: FilterExpressionV1
+  filter?: RecordWhere
   filterControlled?: boolean
   graphql?: (document: string, variables?: Readonly<Record<string, unknown>>) => Promise<unknown>
   kind?: ViewComponentKind
-  onFilterChange?: (filter: FilterExpressionV1 | undefined) => void
+  onFilterChange?: (filter: RecordWhere | undefined) => void
   onMoveRequest?: (request: BoardMoveRequestV1) => Promise<void>
   onItemOpen?: (reference: ViewItemReferenceV1) => void
   preset?: RecordViewPresetV1
@@ -44,11 +43,11 @@ interface RuntimeRecordViewElement extends HTMLElement {
 }
 
 interface RuntimeRecordViewProperties {
-  filter?: FilterExpressionV1
+  filter?: RecordWhere
   filterControlled: boolean
   graphql: NonNullable<RuntimeRecordViewElement['graphql']>
   kind: ViewComponentKind
-  onFilterChange?: (filter: FilterExpressionV1 | undefined) => void
+  onFilterChange?: (filter: RecordWhere | undefined) => void
   onItemOpen?: (reference: ViewItemReferenceV1) => void
   onMoveRequest?: (request: BoardMoveRequestV1) => Promise<void>
   preset?: RecordViewPresetV1
@@ -66,8 +65,8 @@ const VIEW_ERROR_EVENT = 'simple-record-view-error'
 
 interface GenericRecordViewProps {
   client: SimpleClient
-  filter?: FilterExpressionV1
-  onFilterChange?: (filter: FilterExpressionV1 | undefined) => void
+  filter?: RecordWhere
+  onFilterChange?: (filter: RecordWhere | undefined) => void
   onMoveRequest?: (request: BoardMoveRequestV1) => Promise<void>
   onItemOpen?: (reference: ViewItemReferenceV1) => void
   preset?: RecordViewPresetV1
@@ -93,10 +92,6 @@ function validateRecordViewProps(props: GenericRecordViewProps): void {
         throw new RecordViewContractError('onMoveRequest must be a function.')
       break
   }
-  if (props.preset?.filter !== undefined)
-    validateSourceFilterExpressionV1(props.source, props.preset.filter)
-  if (props.filter !== undefined)
-    validateSourceFilterExpressionV1(props.source, props.filter)
   if (props.onItemOpen !== undefined && typeof props.onItemOpen !== 'function')
     throw new RecordViewContractError('onItemOpen must be a function.')
 }
