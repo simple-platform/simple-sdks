@@ -1,4 +1,7 @@
+import type { RecordWhere } from '@simpleplatform/sdk/graphql'
 import type { SimpleClient } from '@simpleplatform/sdk/space'
+
+export type { RecordWhere } from '@simpleplatform/sdk/graphql'
 
 export interface TableRecordSourceV1 {
   appId: string
@@ -15,58 +18,6 @@ export interface RecordReferenceV1 {
 }
 
 export type ViewItemReferenceV1 = RecordReferenceV1 & { kind: 'record' }
-
-export const FILTER_OPERATORS_V1 = [
-  'between',
-  'contained_in',
-  'contains',
-  'ends_with',
-  'eq',
-  'future',
-  'gt',
-  'gte',
-  'has_key',
-  'has_keys_all',
-  'has_keys_any',
-  'in',
-  'is_empty',
-  'is_false',
-  'is_not_empty',
-  'is_not_null',
-  'is_null',
-  'is_true',
-  'last_month',
-  'last_n_days',
-  'last_week',
-  'last_year',
-  'lt',
-  'lte',
-  'neq',
-  'next_n_days',
-  'nin',
-  'past',
-  'path_exists',
-  'regex',
-  'starts_with',
-  'this_month',
-  'this_week',
-  'this_year',
-  'today',
-  'yesterday',
-] as const
-
-export type FilterOperatorV1 = typeof FILTER_OPERATORS_V1[number]
-
-export type FilterValueV1 = boolean | null | number | string | FilterValueV1[] | { [key: string]: FilterValueV1 }
-
-export type FilterNodeV1
-  = | { children: FilterNodeV1[], kind: 'group', operator: 'and' | 'or' }
-    | { fieldName: string, kind: 'predicate', operator: FilterOperatorV1, value?: FilterValueV1 | FilterValueV1[], value2?: FilterValueV1 }
-
-export interface FilterExpressionV1 {
-  root: FilterNodeV1
-  version: 1
-}
 
 export const RECORD_VIEW_ICON_IDS_V1 = [
   'lucide:circle-alert',
@@ -103,19 +54,16 @@ export interface RecordViewSummaryV1 {
 }
 
 export const RECORD_TILE_PRESENTATIONS_V1 = [
-  'editorial',
-  'email',
+  'standard',
   'media',
-  'person',
-  'row',
-  'spotlight',
-  'status',
+  'message',
 ] as const
 
 export type RecordTilePresentationV1 = typeof RECORD_TILE_PRESENTATIONS_V1[number]
 
 export type RecordTileVisualV1
   = | { altFieldName?: string, fieldName: string, fit?: 'contain' | 'cover', kind: 'image' }
+    | { altFieldName?: string, fieldName: string, kind: 'avatar' }
     | { iconId: RecordViewIconIdV1, kind: 'icon' }
     | {
       fallbackIconId: RecordViewIconIdV1
@@ -126,10 +74,11 @@ export type RecordTileVisualV1
 
 export interface RecordTileLayoutV1 {
   badgeFieldNames?: string[]
+  badgeStyle?: 'filled' | 'outline'
   detailFieldNames?: string[]
   eyebrowFieldName?: string
   presentation: RecordTilePresentationV1
-  subtitleFieldName?: string
+  subtitleFieldNames?: string[]
   titleFieldName: string
   trailingFieldName?: string
   version: 1
@@ -140,7 +89,8 @@ export const RECORD_VIEW_KINDS_V1 = ['board', 'inbox', 'list', 'table'] as const
 export type RecordViewKindV1 = typeof RECORD_VIEW_KINDS_V1[number]
 
 export interface RecordViewPresetBaseV1 {
-  filter?: FilterExpressionV1
+  /** Native GraphQL where value; the platform validates it against the source before querying. */
+  filter?: RecordWhere
   id: string
   orderBy?: RecordSortV1[]
   title: string
@@ -194,8 +144,8 @@ export interface ViewPresetSetV1 {
 export type ControlledFilterPropsV1
   = | { filter?: never, onFilterChange?: never }
     | {
-      filter: FilterExpressionV1 | undefined
-      onFilterChange: (filter: FilterExpressionV1 | undefined) => void
+      filter: RecordWhere | undefined
+      onFilterChange: (filter: RecordWhere | undefined) => void
     }
 
 export interface RecordViewPropsV1<TPreset extends RecordViewPresetV1> {
@@ -320,12 +270,6 @@ export function isViewItemReferenceV1(value: unknown): value is ViewItemReferenc
   }
 }
 
-const MAX_FILTER_DEPTH = 8
-const MAX_FILTER_NODES = 100
-const MAX_GROUP_CHILDREN = 50
-const MAX_OPERAND_DEPTH = 4
-const MAX_OPERAND_ITEMS = 100
-const MAX_STRING_LENGTH = 4096
 const MAX_PRESETS = 20
 const MAX_VIEW_FIELDS = 40
 const MAX_SORT_FIELDS = 5
@@ -333,161 +277,6 @@ const MAX_LANES = 20
 const MAX_LANE_PAGE_SIZE = 50
 const SAFE_TILE_ICON_IDS = new Set<string>(RECORD_VIEW_ICON_IDS_V1)
 const isSafeTileIconId = (value: unknown): value is RecordViewIconIdV1 => typeof value === 'string' && SAFE_TILE_ICON_IDS.has(value)
-const FILTER_OPERATORS_WITHOUT_VALUES = new Set<FilterOperatorV1>([
-  'future',
-  'is_empty',
-  'is_false',
-  'is_not_empty',
-  'is_not_null',
-  'is_null',
-  'is_true',
-  'last_month',
-  'last_week',
-  'last_year',
-  'past',
-  'this_month',
-  'this_week',
-  'this_year',
-  'today',
-  'yesterday',
-])
-
-function validateJsonValue(value: unknown, depth = 0, seen = new Set<object>()): FilterValueV1 {
-  if (depth > MAX_OPERAND_DEPTH) {
-    throw new RecordViewContractError('Filter operand is nested too deeply.')
-  }
-  if (value === null || typeof value === 'boolean')
-    return value
-  if (typeof value === 'number' && Number.isFinite(value))
-    return value
-  if (typeof value === 'string') {
-    if (value.length > MAX_STRING_LENGTH)
-      throw new RecordViewContractError('Filter operand string is too long.')
-    return value
-  }
-  if (typeof value !== 'object')
-    throw new RecordViewContractError('Filter operands must be JSON values.')
-  if (seen.has(value))
-    throw new RecordViewContractError('Filter operands cannot contain cycles.')
-
-  seen.add(value)
-  try {
-    if (Array.isArray(value)) {
-      if (value.length > MAX_OPERAND_ITEMS)
-        throw new RecordViewContractError('Filter operand contains too many items.')
-      return value.map(item => validateJsonValue(item, depth + 1, seen))
-    }
-    if (!isPlainObject(value))
-      throw new RecordViewContractError('Filter operands must be plain JSON objects.')
-    const entries = Object.entries(value)
-    if (entries.length > MAX_OPERAND_ITEMS)
-      throw new RecordViewContractError('Filter operand contains too many properties.')
-    return Object.fromEntries(entries.map(([key, item]) => {
-      if (!key || key.length > 128 || key === '__proto__' || key === 'constructor' || key === 'prototype')
-        throw new RecordViewContractError('Filter operand contains an invalid key.')
-      return [key, validateJsonValue(item, depth + 1, seen)]
-    }))
-  }
-  finally {
-    seen.delete(value)
-  }
-}
-
-function validateFilterNode(node: unknown, depth: number, state: { count: number }): FilterNodeV1 {
-  if (depth > MAX_FILTER_DEPTH || ++state.count > MAX_FILTER_NODES)
-    throw new RecordViewContractError('Filter expression is nested too deeply or has too many nodes.')
-  if (!isPlainObject(node)) {
-    throw new RecordViewContractError('Filter node must be an object.')
-  }
-  if (node.kind === 'group') {
-    assertOnlyKeys(node, ['children', 'kind', 'operator'], 'Filter group')
-    if (node.operator !== 'and' && node.operator !== 'or') {
-      throw new RecordViewContractError(`Filter group operator must be 'and' or 'or', got ${String(node.operator)}.`)
-    }
-    if (!Array.isArray(node.children) || node.children.length === 0 || node.children.length > MAX_GROUP_CHILDREN) {
-      throw new RecordViewContractError('Filter group children must contain between 1 and 50 nodes.')
-    }
-    return {
-      children: node.children.map(child => validateFilterNode(child, depth + 1, state)),
-      kind: 'group',
-      operator: node.operator,
-    }
-  }
-  if (node.kind === 'predicate') {
-    if (!isNonEmptyString(node.fieldName)) {
-      throw new RecordViewContractError('Filter predicate fieldName must be a non-empty string.')
-    }
-    if (node.fieldName.length > 200)
-      throw new RecordViewContractError('Filter predicate fieldName must be at most 200 characters.')
-    assertOnlyKeys(node, ['fieldName', 'kind', 'operator', 'value', 'value2'], 'Filter predicate')
-    if (!FILTER_OPERATORS_V1.includes(node.operator as FilterOperatorV1)) {
-      throw new RecordViewContractError(`Unknown filter operator: ${String(node.operator)}.`)
-    }
-    const operator = node.operator as FilterOperatorV1
-    const hasValue = Object.prototype.hasOwnProperty.call(node, 'value')
-    const hasValue2 = Object.prototype.hasOwnProperty.call(node, 'value2')
-    if (FILTER_OPERATORS_WITHOUT_VALUES.has(operator)) {
-      if (hasValue || hasValue2)
-        throw new RecordViewContractError(`Filter operator ${operator} does not accept a value.`)
-    }
-    else if (!hasValue) {
-      throw new RecordViewContractError(`Filter operator ${operator} requires a value.`)
-    }
-    if (operator === 'between' && !hasValue2)
-      throw new RecordViewContractError('Filter operator between requires two values.')
-    if (operator !== 'between' && hasValue2)
-      throw new RecordViewContractError(`Filter operator ${operator} does not accept a second value.`)
-    if ((operator === 'last_n_days' || operator === 'next_n_days') && typeof node.value !== 'number')
-      throw new RecordViewContractError(`Filter operator ${operator} requires a number.`)
-    const value = hasValue ? validateJsonValue(node.value) : undefined
-    const value2 = hasValue2 ? validateJsonValue(node.value2) : undefined
-    if (operator === 'between' && ((typeof value === 'object' && value !== null) || (typeof value2 === 'object' && value2 !== null)))
-      throw new RecordViewContractError('The between filter requires scalar bounds.')
-    if (value !== undefined && Array.isArray(value) && value.length > MAX_OPERAND_ITEMS)
-      throw new RecordViewContractError('Filter operand contains too many items.')
-    return {
-      fieldName: node.fieldName,
-      kind: 'predicate',
-      operator: node.operator as FilterOperatorV1,
-      ...(value !== undefined ? { value } : {}),
-      ...(value2 !== undefined ? { value2 } : {}),
-    }
-  }
-  throw new RecordViewContractError(`Unknown filter node kind: ${String(node.kind)}.`)
-}
-
-export function validateFilterExpressionV1(value: unknown): FilterExpressionV1 {
-  if (!isPlainObject(value)) {
-    throw new RecordViewContractError('Filter expression must be an object.')
-  }
-  if (value.version !== 1) {
-    throw new RecordViewContractError(`Filter expression version must be 1, got ${String(value.version)}.`)
-  }
-  assertOnlyKeys(value, ['root', 'version'], 'Filter expression')
-  const root = validateFilterNode(value.root, 1, { count: 0 })
-  return {
-    root,
-    version: 1,
-  }
-}
-
-/** Validates filter shape for the authorized record source. */
-export function validateSourceFilterExpressionV1(source: RecordSourceV1, value: unknown): FilterExpressionV1 {
-  validateRecordSourceV1(source)
-  const validatedFilter = validateFilterExpressionV1(value)
-  return validatedFilter
-}
-
-export function isFilterExpressionV1(value: unknown): value is FilterExpressionV1 {
-  try {
-    validateFilterExpressionV1(value)
-    return true
-  }
-  catch {
-    return false
-  }
-}
-
 export function validateRecordSortV1(value: unknown): RecordSortV1 {
   if (!isPlainObject(value)) {
     throw new RecordViewContractError('Record sort must be an object.')
@@ -530,16 +319,23 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
   if (!isNonEmptyString(value.titleFieldName)) {
     throw new RecordViewContractError('Record tile layout titleFieldName must be a non-empty string.')
   }
-  if (value.presentation === 'email') {
-    if (!isNonEmptyString(value.eyebrowFieldName) || !isNonEmptyString(value.subtitleFieldName) || !isNonEmptyString(value.trailingFieldName)) {
-      throw new RecordViewContractError('Email tiles require sender, preview, and received-at fields.')
+  if (value.badgeStyle !== undefined && (value.presentation !== 'standard' || !['filled', 'outline'].includes(String(value.badgeStyle))))
+    throw new RecordViewContractError('Tile badgeStyle must be filled or outline on standard tiles.')
+  if (value.presentation === 'message') {
+    if (!isNonEmptyString(value.eyebrowFieldName)
+      || !Array.isArray(value.subtitleFieldNames)
+      || value.subtitleFieldNames.length === 0
+      || value.subtitleFieldNames.length > MAX_VIEW_FIELDS
+      || !value.subtitleFieldNames.every(name => isNonEmptyString(name) && name.length <= 200)
+      || !isNonEmptyString(value.trailingFieldName)) {
+      throw new RecordViewContractError('Message tiles require sender, preview, and received-at fields.')
     }
     if (value.badgeFieldNames !== undefined || value.detailFieldNames !== undefined || value.visual !== undefined) {
       throw new RecordViewContractError('Email tiles do not support badges, details, or visuals.')
     }
   }
-  assertOnlyKeys(value, ['badgeFieldNames', 'detailFieldNames', 'eyebrowFieldName', 'presentation', 'subtitleFieldName', 'titleFieldName', 'trailingFieldName', 'version', 'visual'], 'Record tile layout')
-  for (const name of ['titleFieldName', 'eyebrowFieldName', 'subtitleFieldName', 'trailingFieldName'] as const) {
+  assertOnlyKeys(value, ['badgeFieldNames', 'badgeStyle', 'detailFieldNames', 'eyebrowFieldName', 'presentation', 'subtitleFieldNames', 'titleFieldName', 'trailingFieldName', 'version', 'visual'], 'Record tile layout')
+  for (const name of ['titleFieldName', 'eyebrowFieldName', 'trailingFieldName'] as const) {
     const fieldName = value[name]
     if (fieldName !== undefined && (typeof fieldName !== 'string' || fieldName.length > 200))
       throw new RecordViewContractError(`Record tile layout ${name} must be at most 200 characters.`)
@@ -568,6 +364,22 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
         fieldName: value.visual.fieldName,
         ...(value.visual.fit ? { fit: value.visual.fit } : {}),
         kind: 'image',
+      }
+    }
+    else if (value.visual.kind === 'avatar') {
+      if (value.presentation !== 'standard')
+        throw new RecordViewContractError('Tile avatar visuals are only supported on standard tiles.')
+      if (!isNonEmptyString(value.visual.fieldName))
+        throw new RecordViewContractError('Tile avatar visual requires fieldName.')
+      if (value.visual.altFieldName !== undefined && !isNonEmptyString(value.visual.altFieldName))
+        throw new RecordViewContractError('Tile avatar visual altFieldName must be a non-empty string.')
+      if (value.visual.fieldName.length > 200 || (typeof value.visual.altFieldName === 'string' && value.visual.altFieldName.length > 200))
+        throw new RecordViewContractError('Tile avatar visual field names must be at most 200 characters.')
+      assertOnlyKeys(value.visual, ['altFieldName', 'fieldName', 'kind'], 'Tile avatar visual')
+      visual = {
+        ...(value.visual.altFieldName ? { altFieldName: value.visual.altFieldName } : {}),
+        fieldName: value.visual.fieldName,
+        kind: 'avatar',
       }
     }
     else if (value.visual.kind === 'icon') {
@@ -625,19 +437,17 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
   if (value.eyebrowFieldName !== undefined && !isNonEmptyString(value.eyebrowFieldName)) {
     throw new RecordViewContractError('Tile layout eyebrowFieldName must be a non-empty string.')
   }
-  if (value.subtitleFieldName !== undefined && !isNonEmptyString(value.subtitleFieldName)) {
-    throw new RecordViewContractError('Tile layout subtitleFieldName must be a non-empty string.')
-  }
   if (value.trailingFieldName !== undefined && !isNonEmptyString(value.trailingFieldName)) {
     throw new RecordViewContractError('Tile layout trailingFieldName must be a non-empty string.')
   }
 
   return {
     ...(value.badgeFieldNames !== undefined ? { badgeFieldNames: checkOptionalStringArray(value.badgeFieldNames, 'badgeFieldNames') } : {}),
+    ...(value.badgeStyle !== undefined ? { badgeStyle: value.badgeStyle as RecordTileLayoutV1['badgeStyle'] } : {}),
     ...(value.detailFieldNames !== undefined ? { detailFieldNames: checkOptionalStringArray(value.detailFieldNames, 'detailFieldNames') } : {}),
     ...(isNonEmptyString(value.eyebrowFieldName) ? { eyebrowFieldName: value.eyebrowFieldName } : {}),
     presentation: value.presentation as RecordTilePresentationV1,
-    ...(isNonEmptyString(value.subtitleFieldName) ? { subtitleFieldName: value.subtitleFieldName } : {}),
+    ...(value.subtitleFieldNames !== undefined ? { subtitleFieldNames: checkOptionalStringArray(value.subtitleFieldNames, 'subtitleFieldNames') } : {}),
     titleFieldName: value.titleFieldName,
     ...(isNonEmptyString(value.trailingFieldName) ? { trailingFieldName: value.trailingFieldName } : {}),
     version: 1,
@@ -668,10 +478,10 @@ function validatePresetBase(value: unknown): RecordViewPresetBaseV1 {
   assertOnlyKeys(value, ['config', 'filter', 'id', 'kind', 'orderBy', 'title'], 'Preset')
   if (value.id.length > 80 || value.title.length > 120)
     throw new RecordViewContractError('Preset id must be at most 80 characters and title at most 120 characters.')
-  const filter = value.filter !== undefined ? validateFilterExpressionV1(value.filter) : undefined
+  const filter = value.filter as RecordWhere | undefined
   const orderBy = validateOrderBy(value.orderBy)
   return {
-    ...(filter ? { filter } : {}),
+    ...(value.filter !== undefined ? { filter } : {}),
     id: value.id,
     ...(orderBy ? { orderBy } : {}),
     title: value.title,
@@ -985,20 +795,16 @@ export function validateControlledFilterPropsV1(props: unknown): ControlledFilte
     throw new RecordViewContractError('Controlled filter requires onFilterChange callback.')
   }
   if (!hasFilter && hasOnFilterChange) {
-    throw new RecordViewContractError('Controlled onFilterChange requires filter expression prop.')
+    throw new RecordViewContractError('Controlled onFilterChange requires a filter prop.')
   }
 
   if (typeof props.onFilterChange !== 'function') {
     throw new RecordViewContractError('onFilterChange must be a function.')
   }
 
-  if (props.filter !== undefined) {
-    validateFilterExpressionV1(props.filter)
-  }
-
   return {
-    filter: props.filter as FilterExpressionV1 | undefined,
-    onFilterChange: props.onFilterChange as (filter: FilterExpressionV1 | undefined) => void,
+    filter: props.filter as RecordWhere | undefined,
+    onFilterChange: props.onFilterChange as (filter: RecordWhere | undefined) => void,
   }
 }
 

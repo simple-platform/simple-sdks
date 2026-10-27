@@ -21,11 +21,12 @@ released with an explicit support policy.
 pnpm add @simpleplatform/ui-kit @simpleplatform/sdk
 ```
 
-Managed views require the SDK's private managed-view bridge. The peer and
-scaffold requirement is `@simpleplatform/sdk@^4.0.0`; 4.0.0 is the first
-published release with the bridge. SDK 3.2.0 was never released; SDK 3.1.0 lacks the
-bridge. Publish the compatible SDK before the UI Kit; the UI Kit release check
-verifies the published SDK artifact's bridge. For local review, use matching
+Managed views require the SDK's private managed-view bridge and GraphQL
+`RecordWhere` type. The peer and scaffold requirement is
+`@simpleplatform/sdk@^4.1.0`; 4.0.0 is the first published release with the
+bridge. SDK 3.2.0 was never released; SDK 3.1.0 lacks the bridge. Publish the
+compatible SDK before the UI Kit; the UI Kit release check verifies the
+published SDK artifact's bridge. For local review, use matching
 SDK/UI Kit feature builds. React bridges support React 18.3 or 19. The `0.0.0`
 peer exception supports linked workspace builds and does not prove registry
 compatibility.
@@ -369,17 +370,18 @@ node scripts/sync-record-view-contract.mjs ../simple
 node scripts/sync-record-view-contract.mjs ../simple --check
 ```
 
-Commit both copies together. The corpus covers legacy Board page-size normalization
-and current Show more with numeric summaries.
+Commit both copies together. The corpus covers Board lane paging and numeric summaries.
 
 Public TypeScript names omit a version suffix. The saved `views` preset-set
-envelope, filter expressions, and tile layouts retain their `version: 1` fields.
+envelope and tile layouts retain their `version: 1` fields. Filters use the
+same native `RecordWhere` object accepted by GraphQL; there is no filter-specific
+version or predicate-tree wrapper.
 
 ```tsx
 import type { SimpleClient } from '@simpleplatform/sdk/space'
 import type {
-  FilterExpression,
   ListPreset,
+  RecordWhere,
   TableRecordSource,
   ViewItemReference,
 } from '@simpleplatform/ui-kit/contracts'
@@ -395,8 +397,8 @@ const source: TableRecordSource = {
 const preset: ListPreset = {
   config: {
     tile: {
-      presentation: 'row',
-      subtitleFieldName: 'status',
+      presentation: 'standard',
+      subtitleFieldNames: ['status'],
       titleFieldName: 'title',
       version: 1,
     },
@@ -410,7 +412,7 @@ export function TicketList({ client, openTicket }: {
   client: SimpleClient
   openTicket: (reference: ViewItemReference) => void
 }) {
-  const [filter, setFilter] = useState<FilterExpression | undefined>(preset.filter)
+  const [filter, setFilter] = useState<RecordWhere | undefined>(preset.filter)
 
   return (
     <ListView
@@ -435,10 +437,12 @@ existing record hooks. Presets are versioned and discriminated as `list`, `table
 stay with the Space. Controlled views pass both `filter` and
 `onFilterChange`; otherwise the preset's filter initializes view state.
 
-The view's built-in filter controls share the versioned `FilterExpression`
-with saved preset filters. A Space may control that view state with `filter`
-and `onFilterChange`; filter-builder components remain platform-owned. Preset
-icons are derived from `kind`. Tile visuals use provider-qualified IDs from
+The view's built-in controls read and write the native SimpleDB `RecordWhere`
+shape used by preset JSON, URL state, dashboards, and GraphQL variables. Flat
+filters use the quick field picker; grouped, negated, repeated-field, or
+multi-operator filters open the advanced Rule Outline directly. The Space may
+control that same state with `filter` and `onFilterChange`; editor components
+remain platform-owned. Preset icons are derived from `kind`. Tile visuals use provider-qualified IDs from
 `RECORD_VIEW_ICON_IDS`, such as `lucide:star`.
 QuickFilterBar is excluded from the first phase.
 `DataGrid` mounts the existing platform TanStack GenericTable, including its
@@ -457,10 +461,13 @@ labeled values. Ordinary List/Inbox email tiles keep their sender/date,
 subject, and preview layout.
 
 Simple and advanced filters reject numeric input that JavaScript cannot
-represent without changing its value; invalid text stays visible for correction.
-JSON key operands remain strings, including keys such as `"123"` or `"true"`.
-Nested AND/OR groups and multi-value operands retain their complete meaning
-when opening the advanced editor or adding a simple field filter.
+represent without changing its value, including unsafe integers in numeric
+`_in` and `_nin` lists; invalid text stays visible for correction. JSON key
+operands remain strings, including keys such as `"123"` or `"true"`.
+Nested AND/OR groups, `_not`, and multi-value operands retain their meaning when
+opening the advanced editor or adding a simple field filter. The editor keeps
+valid native clauses it cannot edit as read-only rules; users can remove a rule
+or group explicitly. It does not silently drop clauses.
 
 `Board` may call `onMoveRequest`; it does not persist a move by itself.
 Use `client.records.open()`, check `update()` and `submit()` results, and reject
@@ -490,7 +497,7 @@ const boardPreset: BoardPreset = {
       { fieldName: 'amount', operation: 'sum' },
       { fieldName: 'amount', operation: 'average' },
     ],
-    tile: { presentation: 'row', titleFieldName: 'name', version: 1 },
+    tile: { presentation: 'standard', titleFieldName: 'name', version: 1 },
   },
   id: 'opportunities',
   kind: 'board',
@@ -509,13 +516,14 @@ was removed, the platform uses `defaultPresetId`. A Space receives an explicit
 Space tiles use the same `RecordTileLayout` in List/Table/Board `config.tile`.
 The platform Inbox uses `config.listTile`. Its `detail` defaults to `fields`,
 which requires `detailFieldNames`; `detail: 'record'` renders the platform
-RecordPage and does not accept `detailFieldNames`. The compositions are `row`,
-`person`, `media`, `editorial`, `email`, `status`, and `spotlight`. Email uses `titleFieldName` for
-the subject, `eyebrowFieldName` for the sender, `subtitleFieldName` for a
-two-line plain-text preview, and `trailingFieldName` for the received date/time.
-The platform Inbox displays sender and relative date together above the subject.
-List/Inbox email tiles omit generic badges, detail fields, and icons; DataGrid
-retains selected fields as labeled values. Bind
+RecordPage and does not accept `detailFieldNames`. The three tile presentations
+are `standard`, `media`, and `message`. Use `standard` for ordinary records,
+people, settings, and enterprise items; `media` reserves an image area;
+`message` arranges sender, received time, subject, and preview. Message tiles use
+`titleFieldName` for the subject, `eyebrowFieldName` for the sender,
+`subtitleFieldNames` for the preview, and `trailingFieldName` for the received
+date/time. List/Inbox message tiles omit generic badges, detail fields, and
+visuals; DataGrid retains selected fields as labeled values. Bind
 title/subtitle/eyebrow/trailing, badge/detail fields, a safe catalog icon, an
 enum icon map, or an authorized document image. Values stay inline and safe inside the parent open action;
 references request only the target ID/display field and fall back to the ID
@@ -540,9 +548,11 @@ Contract bounds are 20 presets, 80-character IDs, 120-character titles, 200-char
 unpadded field names, 40 fields per column/detail/badge array, 5 sort fields,
 80–800px column widths, and 20 total Board lanes with batches of at most 50
 records per lane. Enum icon maps allow 100 unpadded nonempty values of at most 200
-characters and only exported catalog icons. Portable SDK and schema-aware
-platform validators remain separate and run matching versioned conformance
-fixtures. Container width selects the responsive DataGrid presentation; it is
+characters and only exported catalog icons. The SDK uses the `RecordWhere` type
+from `@simpleplatform/sdk/graphql` and passes filter objects to the host unchanged.
+The platform owns runtime structural, field, and operator validation before a
+query runs; field/operator and operand metadata is generated from the SimpleDB
+filter dialect. Container width selects the responsive DataGrid presentation; it is
 not configurable in the preset.
 
 The `dev.simple.ui_fixtures` Space API Demo includes a database-backed tile

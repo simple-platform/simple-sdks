@@ -5,33 +5,25 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "badgeFieldNames": [
+              "status"
+            ],
+            "badgeStyle": "filled",
+            "presentation": "standard",
             "titleFieldName": "title",
-            "version": 1
+            "version": 1,
+            "visual": {
+              "altFieldName": "title",
+              "fieldName": "image",
+              "kind": "avatar"
+            }
           }
         },
         "id": "review",
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile composition row",
-      "target": "preset"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "config": {
-          "tile": {
-            "presentation": "person",
-            "titleFieldName": "title",
-            "version": 1
-          }
-        },
-        "id": "review",
-        "kind": "list",
-        "title": "Review"
-      },
-      "name": "tile composition person",
+      "name": "standard tile composition",
       "target": "preset"
     },
     {
@@ -56,60 +48,11 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "editorial",
-            "titleFieldName": "title",
-            "version": 1
-          }
-        },
-        "id": "review",
-        "kind": "list",
-        "title": "Review"
-      },
-      "name": "tile composition editorial",
-      "target": "preset"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "config": {
-          "tile": {
-            "presentation": "status",
-            "titleFieldName": "title",
-            "version": 1
-          }
-        },
-        "id": "review",
-        "kind": "list",
-        "title": "Review"
-      },
-      "name": "tile composition status",
-      "target": "preset"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "config": {
-          "tile": {
-            "presentation": "spotlight",
-            "titleFieldName": "title",
-            "version": 1
-          }
-        },
-        "id": "review",
-        "kind": "list",
-        "title": "Review"
-      },
-      "name": "tile composition spotlight",
-      "target": "preset"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "config": {
-          "tile": {
             "eyebrowFieldName": "sender",
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": [
+              "preview"
+            ],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1
@@ -119,7 +62,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile composition",
+      "name": "message tile composition",
       "target": "preset"
     },
     {
@@ -127,8 +70,10 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": [
+              "preview"
+            ],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1
@@ -138,7 +83,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile requires a sender",
+      "name": "message tile requires a sender",
       "target": "preset"
     },
     {
@@ -147,8 +92,10 @@
         "config": {
           "tile": {
             "eyebrowFieldName": "sender",
-            "presentation": "email",
-            "subtitleFieldName": "preview",
+            "presentation": "message",
+            "subtitleFieldNames": [
+              "preview"
+            ],
             "titleFieldName": "title",
             "trailingFieldName": "received_at",
             "version": 1,
@@ -161,7 +108,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "email tile rejects workflow badges",
+      "name": "message tile rejects workflow badges",
       "target": "preset"
     },
     {
@@ -173,7 +120,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -191,7 +138,7 @@
         "config": {
           "detail": "record",
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -242,7 +189,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -268,7 +215,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -291,7 +238,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -308,7 +255,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -326,7 +273,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "style": "unsafe",
             "titleFieldName": "title",
             "version": 1
@@ -344,7 +291,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -366,7 +313,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -395,7 +342,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -488,7 +435,7 @@
               "title",
               "title"
             ],
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -512,7 +459,7 @@
         ],
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -523,249 +470,6 @@
       },
       "name": "unknown sort property",
       "target": "preset"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "root": {
-          "fieldName": "title",
-          "kind": "predicate",
-          "operator": "eq",
-          "value": "review"
-        },
-        "version": 1
-      },
-      "name": "text predicate",
-      "target": "filter"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "root": {
-          "fieldName": "updated_at",
-          "kind": "predicate",
-          "operator": "last_n_days",
-          "value": 7
-        },
-        "version": 1
-      },
-      "name": "relative date predicate",
-      "target": "filter"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "root": {
-          "fieldName": "enabled",
-          "kind": "predicate",
-          "operator": "is_true"
-        },
-        "version": 1
-      },
-      "name": "no operand predicate",
-      "target": "filter"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "root": {
-          "fieldName": "age",
-          "kind": "predicate",
-          "operator": "between",
-          "value": 1,
-          "value2": 5
-        },
-        "version": 1
-      },
-      "name": "scalar bounds",
-      "target": "filter"
-    },
-    {
-      "accepted": true,
-      "input": {
-        "root": {
-          "fieldName": "metadata",
-          "kind": "predicate",
-          "operator": "contains",
-          "value": {
-            "labels": [
-              "urgent",
-              {
-                "source": "mobile"
-              }
-            ]
-          }
-        },
-        "version": 1
-      },
-      "name": "nested JSON value",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "title",
-          "kind": "predicate",
-          "operator": "eq"
-        },
-        "version": 1
-      },
-      "name": "missing operand",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "enabled",
-          "kind": "predicate",
-          "operator": "is_true",
-          "value": true
-        },
-        "version": 1
-      },
-      "name": "extraneous operand",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "age",
-          "kind": "predicate",
-          "operator": "between",
-          "value": 1
-        },
-        "version": 1
-      },
-      "name": "missing upper bound",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "title",
-          "kind": "predicate",
-          "operator": "eq",
-          "value": "x",
-          "value2": "y"
-        },
-        "version": 1
-      },
-      "name": "unexpected upper bound",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "updated_at",
-          "kind": "predicate",
-          "operator": "last_n_days",
-          "value": "7"
-        },
-        "version": 1
-      },
-      "name": "non numeric relative operand",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "age",
-          "kind": "predicate",
-          "operator": "between",
-          "value": [
-            1
-          ],
-          "value2": 5
-        },
-        "version": 1
-      },
-      "name": "non scalar bounds",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "metadata",
-          "kind": "predicate",
-          "operator": "contains",
-          "value": {
-            "": "x"
-          }
-        },
-        "version": 1
-      },
-      "name": "unsafe JSON key ''",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "metadata",
-          "kind": "predicate",
-          "operator": "contains",
-          "value": {
-            "constructor": "x"
-          }
-        },
-        "version": 1
-      },
-      "name": "unsafe JSON key 'constructor'",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "metadata",
-          "kind": "predicate",
-          "operator": "contains",
-          "value": {
-            "prototype": "x"
-          }
-        },
-        "version": 1
-      },
-      "name": "unsafe JSON key 'prototype'",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldName": "metadata",
-          "kind": "predicate",
-          "operator": "contains",
-          "value": {
-            "__proto__": "x"
-          }
-        },
-        "version": 1
-      },
-      "name": "unsafe JSON key '__proto__'",
-      "target": "filter"
-    },
-    {
-      "accepted": false,
-      "input": {
-        "root": {
-          "fieldId": "legacy",
-          "fieldName": "title",
-          "kind": "predicate",
-          "operator": "eq",
-          "value": "x"
-        },
-        "version": 1
-      },
-      "name": "unknown filter node property",
-      "target": "filter"
     },
     {
       "accepted": true,
@@ -781,7 +485,7 @@
             "badgeFieldNames": [
               "status"
             ],
-            "presentation": "status",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -824,7 +528,7 @@
             "badgeFieldNames": [
               "status"
             ],
-            "presentation": "status",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -848,7 +552,7 @@
           "laneFieldName": "status",
           "tile": {
             "html": "unsafe",
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -870,7 +574,7 @@
             "todo"
           ],
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -888,7 +592,7 @@
         "config": {
           "laneFieldName": "status",
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           },
@@ -906,7 +610,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -923,7 +627,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -940,7 +644,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "version": 1
           }
@@ -957,8 +661,10 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
-            "subtitleFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "presentation": "standard",
+            "subtitleFieldNames": [
+              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            ],
             "titleFieldName": "title",
             "version": 1
           }
@@ -967,7 +673,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "tile subtitleFieldName length limit",
+      "name": "tile subtitleFieldNames length limit",
       "target": "preset"
     },
     {
@@ -976,7 +682,7 @@
         "config": {
           "tile": {
             "eyebrowFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -993,7 +699,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "trailingFieldName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
             "version": 1
@@ -1011,7 +717,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1135,7 +841,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1260,7 +966,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1285,7 +991,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1310,7 +1016,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1335,7 +1041,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1356,7 +1062,7 @@
       "input": {
         "config": {
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1,
             "visual": {
@@ -1381,7 +1087,7 @@
             "title"
           ],
           "listTile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -1404,7 +1110,7 @@
             }
           ],
           "tile": {
-            "presentation": "row",
+            "presentation": "standard",
             "titleFieldName": "title",
             "version": 1
           }
@@ -1414,6 +1120,204 @@
         "title": "List"
       },
       "name": "sort is configured at preset level",
+      "target": "preset"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "_and": [
+          {
+            "status": {
+              "_in": [
+                "open",
+                "pending"
+              ]
+            }
+          },
+          {
+            "age": {
+              "_gte": 18,
+              "_lt": 65
+            }
+          },
+          {
+            "_not": {
+              "archived": {
+                "_eq": true
+              }
+            }
+          }
+        ]
+      },
+      "name": "native nested where with exclusion",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "enabled": {
+          "_eq": false
+        },
+        "note": {
+          "_eq": null
+        }
+      },
+      "name": "false and null operands",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "metadata": {
+          "_contains": {
+            "labels": [
+              "urgent",
+              {
+                "source": "mobile"
+              }
+            ]
+          }
+        }
+      },
+      "name": "nested JSON operand",
+      "target": "filter"
+    },
+    {
+      "accepted": true,
+      "input": {
+        "metadata": {
+          "_contains": {
+            "a": {
+              "b": {
+                "c": {
+                  "d": {
+                    "e": {
+                      "f": {
+                        "g": "x"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "name": "bounded nested JSON operand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "metadata": {
+          "_contains": {
+            "a": {
+              "b": {
+                "c": {
+                  "d": {
+                    "e": {
+                      "f": {
+                        "g": {
+                          "h": { "i": "x" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "name": "reject over-deep JSON operand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "_unknown": {
+          "_eq": true
+        }
+      },
+      "name": "reject unknown group operator",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "title": "plain scalar shorthand"
+      },
+      "name": "reject scalar field shorthand",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "_or": []
+      },
+      "name": "reject empty logical group",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "_and": [
+          {},
+          { "title": { "_eq": "x" } }
+        ]
+      },
+      "name": "reject empty logical branch",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "_not": {}
+      },
+      "name": "reject empty negated group",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "title": {}
+      },
+      "name": "reject empty operator object",
+      "target": "filter"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "row",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "legacy row presentation is rejected",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "standard",
+            "titleFieldName": "title",
+            "version": 1,
+            "subtitleFieldName": "title"
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "legacy scalar subtitle field is rejected",
       "target": "preset"
     }
   ],
@@ -1444,6 +1348,14 @@
     {
       "name": "enabled",
       "type": "boolean"
+    },
+    {
+      "name": "archived",
+      "type": "boolean"
+    },
+    {
+      "name": "note",
+      "type": "string"
     },
     {
       "name": "age",

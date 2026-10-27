@@ -2,6 +2,21 @@ import type { Context } from './types'
 
 import { execute as hostExecute } from './host'
 
+/** JSON-shaped values, used unchanged in GraphQL variables and view presets. */
+export type GraphQLJsonValue = boolean | null | number | string | GraphQLJsonValue[] | GraphQLJsonObject
+
+export interface GraphQLJsonObject {
+  [key: string]: GraphQLJsonValue
+}
+
+/** The JSON value carried by a native SimpleDB filter field. */
+export type RecordWhereValue = GraphQLJsonValue
+
+/** The canonical SimpleDB filter object. Its valid operators depend on the source schema. */
+export interface RecordWhere {
+  [key: string]: RecordWhereValue
+}
+
 /**
  * Executes a GraphQL query with variables and returns the data directly.
  * This function communicates with the host system's database action and handles

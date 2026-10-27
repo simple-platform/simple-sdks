@@ -1,4 +1,4 @@
-- **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires SDK `^4.0.0`, the first published release with the compatible bridge; SDK 3.2.0 was never released and published 3.1.0 lacks it. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
+- **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires SDK `^4.1.0` for the canonical GraphQL `RecordWhere` type; 4.0.0 remains the first published release with the compatible bridge. SDK 3.2.0 was never released and published 3.1.0 lacks the bridge. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
 - **Last updated:** 2026-10-25
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
@@ -132,9 +132,10 @@ iframe, separate view protocol, caller-supplied row payload, or direct database
 client. Platform Inbox presets remain in the shared serialized Custom View
 contract, but only platform collection routes render them.
 
-Type names omit a version suffix. The saved `views` preset-set envelope, filter
-expressions, and tile layouts keep their `version: 1` fields so stored JSON can
-be versioned independently from SDK identifiers.
+Type names omit a version suffix. The saved `views` preset-set envelope and tile
+layouts keep their `version: 1` fields so stored JSON can be versioned independently
+from SDK identifiers. Filters use the native `RecordWhere` object and have no
+filter-specific version.
 
 The source is a database metadata identity:
 
@@ -147,17 +148,17 @@ const source: RecordSource = {
 
 const preset: ListPreset = {
   config: {
-    orderBy: [{ direction: 'asc', fieldName: 'display_name' }],
     tile: {
       detailFieldNames: ['team'],
-      presentation: 'person',
-      subtitleFieldName: 'role',
+      presentation: 'standard',
+      subtitleFieldNames: ['role'],
       titleFieldName: 'display_name',
       version: 1,
     },
   },
   id: 'people',
   kind: 'list',
+  orderBy: [{ direction: 'asc', fieldName: 'display_name' }],
   title: 'People',
 }
 
@@ -1024,3 +1025,17 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Decision:** Require SDK `^4.0.0` for managed views, retaining the explicit local `0.0.0` peer override.
 - **Reason:** SDK 3.2.0 was never released; SDK 4.0.0 carries the bridge. The UI Kit release failed because the registry could not resolve the obsolete `^3.2.0` requirement.
 - **Supersedes:** The planned 3.2.0 floor in the October 11 correction and October 23 release decision. SDK-before-UI-Kit publication and the registry artifact bridge check remain unchanged.
+
+### 2026-10-25 — Use native RecordWhere for every managed-view filter
+
+- **Decision:** Custom View presets, Space view props, URL state, dashboard/reference composition, and GraphQL variables use the same native GraphQL-shaped RecordWhere object. The platform owns the single shared filter editor; the UI Kit exposes managed views and controlled filter props, not a second editor implementation.
+- **Reason:** A second public predicate tree and per-surface converters can change operands or lose nested conditions. The database already owns operator and operand semantics.
+- **Boundary:** The SDK reuses the GraphQL `RecordWhere` type and passes filters to the host unchanged. The platform owns the single runtime structural/schema validator before a query; authorization remains server-owned. Backend-relative date evaluation is deferred; current UI date shortcuts become absolute bounds.
+- **Supersedes:** The October 11/12 managed-view decisions that described filters as FilterExpression or FilterExpressionV1.
+- **Current architecture:** See simple/architecture_history/filter-standardization.md and simple/architecture_history/space-views.md.
+
+### 2026-10-25 — Require SDK GraphQL RecordWhere type for the UI Kit
+
+- **Decision:** Raise the UI Kit SDK peer floor to `^4.1.0`; managed views import the public `RecordWhere` type from `@simpleplatform/sdk/graphql`.
+- **Reason:** Keeping a second UI Kit filter type would let the consumer package and GraphQL SDK drift independently.
+- **Release order:** Publish the SDK change before the UI Kit release. The host platform remains the runtime filter validator and does not depend on the Space SDK.
