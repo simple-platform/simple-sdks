@@ -16,8 +16,9 @@ const PAD = '='
  * Encodes bytes as base64, in the standard alphabet with the standard padding
  * and no line breaks, which is the form the platform accepts.
  *
- * Bytes are read by index; a subclass custom length or iterator is not honoured
- * by uploadBuffer, which normalizes the input to plain bytes. This is a known limit.
+ * Bytes are read by index. A subclass from another realm is normalized by
+ * uploadBuffer through its byteOffset and byteLength getters, so overrides of
+ * those getters are honoured; a custom iterator is not. This is a known limit.
  * The bytes are read in a loop, three at a time, and never spread into a call. A
  * spread makes every byte an argument, and a call takes at most 65,535 of those
  * in a server action and a stack's worth in a browser.

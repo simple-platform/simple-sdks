@@ -40,6 +40,12 @@ function install(refusal) {
   globalThis.__host = {
     call(name, params) {
       calls.push({ name, params: JSON.parse(JSON.stringify(params)) })
+
+      for (const field of ['app_id', 'table_name', 'field_name']) {
+        if (typeof params.target?.[field] !== 'string' || params.target[field].trim() === '')
+          return { ok: false, error: { message: `Target ${field} is required and cannot be empty` } }
+      }
+
       if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(params.source.bytes))
         return { ok: false, error: { message: 'Invalid base64 bytes' } }
 
@@ -118,6 +124,16 @@ test('an empty ArrayBuffer is refused before calling the host', async () => {
   assert.equal(calls.length, 0)
 })
 
+test('an empty target is refused before calling the host', async () => {
+  const calls = install()
+
+  await assert.rejects(
+    storage.uploadBuffer(new Uint8Array([1]), 'statement.pdf', 'application/pdf', {}, context),
+    { message: 'Target app_id is required and cannot be empty' },
+  )
+  assert.equal(calls.length, 0)
+})
+
 test('a nonempty upload propagates a host refusal without retrying', async () => {
   const calls = install('Upload refused')
 
@@ -185,6 +201,12 @@ for (const remainder of [0, 1, 2]) {
     assert.equal(await encoded(bytes), standard(bytes))
   })
 }
+
+test('a buffer larger than one MiB matches the standard encoding', async () => {
+  const bytes = noise(1024 * KIB + 257)
+
+  assert.equal(await encoded(bytes), standard(bytes), 'the entire buffer must be encoded')
+})
 
 test('an ArrayBuffer is encoded as its bytes', async () => {
   const bytes = noise(KIB)
