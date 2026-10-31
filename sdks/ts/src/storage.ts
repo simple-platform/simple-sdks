@@ -1,6 +1,7 @@
 import type { Context, DocumentHandle, ExternalFileSource, StorageTarget } from './types'
 
 import { execute as hostExecute, executeBytes as hostExecuteBytes } from './host'
+import { encodeBase64 } from './internal/base64'
 
 /** The host action that answers a stored file's size. */
 const STAT = 'action:storage/stat'
@@ -67,7 +68,7 @@ export async function uploadBuffer(
   const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer
 
   // Base64-encode at the JSON boundary (JSON.stringify cannot carry raw binary)
-  const base64 = btoa(String.fromCharCode(...bytes))
+  const base64 = encodeBase64(bytes)
 
   const source: ExternalFileSource = { bytes: base64, filename, mime_type: mimeType }
 
