@@ -27,7 +27,7 @@ const source = Buffer.from(bundled.outputFiles[0].text).toString('base64')
 // A server action's runtime has none of these, so an SDK that reaches for one
 // fails here the way it fails in an action. The `Buffer` this file compares
 // against is its own import, not the global.
-for (const missing of ['atob', 'btoa', 'Buffer'])
+for (const missing of ['atob', 'btoa', 'Buffer', 'URL'])
   delete globalThis[missing]
 
 const storage = await import(`data:text/javascript;base64,${source}`)
@@ -204,4 +204,30 @@ test('a view encodes its own bytes, not the buffer around it', async () => {
 
   assert.equal(bytes.length, 11)
   assert.equal(await encoded(bytes), standard(bytes))
+})
+
+test('a Uint8Array subclass cannot override the byte offset used for upload', async () => {
+  class OffsetOverride extends Uint8Array {
+    get byteOffset() { return 0 }
+  }
+
+  const bytes = new OffsetOverride(Uint8Array.of(65, 66).buffer, 1, 1)
+
+  assert.equal(await encoded(bytes), 'Qg==')
+})
+
+test('a Uint8Array subclass cannot override the byte length used for upload', async () => {
+  class LengthOverride extends Uint8Array {
+    get byteLength() { return 0 }
+  }
+
+  assert.equal(await encoded(new LengthOverride([1])), 'AQ==')
+})
+
+test('a view from another realm encodes only its own bytes', async () => {
+  const bytes = runInNewContext('new Uint8Array([65, 66, 67]).subarray(1, 2)')
+
+  assert.equal(bytes instanceof Uint8Array, false)
+  assert.equal(ArrayBuffer.isView(bytes), true)
+  assert.equal(await encoded(bytes), 'Qg==')
 })

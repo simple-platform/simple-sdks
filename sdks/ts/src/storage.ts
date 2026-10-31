@@ -65,9 +65,11 @@ export async function uploadBuffer(
   if (!target.field_name || target.field_name.trim() === '')
     throw new Error('Target field_name is required and cannot be empty')
 
-  const bytes = ArrayBuffer.isView(buffer)
-    ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-    : new Uint8Array(buffer)
+  const bytes = buffer instanceof Uint8Array
+    ? buffer
+    : ArrayBuffer.isView(buffer)
+      ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+      : new Uint8Array(buffer)
 
   if (bytes.length === 0)
     throw new Error('An upload needs at least one byte, and this buffer is empty.')
