@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
 
 import { build } from 'esbuild'
 
@@ -33,14 +34,20 @@ const storage = await import(`data:text/javascript;base64,${source}`)
 
 // A host that keeps what it is asked and answers as the platform does. The
 // parameters are recorded as JSON, the way the runtime sends them.
-function install() {
+function install(refusal) {
   const calls = []
 
   globalThis.__host = {
     call(name, params) {
       calls.push({ name, params: JSON.parse(JSON.stringify(params)) })
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(params.source.bytes))
+        return { ok: false, error: { message: 'Invalid base64 bytes' } }
+
       if (Buffer.from(params.source.bytes, 'base64').length === 0)
         return { ok: false, error: { message: 'Decoded bytes are empty' } }
+
+      if (refusal && calls.length === 1)
+        return { ok: false, error: { message: refusal } }
 
       return { data: documentHandle, ok: true }
     },
@@ -101,6 +108,37 @@ test('an empty buffer is refused before calling the host', async () => {
   assert.equal(calls.length, 0)
 })
 
+test('an empty ArrayBuffer is refused before calling the host', async () => {
+  const calls = install()
+
+  await assert.rejects(
+    storage.uploadBuffer(new ArrayBuffer(0), 'statement.pdf', 'application/pdf', target, context),
+    { message: 'An upload needs at least one byte, and this buffer is empty.' },
+  )
+  assert.equal(calls.length, 0)
+})
+
+test('a nonempty upload propagates a host refusal without retrying', async () => {
+  const calls = install('Upload refused')
+
+  await assert.rejects(
+    storage.uploadBuffer(new Uint8Array([102]), 'statement.pdf', 'application/pdf', target, context),
+    { message: 'Upload refused' },
+  )
+  assert.equal(calls.length, 1)
+})
+
+test('the host refuses base64 without required padding', async () => {
+  const calls = install()
+
+  await assert.rejects(
+    storage.uploadExternal({ bytes: 'Zg', filename: 'statement.pdf', mime_type: 'application/pdf' }, target, context),
+    { message: 'Invalid base64 bytes' },
+  )
+  assert.equal(calls.length, 1)
+  assert.equal(await encoded(new Uint8Array([102])), 'Zg==')
+})
+
 // The standard's own test vectors, which pin the alphabet and the padding
 // without trusting any other encoder.
 test('bytes are sent in the standard alphabet with standard padding', async () => {
@@ -152,6 +190,13 @@ test('an ArrayBuffer is encoded as its bytes', async () => {
   const bytes = noise(KIB)
 
   assert.equal(await encoded(bytes.buffer), standard(bytes))
+})
+
+test('an ArrayBuffer from another realm is encoded as its bytes', async () => {
+  const buffer = runInNewContext('new Uint8Array([102, 111, 111]).buffer')
+
+  assert.equal(buffer instanceof ArrayBuffer, false)
+  assert.equal(await encoded(buffer), 'Zm9v')
 })
 
 test('a view encodes its own bytes, not the buffer around it', async () => {
