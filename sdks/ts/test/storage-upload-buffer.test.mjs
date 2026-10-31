@@ -22,13 +22,14 @@ const bundled = await build({
 })
 
 const source = Buffer.from(bundled.outputFiles[0].text).toString('base64')
-const storage = await import(`data:text/javascript;base64,${source}`)
 
 // A server action's runtime has none of these, so an SDK that reaches for one
 // fails here the way it fails in an action. The `Buffer` this file compares
 // against is its own import, not the global.
 for (const missing of ['atob', 'btoa', 'Buffer'])
   delete globalThis[missing]
+
+const storage = await import(`data:text/javascript;base64,${source}`)
 
 // A host that keeps what it is asked and answers as the platform does. The
 // parameters are recorded as JSON, the way the runtime sends them.
@@ -38,6 +39,9 @@ function install() {
   globalThis.__host = {
     call(name, params) {
       calls.push({ name, params: JSON.parse(JSON.stringify(params)) })
+      if (Buffer.from(params.source.bytes, 'base64').length === 0)
+        return { ok: false, error: { message: 'Decoded bytes are empty' } }
+
       return { data: documentHandle, ok: true }
     },
     cast() {},
@@ -53,6 +57,7 @@ async function encoded(bytes) {
 
   await storage.uploadBuffer(bytes, 'statement.pdf', 'application/pdf', target, context)
 
+  assert.equal(calls.length, 1)
   return calls[0].params.source.bytes
 }
 
@@ -86,6 +91,16 @@ test('an upload calls the host once and answers with its handle', async () => {
   assert.deepEqual(answered, documentHandle)
 })
 
+test('an empty buffer is refused before calling the host', async () => {
+  const calls = install()
+
+  await assert.rejects(
+    storage.uploadBuffer(new Uint8Array(), 'statement.pdf', 'application/pdf', target, context),
+    { message: 'An upload needs at least one byte, and this buffer is empty.' },
+  )
+  assert.equal(calls.length, 0)
+})
+
 // The standard's own test vectors, which pin the alphabet and the padding
 // without trusting any other encoder.
 test('bytes are sent in the standard alphabet with standard padding', async () => {
@@ -107,7 +122,7 @@ test('bytes are sent in the standard alphabet with standard padding', async () =
 })
 
 test('every short length matches the standard encoding', async () => {
-  for (let length = 0; length <= 96; length++) {
+  for (let length = 1; length <= 96; length++) {
     const bytes = noise(length)
 
     assert.equal(await encoded(bytes), standard(bytes), `${length} bytes`)

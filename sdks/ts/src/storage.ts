@@ -67,6 +67,9 @@ export async function uploadBuffer(
 
   const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer
 
+  if (bytes.length === 0)
+    throw new Error('An upload needs at least one byte, and this buffer is empty.')
+
   // Base64-encode at the JSON boundary (JSON.stringify cannot carry raw binary)
   const base64 = encodeBase64(bytes)
 
