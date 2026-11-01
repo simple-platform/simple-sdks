@@ -203,13 +203,16 @@ loaded records. Changing `refreshKey` invalidates this collection's record/count
 summary cache without remounting the view or discarding sort/filter state.
 Platform Inbox shares search, empty/error/retry behavior but remains platform-only.
 
-`simple.ui.newRecord.open({ appId, tableName, defaults? })` opens the standard
-platform form and resolves to the saved record reference or `null` on cancellation.
+`simple.ui.createRecord.open({ appId, tableName, defaults? })` opens the standard
+platform form and resolves to the saved record reference or `null` on cancellation
+(`simple.ui.newRecord.open` is retained as an alias for backwards compatibility).
 `simple.ui.panel.open({ kind: 'record', appId, tableName, recordId })` opens a
 standard record (including its configured Record Space), while
 `simple.ui.panel.open({ kind: 'space', spaceId })` opens an app-owned Space for
-custom workflows. `panel.close(id)` closes a panel owned by that connection.
-These APIs require negotiated host UI transport and return `unavailable` only
+custom workflows. Awaiting `panel.open()` settles when the panel closes (matching modal lifecycle),
+resolving to `{ closed: true, id }`. `panel.close(id?)` closes a panel owned by that connection.
+The drawer panel renders without overlapping header close buttons, allowing dismissal via backdrop
+or Escape. These APIs require negotiated host UI transport and return `unavailable` only
 when invoked without it. The host owns the visible source label, modal/panel
 chrome, permission checks, mobile drawer, and session cleanup; arbitrary HTML,
 remote URLs, or parent DOM access are not accepted by this contract.
