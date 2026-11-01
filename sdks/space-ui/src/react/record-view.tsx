@@ -197,8 +197,6 @@ function RecordViewAdapter(props: GenericRecordViewProps) {
 
     const mount = async () => {
       try {
-        const currentProps = propsRef.current
-        validateRecordViewProps(currentProps)
         if (bridge.runtime) {
           await loadRuntime(bridge.runtime)
         }
@@ -211,6 +209,8 @@ function RecordViewAdapter(props: GenericRecordViewProps) {
           return
         }
 
+        const currentProps = propsRef.current
+        validateRecordViewProps(currentProps)
         element = document.createElement('simple-record-view') as RuntimeRecordViewElement
         element.style.display = 'block'
         element.style.width = '100%'

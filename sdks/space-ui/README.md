@@ -155,6 +155,9 @@ cross-framework contract.
 
 `RecordForm` is the default choice for a Record Space that wants the complete
 Simple record experience without rebuilding it.
+These managed component examples assume a Vite Space with
+`VITE_SIMPLE_HOST_ORIGIN` set to its exact trusted HTTP(S) host origin. The SDK
+does not infer that origin from `document.referrer`.
 
 Load the stylesheet as described in [Loading the stylesheet](#loading-the-stylesheet)
 before using this example.
@@ -165,7 +168,8 @@ import { connect } from '@simpleplatform/sdk/space'
 import { RecordForm } from '@simpleplatform/ui-kit/react'
 import { useEffect, useState } from 'react'
 
-const client = connect({ targetOrigin: new URL(document.referrer).origin })
+const targetOrigin = import.meta.env.VITE_SIMPLE_HOST_ORIGIN
+const client = connect({ targetOrigin })
 
 export function App() {
   const [record, setRecord] = useState<RecordHandle | null>(null)
@@ -264,7 +268,8 @@ import { connect } from '@simpleplatform/sdk/space'
 import { RecordActivity } from '@simpleplatform/ui-kit/react'
 import { useEffect, useState } from 'react'
 
-const client = connect({ targetOrigin: new URL(document.referrer).origin })
+const targetOrigin = import.meta.env.VITE_SIMPLE_HOST_ORIGIN
+const client = connect({ targetOrigin })
 
 export function ActivityView() {
   const [record, setRecord] = useState<RecordHandle | null>(null)
@@ -373,9 +378,11 @@ node scripts/sync-record-view-contract.mjs ../simple --check
 Commit both copies together. The corpus covers Board lane paging and numeric summaries.
 
 Public TypeScript names omit a version suffix. The saved `views` preset-set
-envelope and tile layouts retain their `version: 1` fields. Filters use the
-same native `RecordWhere` object accepted by GraphQL; there is no filter-specific
-version or predicate-tree wrapper.
+envelope and tile layouts use `version: 1`. Preset and controlled filters require
+the native `RecordWhere` object accepted by GraphQL; shorthand and predicate-tree
+filters are rejected without conversion. The UI Kit checks shape, and the
+platform validates fields and operators. General query and URL shorthand
+normalization remains separate from the saved preset contract.
 
 ```tsx
 import type { SimpleClient } from '@simpleplatform/sdk/space'

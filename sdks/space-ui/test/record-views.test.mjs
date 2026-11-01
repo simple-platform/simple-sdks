@@ -186,6 +186,8 @@ test('validates database table record sources and references', () => {
 test('keeps native RecordWhere unchanged for host validation and validates record view references', () => {
   const filter = { _and: [{ status: { _in: ['open', 'pending'] } }, { _not: { archived: { _eq: true } } }] }
   assert.deepEqual(contracts.validateListPreset({ ...sampleListPreset, filter }).filter, filter)
+  assert.throws(() => contracts.validateListPreset({ ...sampleListPreset, filter: { status: 'open' } }), /RecordWhere/i)
+  assert.throws(() => contracts.validateListPreset({ ...sampleListPreset, filter: { 'account.name': { _eq: 'Acme' } } }), /dotted relationship paths/i)
   assert.deepEqual(contracts.validateViewItemReference({ appId: 'acme.crm', kind: 'record', recordId: 'REC1', tableName: 'ticket' }), {
     appId: 'acme.crm',
     kind: 'record',
@@ -468,6 +470,7 @@ test('validates ViewPresetSet consistency', () => {
     version: 1,
   }
   assert.deepEqual(contracts.validateViewPresetSet(validSet), validSet)
+  assert.throws(() => contracts.validateViewPresetSet({ ...validSet, version: 2 }), /version must be 1/i)
 
   assert.throws(() => contracts.validateViewPresetSet({
     defaultPresetId: sampleListPreset.id,
@@ -530,9 +533,12 @@ test('validates ControlledFilterProps ownership and preserves native filter data
   assert.equal(contracts.isControlledFilterProps({}), true)
   assert.equal(contracts.isControlledFilterProps({ filter: undefined, onFilterChange: () => {} }), true)
   assert.equal(contracts.isControlledFilterProps({ filter: { x: { _eq: 'sample' } }, onFilterChange: () => {} }), true)
+  assert.equal(contracts.isControlledFilterProps({ filter: { x: 'sample' }, onFilterChange: () => {} }), false)
+  assert.equal(contracts.isControlledFilterProps({ filter: { 'account.name': { _eq: 'Acme' } }, onFilterChange: () => {} }), false)
   const filter = { _not: { _or: [{ status: { _in: ['open', 'pending'] } }, { archived: { _eq: true } }] } }
   assert.deepEqual(contracts.validateControlledFilterProps({ filter, onFilterChange: () => {} }).filter, filter)
-  assert.deepEqual(contracts.validateControlledFilterProps({ filter: { x: 'sample' }, onFilterChange: () => {} }).filter, { x: 'sample' })
+  assert.throws(() => contracts.validateControlledFilterProps({ filter: { x: 'sample' }, onFilterChange: () => {} }), /RecordWhere/i)
+  assert.throws(() => contracts.validateControlledFilterProps({ filter: { 'account.name': { _eq: 'Acme' } }, onFilterChange: () => {} }), /dotted relationship paths/i)
   assert.deepEqual(contracts.validateControlledFilterProps({ filter: undefined }), {})
   assert.throws(() => contracts.validateControlledFilterProps({ onFilterChange: () => {} }), /filter/i)
   assert.throws(() => contracts.validateControlledFilterProps({ filter: undefined, onFilterChange: 'not-a-fn' }), /function/i)
@@ -677,6 +683,42 @@ test('Board mounts <simple-record-view> and binds onMoveRequest', async () => {
 
   await act(async () => root.unmount())
   container.remove()
+})
+
+test('mounts the latest filters, source and callbacks after delayed runtime loading', async () => {
+  let resolveRuntime
+  globalThis.__recordViewRuntimeGate = new Promise((resolve) => {
+    resolveRuntime = resolve
+  })
+  const runtime = {
+    url: 'data:text/javascript,await globalThis.__recordViewRuntimeGate;export const version="delayed-view-test"',
+    version: 'delayed-view-test',
+  }
+  const client = createMockClient({ runtime })
+  const container = createConnectedContainer()
+  const root = createRoot(container)
+  const filter = { title: { _contains: 'updated' } }
+  const source = { ...sampleSource, tableId: 'TBL000002' }
+  const onFilterChange = () => {}
+  try {
+    await act(async () => root.render(createElement(react.ListView, { client, preset: sampleListPreset, source: sampleSource })))
+    assert.equal(container.querySelector('simple-record-view'), null)
+    await act(async () => root.render(createElement(react.ListView, { client, filter, onFilterChange, preset: sampleListPreset, source })))
+    await act(async () => {
+      resolveRuntime()
+      await import(runtime.url)
+    })
+    const element = container.querySelector('simple-record-view')
+    assert.ok(element)
+    assert.deepEqual(element.filter, filter)
+    assert.deepEqual(element.source, source)
+    assert.strictEqual(element.onFilterChange, onFilterChange)
+  }
+  finally {
+    await act(async () => root.unmount())
+    container.remove()
+    delete globalThis.__recordViewRuntimeGate
+  }
 })
 
 test('updates props on mounted <simple-record-view> element without remounting', async () => {
