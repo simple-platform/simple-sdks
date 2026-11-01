@@ -17,18 +17,3 @@ test('declares the dark color scheme on the dark class', async () => {
 
   assert.match(darkDefaults, /(?:^|[;\n])\s*color-scheme:\s*dark;/)
 })
-
-test('branding colors follow the canonical theme before SDK negotiation', async () => {
-  const theme = await readFile(new URL('../theme.css', import.meta.url), 'utf8')
-  const lightDefaults = theme.match(/:root\s*\{([^}]*)\}/)?.[1] ?? ''
-  const aliases = {
-    danger: 'status-danger',
-    info: 'status-info',
-    primary: 'action-primary',
-    success: 'status-success',
-    warning: 'status-warning',
-  }
-  for (const [alias, source] of Object.entries(aliases)) {
-    assert.ok(lightDefaults.includes(`--branding-${alias}: var(--simple-color-${source});`))
-  }
-})

@@ -1,7 +1,7 @@
 import type { Tenant, User } from '../types.js'
 import type { SimpleActionsClient } from './actions.js'
 import type { SimpleDocumentsClient } from './documents.js'
-import type { SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
+import type { SimpleCreateRecordClient, SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
 import type { SimpleNavigationClient, SpaceNavigationTransport } from './navigation.js'
 import type { SpaceTransport } from './protocol.js'
 import type {
@@ -159,6 +159,7 @@ export interface SimpleClient {
   records: SimpleRecordsClient
   tasks: SimpleTasksClient
   ui: {
+    createRecord: SimpleCreateRecordClient
     newRecord: SimpleNewRecordClient
     panel: SimplePanelClient
     header: SimpleHeaderClient

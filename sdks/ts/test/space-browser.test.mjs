@@ -10,7 +10,7 @@ import {
 } from '../dist/space/index.js'
 import { applyThemeSnapshot, parseThemeSnapshot } from '../dist/space/theme.js'
 
-test('branding aliases use fixed semantic references and reject inbound overrides', () => {
+test('theme snapshot accepts only --simple- tokens and rejects arbitrary overrides', () => {
   const snapshot = parseThemeSnapshot({
     mode: 'light',
     tokens: {
@@ -20,18 +20,18 @@ test('branding aliases use fixed semantic references and reject inbound override
     },
     version: 1,
   })
-  assert.equal(snapshot.tokens['--branding-primary'], 'var(--simple-color-action-primary)')
+  assert.equal(snapshot.tokens['--simple-color-action-primary'], '#2459a6')
+  assert.equal(snapshot.tokens['--branding-primary'], undefined)
   assert.equal(snapshot.tokens['--branding-custom'], undefined)
   const tokens = new Map()
   const applied = new Set()
   const root = { style: { removeProperty: name => tokens.delete(name), setProperty: (name, value) => tokens.set(name, value) } }
   applyThemeSnapshot(root, applied, snapshot)
-  assert.equal(tokens.get('--branding-primary'), 'var(--simple-color-action-primary)')
   assert.equal(tokens.get('--simple-color-action-primary'), '#2459a6')
+  assert.equal(tokens.get('--branding-primary'), undefined)
   applyThemeSnapshot(root, applied, parseThemeSnapshot({ mode: 'dark', tokens: { '--simple-color-action-primary': '#b9d4ff' }, version: 1 }))
   assert.equal(tokens.get('--simple-color-action-primary'), '#b9d4ff')
-  assert.equal(tokens.get('--branding-primary'), 'var(--simple-color-action-primary)')
-  assert.equal(tokens.size, 6)
+  assert.equal(tokens.size, 1)
 })
 
 const getRecordFormBridge = record => record[Symbol.for('@simpleplatform/sdk/space/managed-record-ui/v1')]
@@ -2219,14 +2219,14 @@ test('negotiates host UI for standalone Spaces without requiring a route record'
   const { request } = port.sent[0]
   assert.equal(request.operation, 'ui.panel.open')
   assert.deepEqual(request.payload, { kind: 'space', spaceId: 'SPC000003' })
-  port.emit({ response: { ok: true, protocol: 1, requestId: request.requestId, result: { id: 'panel-1' } }, type: 'SPACE_PROTOCOL_RESPONSE' })
-  assert.deepEqual(await opened, { id: 'panel-1' })
+  port.emit({ response: { ok: true, protocol: 1, requestId: request.requestId, result: { closed: true, id: 'panel-1' } }, type: 'SPACE_PROTOCOL_RESPONSE' })
+  assert.deepEqual(await opened, { closed: true, id: 'panel-1' })
 })
 
 test('keeps host UI unavailable when the host did not negotiate it', async () => {
   const port = new FakePort()
   const simple = await connectWithHost(port, { kind: 'standalone' }, {})
-  await assert.rejects(() => simple.ui.newRecord.open({ appId: 'app', tableName: 'table' }), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
+  await assert.rejects(() => simple.ui.createRecord.open({ appId: 'app', tableName: 'table' }), error => error instanceof SpaceProtocolError && error.code === 'unavailable')
   assert.equal(port.sent.length, 0)
 })
 
@@ -2242,25 +2242,27 @@ function setup(result) {
   return { requests, simple: createSimpleClient({ hostUiTransport: transport, nextRequestId: () => `request-${requests.length + 1}` }) }
 }
 
-test('new-record form forwards defaults and returns the saved reference or cancellation', async () => {
+test('create-record form forwards defaults and returns the saved reference or cancellation', async () => {
   const saved = setup(reference)
   const options = { appId: reference.appId, defaults: { enabled: false, metadata: { source: 'fixture' }, name: 'New item' }, tableName: reference.tableName }
-  assert.deepEqual(await saved.simple.ui.newRecord.open(options), reference)
-  assert.deepEqual(saved.requests, [{ operation: 'ui.newRecord.open', payload: options, protocol: 1, requestId: 'request-1' }])
+  assert.deepEqual(await saved.simple.ui.createRecord.open(options), reference)
+  assert.deepEqual(saved.requests, [{ operation: 'ui.createRecord.open', payload: options, protocol: 1, requestId: 'request-1' }])
   const cancelled = setup(null)
-  assert.equal(await cancelled.simple.ui.newRecord.open({ appId: reference.appId, tableName: reference.tableName }), null)
+  assert.equal(await cancelled.simple.ui.createRecord.open({ appId: reference.appId, tableName: reference.tableName }), null)
 })
 
-test('record and app-owned Space panels forward content and support closing by returned id', async () => {
-  const { requests, simple } = setup(request => request.operation === 'ui.panel.close' ? true : { id: 'panel-1' })
+test('record and app-owned Space panels forward content and support closing by returned id or omitting id', async () => {
+  const { requests, simple } = setup(request => request.operation === 'ui.panel.close' ? true : { closed: true, id: 'panel-1' })
   const content = { ...reference, kind: 'record' }
-  assert.deepEqual(await simple.ui.panel.open(content), { id: 'panel-1' })
-  assert.deepEqual(await simple.ui.panel.open({ kind: 'space', spaceId: 'SPC000003' }), { id: 'panel-1' })
+  assert.deepEqual(await simple.ui.panel.open(content), { closed: true, id: 'panel-1' })
+  assert.deepEqual(await simple.ui.panel.open({ kind: 'space', spaceId: 'SPC000003' }), { closed: true, id: 'panel-1' })
   assert.equal(await simple.ui.panel.close('panel-1'), true)
+  assert.equal(await simple.ui.panel.close(), true)
   assert.deepEqual(requests.map(request => [request.operation, request.payload]), [
     ['ui.panel.open', content],
     ['ui.panel.open', { kind: 'space', spaceId: 'SPC000003' }],
     ['ui.panel.close', { id: 'panel-1' }],
+    ['ui.panel.close', {}],
   ])
   assert.equal(await setup(false).simple.ui.panel.close('panel-already-closed'), false)
 })
@@ -2276,7 +2278,7 @@ test('rejects invalid identifiers, content, and oversized or non-JSON defaults b
     { appId: 'app', defaults: { value: () => {} }, tableName: 'table' },
     { appId: 'app', defaults: { value: Number.NaN }, tableName: 'table' },
     { appId: 'app', defaults: { value: 'x'.repeat(65536) }, tableName: 'table' },
-  ]) await assert.rejects(() => simple.ui.newRecord.open(options), isError('invalid_request'))
+  ]) await assert.rejects(() => simple.ui.createRecord.open(options), isError('invalid_request'))
   for (const content of [null, { kind: 'url', url: 'https://example.com' }, { html: '<form />', kind: 'html' }, { ...reference, kind: 'record', recordId: '' }, { kind: 'space', spaceId: 'SPC/1' }])
     await assert.rejects(() => simple.ui.panel.open(content), isError('invalid_request'))
   await assert.rejects(() => simple.ui.panel.close(''), isError('invalid_request'))
@@ -2285,8 +2287,8 @@ test('rejects invalid identifiers, content, and oversized or non-JSON defaults b
 
 test('rejects malformed successful results for all three host operations', async () => {
   for (const result of [undefined, false, {}, { ...reference, recordId: '' }])
-    await assert.rejects(() => setup(result).simple.ui.newRecord.open({ appId: reference.appId, tableName: reference.tableName }), isError('invalid_response'))
-  for (const result of [undefined, null, {}, { id: '' }])
+    await assert.rejects(() => setup(result).simple.ui.createRecord.open({ appId: reference.appId, tableName: reference.tableName }), isError('invalid_response'))
+  for (const result of [undefined, null, {}, { id: '' }, { closed: false, id: 'panel-1' }])
     await assert.rejects(() => setup(result).simple.ui.panel.open({ ...reference, kind: 'record' }), isError('invalid_response'))
   for (const result of [undefined, null, 1, 'true'])
     await assert.rejects(() => setup(result).simple.ui.panel.close('panel-1'), isError('invalid_response'))
@@ -2294,7 +2296,7 @@ test('rejects malformed successful results for all three host operations', async
 
 test('unnegotiated transport fails explicitly, and host authorization errors remain unchanged', async () => {
   const unavailable = createSimpleClient({})
-  await assert.rejects(() => unavailable.ui.newRecord.open({ appId: 'app', tableName: 'table' }), isError('unavailable'))
+  await assert.rejects(() => unavailable.ui.createRecord.open({ appId: 'app', tableName: 'table' }), isError('unavailable'))
   await assert.rejects(() => unavailable.ui.panel.open({ kind: 'space', spaceId: 'SPC000003' }), isError('unavailable'))
   await assert.rejects(() => unavailable.ui.panel.close('panel-1'), isError('unavailable'))
   const simple = createSimpleClient({ hostUiTransport: { request: async request => ({ error: { code: 'forbidden', message: 'This Space cannot open that content.' }, ok: false, protocol: 1, requestId: request.requestId }) } })

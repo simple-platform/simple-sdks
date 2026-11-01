@@ -73,7 +73,7 @@ export type {
 export { HOST_UI_PROTOCOL_VERSION } from './host-ui.js'
 
 export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
-export type { NewRecordOptions, PanelContent, SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
+export type { CreateRecordOptions, NewRecordOptions, PanelContent, SimpleCreateRecordClient, SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
 
 interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
