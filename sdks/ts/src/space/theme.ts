@@ -65,6 +65,13 @@ export interface SpaceFontState {
 }
 
 const FAMILY_NAME_PATTERN = /^[A-Z0-9]+(?:[ -][A-Z0-9]+)*$/i
+const BRANDING_ALIAS_SOURCES: Record<string, string> = {
+  '--branding-danger': '--simple-color-status-danger',
+  '--branding-info': '--simple-color-status-info',
+  '--branding-primary': '--simple-color-action-primary',
+  '--branding-success': '--simple-color-status-success',
+  '--branding-warning': '--simple-color-status-warning',
+}
 
 export function parseFontDescriptor(value: unknown): SpaceThemeFontDescriptor | null {
   if (!isObjectRecord(value))
@@ -153,6 +160,11 @@ export function parseThemeSnapshot(value: unknown): SpaceThemeSnapshot | null {
     if (name.startsWith('--simple-') && typeof tokenValue === 'string') {
       acceptedTokens[name] = tokenValue
     }
+  }
+  // Branding aliases are fixed references to the host's validated semantic colors.
+  // Never apply a caller-supplied --branding value or widen the theme token namespace.
+  for (const [alias, source] of Object.entries(BRANDING_ALIAS_SOURCES)) {
+    acceptedTokens[alias] = `var(${source})`
   }
 
   let acceptedFonts: SpaceThemeFonts | undefined

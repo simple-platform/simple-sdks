@@ -1,5 +1,5 @@
 - **Status:** The Space SDK, managed React RecordForm/RecordActivity, record-space controls, signed-in viewer context, and database-backed ListView, DataGrid, and Board are implemented in the coordinated worktrees. Inbox remains platform-only. Managed view publication requires SDK `^4.1.0` for the canonical GraphQL `RecordWhere` type; 4.0.0 remains the first published release with the compatible bridge. SDK 3.2.0 was never released and published 3.1.0 lacks the bridge. The current collection-view contract, evidence, and release limits are in simple/architecture_history/space-views.md. Generic framework-neutral Activity APIs, subscriptions, and public host renderer internals remain deferred.
-- **Last updated:** 2026-10-25
+- **Last updated:** 2026-10-29
 - **Scope:** The browser-safe, framework-neutral SDK surface used by embedded Simple Spaces, its managed React UI entry point, and its future portal-compatible transport boundary.
 - **Out of scope:** Public form schemas/editor registries, host record runtime internals, record-page layout, Space selection, customer-Space migration, and public-portal server implementation.
 
@@ -193,6 +193,35 @@ binds safe fields; the host retains typography, focus, theme, media delivery,
 responsive behavior, and accessibility. A list tile may differ from the same
 record's compact reference or future Board card because each surface owns its
 layout choice.
+
+### Collection callbacks, refresh, and host UI — implemented in the isolated upgrade worktrees
+
+Managed List, DataGrid, and Board accept `toolbarActions`, `rowActions`,
+`onSelectionChange`, and `refreshKey`. The host renders bounded action buttons,
+while callbacks remain app code and receive identity-only references for selected
+loaded records. Changing `refreshKey` invalidates this collection's record/count/
+summary cache without remounting the view or discarding sort/filter state.
+Platform Inbox shares search, empty/error/retry behavior but remains platform-only.
+
+`simple.ui.newRecord.open({ appId, tableName, defaults? })` opens the standard
+platform form and resolves to the saved record reference or `null` on cancellation.
+`simple.ui.panel.open({ kind: 'record', appId, tableName, recordId })` opens a
+standard record (including its configured Record Space), while
+`simple.ui.panel.open({ kind: 'space', spaceId })` opens an app-owned Space for
+custom workflows. `panel.close(id)` closes a panel owned by that connection.
+These APIs require negotiated host UI transport and return `unavailable` only
+when invoked without it. The host owns the visible source label, modal/panel
+chrome, permission checks, mobile drawer, and session cleanup; arbitrary HTML,
+remote URLs, or parent DOM access are not accepted by this contract.
+
+The October 27 checkout exposed a base cross-repository mismatch: UI Fixture and
+the platform used `standard`/`media`/`message`, `subtitleFieldNames`, avatar visuals,
+`badgeStyle`, and native filters, while SDK source still validated seven older
+presentations, a scalar subtitle, and `FilterExpression`. This coordinated change
+aligns managed SDK props with the platform and copies the shared contract corpus.
+Older FilterExpression decisions below are historical; the current UI Kit does not
+export a second filter type, validator, or translator. Shipping requires the
+platform and SDK/UI Kit to be released together.
 
 An embedded Space does not need a record route to use the SDK. Record protocol negotiation is an optional capability of the general browser transport.
 
@@ -1029,7 +1058,7 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Reason:** A second public predicate tree and per-surface converters can change operands or lose nested conditions. The database already owns operator and operand semantics.
 - **Boundary:** The SDK reuses the GraphQL `RecordWhere` type and passes filters to the host unchanged. The platform owns the single runtime structural/schema validator before a query; authorization remains server-owned. Backend-relative date evaluation is deferred; current UI date shortcuts become absolute bounds.
 - **Supersedes:** The October 11/12 managed-view decisions that described filters as FilterExpression or FilterExpressionV1.
-- **Current architecture:** See simple/architecture_history/filter-standardization.md and simple/architecture_history/space-views.md.
+- **Current architecture:** See simple/architecture_history/filter-standardization-implementation.md, simple/architecture_history/filter-standardization.md (historical proposal), and simple/architecture_history/space-views.md.
 
 ### 2026-10-25 — Require SDK GraphQL RecordWhere type for the UI Kit
 
@@ -1048,6 +1077,13 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Local integration:** UI Fixtures uses an existing generated UI Kit contract
   build with `RecordWhere`; this checkout's source now incorporates the
   canonical `RecordWhere` and 3-tile presentations.
+
+### 2026-10-27 — Add collection controls and framework-neutral host forms/panels
+
+- **Decision:** Keep collection search, retry/empty states, and selected-record execution in the shared host renderer. Add identity-only callback actions and a refresh key to managed views. Add independently negotiated standard new-record and host-panel capabilities under `simple.ui`.
+- **Reason:** Space builders can compose the existing platform workflows without copying forms, list machinery, or overlay behavior. Record/Space panel content provides extensibility without accepting arbitrary HTML or remote URLs in trusted chrome.
+- **Contract correction:** Align the managed SDK contract with the platform tile/native-filter format and SDK `^4.1.0` GraphQL type. The platform remains the runtime structural/schema validator; the UI Kit does not duplicate it. Earlier managed FilterExpression/legacy tile format assumptions remain historical.
+- **Validation before main reconciliation:** The native shared corpus and managed adapter suite passed 79 tests; host UI SDK input/result/transport tests passed 5 tests. Tile & View Studio passed typecheck, 7 tests, and production build, exercising create/cancel refresh, selected identities, and host panel calls. Re-run release gates against the reconciled main bases before publication.
 
 ### 2026-10-29 — Proposed a managed-view preset version bump (superseded)
 
