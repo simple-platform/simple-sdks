@@ -132,10 +132,7 @@ iframe, separate view protocol, caller-supplied row payload, or direct database
 client. Platform Inbox presets remain in the shared serialized Custom View
 contract, but only platform collection routes render them.
 
-Type names omit a version suffix. The saved `views` preset-set envelope and tile
-layouts keep their `version: 1` fields so stored JSON can be versioned independently
-from SDK identifiers. Filters use the native `RecordWhere` object and have no
-filter-specific version.
+Type names omit a version suffix. The saved `views` preset-set envelope and tile layouts use `version: 1`. Preset and controlled filters require native `RecordWhere` object syntax and have no filter-specific version. The UI Kit checks shape; the platform validates fields and operators. General read-path shorthand normalization is not part of the saved preset contract.
 
 The source is a database metadata identity:
 
@@ -1018,7 +1015,7 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 
 - **Decision:** Export managed-view contracts and validators with stable unversioned names such as `DataGridPreset` and `validateDataGridPreset`. Keep `V1` suffixes in internal SDK implementation symbols only.
 - **Reason:** Public names describe the API concept; the serialized JSON already carries its format version.
-- **Boundary:** Saved view, filter, and tile objects keep `version: 1`. This is a source-level and export-name change only; existing serialized Custom View data remains readable.
+- **Boundary:** At that time saved view presets and tile objects used `version: 1`. The preset-set envelope decision was superseded on 2026-10-29; tile layout version 1 remains current.
 
 ### 2026-10-25 — Require the first published SDK with the managed UI bridge
 
@@ -1039,3 +1036,26 @@ The October 14 browser correction hosted the Space page in a clipped platform su
 - **Decision:** Raise the UI Kit SDK peer floor to `^4.1.0`; managed views import the public `RecordWhere` type from `@simpleplatform/sdk/graphql`.
 - **Reason:** Keeping a second UI Kit filter type would let the consumer package and GraphQL SDK drift independently.
 - **Release order:** Publish the SDK change before the UI Kit release. The host platform remains the runtime filter validator and does not depend on the Space SDK.
+
+### October 27, 2026 — Latest managed-view props after runtime loading
+
+- **Fix:** `sdks/space-ui/src/react/record-view.tsx` reads and validates
+  `propsRef.current` after `loadRuntime()` completes, immediately before mounting.
+  Capturing it before the await could leave records using an initial filter
+  while a dashboard already showed newer filtered aggregates.
+- **Evidence:** A delayed-runtime test first reproduced the stale filter, source,
+  and callback; the fix passes the UI Kit source build and all 121 UI Kit tests.
+- **Local integration:** UI Fixtures uses an existing generated UI Kit contract
+  build with `RecordWhere`; this checkout's source now incorporates the
+  canonical `RecordWhere` and 3-tile presentations.
+
+### 2026-10-29 — Proposed a managed-view preset version bump (superseded)
+
+- **Proposal:** The saved view-set envelope would use `version: 2`; filters use native `RecordWhere` only. The proposal was corrected on 2026-10-30; keep the envelope at version 1.
+- **Retained behavior:** Reject shorthand and the former predicate-tree filter shape without a legacy reader or migration. Update platform validation, SDK validation, fixtures, public docs, and scaffold guidance together.
+- **Reason:** A single persisted filter language keeps Custom Views, Space props, URLs, dashboards, references, and GraphQL variables aligned.
+
+### 2026-10-30 — Keep the saved view-set envelope at version 1
+
+- **Decision:** Keep saved `customization.views` at `version: 1` and require native `RecordWhere` in persisted filters. Tile layouts remain `version: 1`.
+- **Compatibility:** Do not add a compatibility reader or migration for prior filter shapes. General read-path shorthand normalization remains separate from the saved preset contract.

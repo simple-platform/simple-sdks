@@ -275,8 +275,50 @@ const MAX_VIEW_FIELDS = 40
 const MAX_SORT_FIELDS = 5
 const MAX_LANES = 20
 const MAX_LANE_PAGE_SIZE = 50
+const MAX_RECORD_WHERE_DEPTH = 8
+const MAX_RECORD_WHERE_NODES = 100
+const MAX_RECORD_WHERE_ENTRIES = 50
 const SAFE_TILE_ICON_IDS = new Set<string>(RECORD_VIEW_ICON_IDS_V1)
 const isSafeTileIconId = (value: unknown): value is RecordViewIconIdV1 => typeof value === 'string' && SAFE_TILE_ICON_IDS.has(value)
+
+function assertRecordWhereShape(value: unknown, depth = 1, state = { count: 0 }): asserts value is RecordWhere {
+  if (depth > MAX_RECORD_WHERE_DEPTH || ++state.count > MAX_RECORD_WHERE_NODES)
+    throw new RecordViewContractError('RecordWhere is nested too deeply or has too many conditions.')
+  if (!isPlainObject(value))
+    throw new RecordViewContractError('RecordWhere must be an object.')
+
+  const entries = Object.entries(value)
+  if (depth > 1 && entries.length === 0)
+    throw new RecordViewContractError('RecordWhere clauses cannot be empty.')
+  if (entries.length > MAX_RECORD_WHERE_ENTRIES)
+    throw new RecordViewContractError(`RecordWhere can contain at most ${MAX_RECORD_WHERE_ENTRIES} clauses.`)
+
+  for (const [key, condition] of entries) {
+    if (key.includes('.'))
+      throw new RecordViewContractError('Dotted relationship paths must use nested RecordWhere objects.')
+    if (key === '_and' || key === '_or') {
+      if (!Array.isArray(condition) || condition.length === 0 || condition.length > MAX_RECORD_WHERE_ENTRIES)
+        throw new RecordViewContractError(`${key} must contain 1 to ${MAX_RECORD_WHERE_ENTRIES} clauses.`)
+      for (const clause of condition)
+        assertRecordWhereShape(clause, depth + 1, state)
+      continue
+    }
+    if (key === '_not') {
+      assertRecordWhereShape(condition, depth + 1, state)
+      continue
+    }
+    if (!isPlainObject(condition))
+      throw new RecordViewContractError('RecordWhere field conditions must use native operator objects.')
+    if (Object.keys(condition).length === 0)
+      throw new RecordViewContractError('RecordWhere field conditions cannot be empty.')
+
+    for (const [operator, operand] of Object.entries(condition)) {
+      if (operator.startsWith('_') && !['_and', '_or', '_not'].includes(operator))
+        continue
+      assertRecordWhereShape({ [operator]: operand }, depth + 1, state)
+    }
+  }
+}
 export function validateRecordSortV1(value: unknown): RecordSortV1 {
   if (!isPlainObject(value)) {
     throw new RecordViewContractError('Record sort must be an object.')
@@ -478,6 +520,8 @@ function validatePresetBase(value: unknown): RecordViewPresetBaseV1 {
   assertOnlyKeys(value, ['config', 'filter', 'id', 'kind', 'orderBy', 'title'], 'Preset')
   if (value.id.length > 80 || value.title.length > 120)
     throw new RecordViewContractError('Preset id must be at most 80 characters and title at most 120 characters.')
+  if (value.filter !== undefined)
+    assertRecordWhereShape(value.filter)
   const filter = value.filter as RecordWhere | undefined
   const orderBy = validateOrderBy(value.orderBy)
   return {
@@ -801,6 +845,8 @@ export function validateControlledFilterPropsV1(props: unknown): ControlledFilte
   if (typeof props.onFilterChange !== 'function') {
     throw new RecordViewContractError('onFilterChange must be a function.')
   }
+  if (props.filter !== undefined)
+    assertRecordWhereShape(props.filter)
 
   return {
     filter: props.filter as RecordWhere | undefined,

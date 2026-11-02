@@ -128,9 +128,9 @@
   --simple-sidebar-width: 16rem;
   --simple-radius-none: 0;
   --simple-radius-sm: 0.25rem;
-  --simple-radius-md: 0.5rem;
-  --simple-radius-lg: 0.75rem;
-  --simple-radius-xl: 1rem;
+  --simple-radius-md: 0.375rem;
+  --simple-radius-lg: 0.5rem;
+  --simple-radius-xl: 0.75rem;
   --simple-radius-round: 9999px;
   --simple-shadow-none: none;
   --simple-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);

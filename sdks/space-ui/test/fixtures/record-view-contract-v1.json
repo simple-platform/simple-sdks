@@ -632,6 +632,48 @@
             "version": 1
           }
         },
+        "filter": {
+          "title": "plain scalar shorthand"
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "reject scalar filter shorthand",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "standard",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
+        "filter": {
+          "account.name": {
+            "_eq": "Acme"
+          }
+        },
+        "id": "review",
+        "kind": "list",
+        "title": "Review"
+      },
+      "name": "reject dotted relationship path shorthand",
+      "target": "preset"
+    },
+    {
+      "accepted": false,
+      "input": {
+        "config": {
+          "tile": {
+            "presentation": "standard",
+            "titleFieldName": "title",
+            "version": 1
+          }
+        },
         "id": "review",
         "kind": "list",
         "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -1243,11 +1285,11 @@
       "target": "filter"
     },
     {
-      "accepted": false,
+      "accepted": true,
       "input": {
         "title": "plain scalar shorthand"
       },
-      "name": "reject scalar field shorthand",
+      "name": "accept scalar equality shorthand on read paths",
       "target": "filter"
     },
     {

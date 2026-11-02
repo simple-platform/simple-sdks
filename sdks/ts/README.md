@@ -96,7 +96,8 @@ Action/WASM API, so Action code never imports browser globals by accident.
 ```typescript
 import { connect } from '@simpleplatform/sdk/space'
 
-const simple = await connect({ targetOrigin: new URL(document.referrer).origin })
+const targetOrigin = import.meta.env.VITE_SIMPLE_HOST_ORIGIN
+const simple = await connect({ targetOrigin })
 const record = await simple.records.current()
 
 await record.update({ first_name: 'Ada' }) // Stages values and runs update Behavior.
@@ -109,9 +110,9 @@ if (!result.ok) {
 ```
 
 Connect once when the Space starts and reuse the returned client. One embedded iframe has one host MessagePort handshake.
-`targetOrigin` is the host's origin, not a full URL. If the embedding setup
-does not provide a referrer, supply the host origin from the Space's trusted
-configuration.
+`targetOrigin` is the exact HTTP(S) host origin, not a full URL. In a Vite Space,
+set `VITE_SIMPLE_HOST_ORIGIN` from trusted deployment configuration; the SDK
+does not infer it from `document.referrer`.
 
 `simple.records.current()` returns the platform-owned record for the current
 record page. Its handle exposes immutable snapshots, `update(values)`, and
