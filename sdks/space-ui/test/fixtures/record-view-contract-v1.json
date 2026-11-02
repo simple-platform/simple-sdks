@@ -195,10 +195,6 @@
             "visual": {
               "fallbackIconId": "lucide:circle-question-mark",
               "fieldName": "status",
-              "iconsByValue": {
-                "done": "lucide:check",
-                "todo": "lucide:clock-3"
-              },
               "kind": "enum-icon"
             }
           }
@@ -317,11 +313,8 @@
             "titleFieldName": "title",
             "version": 1,
             "visual": {
-              "fallbackIconId": "lucide:circle-question-mark",
+              "fallbackIconId": "lucide:arbitrary",
               "fieldName": "status",
-              "iconsByValue": {
-                "todo": "lucide:arbitrary"
-              },
               "kind": "enum-icon"
             }
           }
@@ -755,7 +748,7 @@
       "target": "preset"
     },
     {
-      "accepted": true,
+      "accepted": false,
       "input": {
         "config": {
           "tile": {
@@ -875,7 +868,7 @@
         "kind": "list",
         "title": "Review"
       },
-      "name": "enum icon map boundary",
+      "name": "enum icon with iconsByValue rejected",
       "target": "preset"
     },
     {
@@ -1260,7 +1253,9 @@
                     "e": {
                       "f": {
                         "g": {
-                          "h": { "i": "x" }
+                          "h": {
+                            "i": "x"
+                          }
                         }
                       }
                     }
@@ -1305,7 +1300,11 @@
       "input": {
         "_and": [
           {},
-          { "title": { "_eq": "x" } }
+          {
+            "title": {
+              "_eq": "x"
+            }
+          }
         ]
       },
       "name": "reject empty logical branch",

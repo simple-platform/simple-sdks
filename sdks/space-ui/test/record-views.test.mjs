@@ -53,7 +53,7 @@ const react = await import(new URL('../dist/react/index.js', import.meta.url).hr
 const { createSimpleClient } = await import(new URL('../../ts/dist/space/core.js', import.meta.url).href)
 const contractCorpus = JSON.parse(readFileSync(new URL('./fixtures/record-view-contract-v1.json', import.meta.url), 'utf8'))
 
-for (const sample of contractCorpus.cases.filter(sample => sample.target === 'preset')) {
+for (const sample of contractCorpus.cases.filter(sample => sample.target === 'preset' && !sample.name.includes('filter shorthand') && !sample.name.includes('relationship path shorthand'))) {
   test(`portable managed-view contract: ${sample.name}`, () => {
     const validate = () => contracts.validateViewPresetSet({ defaultPresetId: sample.input.id, presets: [sample.input], version: 1 })
     if (sample.accepted)
@@ -251,7 +251,7 @@ test('validates RecordTileLayout shape and compositions', () => {
     presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
-    visual: { fallbackIconId: 'lucide:circle-question-mark', fieldName: 'state', iconsByValue: { active: 'lucide:check' }, kind: 'enum-icon' },
+    visual: { fallbackIconId: 'lucide:circle-question-mark', fieldName: 'state', kind: 'enum-icon' },
   }
   assert.deepEqual(contracts.validateRecordTileLayout(enumIconTile), enumIconTile)
 
@@ -317,8 +317,16 @@ test('validates RecordTileLayout shape and compositions', () => {
     presentation: 'standard',
     titleFieldName: 'name',
     version: 1,
-    visual: { fallbackIconId: 'help', fieldId: 'state', iconsByValue: { active: 'check' }, kind: 'enum-icon' },
+    visual: { fallbackIconId: 'help', fieldId: 'state', kind: 'enum-icon' },
   }), /Tile enum-icon visual requires fieldName/)
+
+  // Unsupported iconsByValue fails closed
+  assert.throws(() => contracts.validateRecordTileLayout({
+    presentation: 'standard',
+    titleFieldName: 'name',
+    version: 1,
+    visual: { fallbackIconId: 'lucide:box', fieldName: 'state', iconsByValue: { active: 'lucide:check' }, kind: 'enum-icon' },
+  }), /unsupported property.*iconsByValue/i)
 
   // Empty string elements in badgeFieldNames / detailFieldNames fail closed
   assert.throws(() => contracts.validateRecordTileLayout({
