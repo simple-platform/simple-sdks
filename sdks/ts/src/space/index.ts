@@ -15,10 +15,10 @@ import {
   TABS_PROTOCOL_VERSION,
   TOAST_PROTOCOL_VERSION,
 } from './core.js'
+import { HOST_UI_PROTOCOL_VERSION } from './host-ui.js'
 import { isObjectRecord } from './protocol.js'
 import { applyThemeSnapshot, parseThemeSnapshot, THEME_PROTOCOL_VERSION } from './theme.js'
 
-export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
 export type {
   ActionFailedDetails,
   ActionRunOptions,
@@ -70,6 +70,10 @@ export type {
   TaskReplyResult,
   TaskStatus,
 } from './core.js'
+export { HOST_UI_PROTOCOL_VERSION } from './host-ui.js'
+
+export { HEADER_ACTIONS_PROTOCOL_VERSION, PROTOCOL_VERSION, RECORDS_PROTOCOL_VERSION, SpaceDataError, SpaceProtocolError, TABS_PROTOCOL_VERSION, TOAST_PROTOCOL_VERSION }
+export type { CreateRecordOptions, NewRecordOptions, PanelContent, SimpleCreateRecordClient, SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
 
 interface SpaceWindowLike {
   addEventListener: (type: 'message', listener: (event: SpaceMessageEvent) => void) => void
@@ -177,6 +181,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         formModelTransport: protocols?.form === MANAGED_RECORD_FORM_PROTOCOL_VERSION || protocols?.form === 2 ? transport : undefined,
         headerTransport: hasRecord && protocols?.header === HEADER_ACTIONS_PROTOCOL_VERSION ? transport : undefined,
         hostOrigin: targetOrigin,
+        hostUiTransport: protocols?.hostUi === HOST_UI_PROTOCOL_VERSION ? transport : undefined,
         navigationTransport: transport,
         recordsTransport: hasRecords ? transport : undefined,
         runtime: event.data.runtime,
@@ -194,6 +199,7 @@ export function connect({ targetOrigin }: ConnectOptions): Promise<SimpleClient>
         document: [PROTOCOL_VERSION],
         form: [MANAGED_RECORD_FORM_PROTOCOL_VERSION, 2],
         header: [HEADER_ACTIONS_PROTOCOL_VERSION],
+        hostUi: [HOST_UI_PROTOCOL_VERSION],
         record: [PROTOCOL_VERSION],
         records: [RECORDS_PROTOCOL_VERSION],
         tabs: [TABS_PROTOCOL_VERSION],
@@ -229,6 +235,7 @@ function isInitializationMessage(value: unknown): value is {
     action?: unknown
     document?: unknown
     form?: unknown
+    hostUi?: unknown
     header?: unknown
     record?: unknown
     records?: unknown

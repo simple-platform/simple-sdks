@@ -1,6 +1,7 @@
 import type { Tenant, User } from '../types.js'
 import type { SimpleActionsClient } from './actions.js'
 import type { SimpleDocumentsClient } from './documents.js'
+import type { SimpleCreateRecordClient, SimpleNewRecordClient, SimplePanelClient } from './host-ui.js'
 import type { SimpleNavigationClient, SpaceNavigationTransport } from './navigation.js'
 import type { SpaceTransport } from './protocol.js'
 import type {
@@ -26,6 +27,7 @@ import type {
 } from './ui.js'
 import { createActionsClient } from './actions.js'
 import { createDocumentsClient } from './documents.js'
+import { createHostUiClients } from './host-ui.js'
 import { createNavigationClient } from './navigation.js'
 import { deepFreeze, invalidResponse, isNonBlankString, isObjectRecord, PROTOCOL_VERSION, readResponse, SpaceDataError, SpaceProtocolError } from './protocol.js'
 import { createRecordsClient, isCurrentRecordResult, ProtocolRecordHandle } from './record.js'
@@ -157,6 +159,9 @@ export interface SimpleClient {
   records: SimpleRecordsClient
   tasks: SimpleTasksClient
   ui: {
+    createRecord: SimpleCreateRecordClient
+    newRecord: SimpleNewRecordClient
+    panel: SimplePanelClient
     header: SimpleHeaderClient
     tabs: SimpleTabsClient
     toast: SimpleToastClient
@@ -173,6 +178,7 @@ export interface SimpleClientOptions {
   documentTransport?: SpaceTransport
   formModelTransport?: RecordFormModelTransport
   hostOrigin?: string
+  hostUiTransport?: SpaceTransport
   headerTransport?: SpaceHeaderTransport
   navigationTransport?: SpaceNavigationTransport
   nextRequestId?: () => string
@@ -197,6 +203,7 @@ export function createSimpleClient({
   formModelTransport,
   headerTransport,
   hostOrigin,
+  hostUiTransport,
   navigationTransport,
   nextRequestId = createRequestId,
   recordsTransport,
@@ -273,6 +280,7 @@ export function createSimpleClient({
     records,
     tasks: createTasksClient(taskTransport, nextRequestId),
     ui: {
+      ...createHostUiClients(hostUiTransport, nextRequestId),
       header: createHeaderClient(immutableContext.kind === 'record', headerTransport),
       tabs: createTabsClient(immutableContext.kind === 'record', tabsTransport, nextRequestId),
       toast: createToastClient(toastTransport),

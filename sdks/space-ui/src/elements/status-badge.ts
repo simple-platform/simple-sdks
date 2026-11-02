@@ -13,7 +13,7 @@ const STATUS_BADGE_STYLES = `
   [part="base"] {
     align-items: center;
     background: var(--simple-color-surface-sunken);
-    border: 1px solid var(--simple-color-border-default);
+    border: none;
     border-radius: var(--simple-radius-round);
     box-sizing: border-box;
     color: var(--simple-color-text-secondary);
@@ -22,33 +22,29 @@ const STATUS_BADGE_STYLES = `
     font-weight: var(--simple-font-weight-medium);
     line-height: var(--simple-line-height-tight);
     max-width: 100%;
-    min-height: var(--simple-control-height-sm);
+    min-height: 1.25rem;
     overflow-wrap: anywhere;
-    padding: 0 var(--simple-space-2);
+    padding: 0.125rem 0.625rem;
   }
 
   [part="base"][data-tone="info"] {
-    background: var(--simple-color-status-info-background);
-    border-color: var(--simple-color-status-info);
-    color: var(--simple-color-status-info-foreground);
+    background: color-mix(in srgb, var(--simple-color-status-info) 12%, transparent);
+    color: var(--simple-color-status-info);
   }
 
   [part="base"][data-tone="success"] {
-    background: var(--simple-color-status-success-background);
-    border-color: var(--simple-color-status-success);
-    color: var(--simple-color-status-success-foreground);
+    background: color-mix(in srgb, var(--simple-color-status-success) 12%, transparent);
+    color: var(--simple-color-status-success);
   }
 
   [part="base"][data-tone="warning"] {
-    background: var(--simple-color-status-warning-background);
-    border-color: var(--simple-color-status-warning);
-    color: var(--simple-color-status-warning-foreground);
+    background: color-mix(in srgb, var(--simple-color-status-warning) 12%, transparent);
+    color: var(--simple-color-status-warning);
   }
 
   [part="base"][data-tone="danger"] {
-    background: var(--simple-color-status-danger-background);
-    border-color: var(--simple-color-status-danger);
-    color: var(--simple-color-status-danger-foreground);
+    background: color-mix(in srgb, var(--simple-color-status-danger) 12%, transparent);
+    color: var(--simple-color-status-danger);
   }
 
   [part="description"] {

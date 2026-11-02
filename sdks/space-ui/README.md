@@ -115,11 +115,11 @@ stylesheet does not bundle Tailwind or its base reset.
 The fonts are bundled with the Space so they load inside its cross-origin
 iframe. `StatusBadge` uses the shared platform tokens for its light and dark
 colors and dimensions. Its neutral tone uses `--simple-color-surface-sunken`
-for the background, `--simple-color-border-default` for the border, and
-`--simple-color-text-secondary` for the text; these tokens contain complete
-CSS color values, not bare HSL triplets. The other tones use the corresponding
-`--simple-color-status-info*`, `--simple-color-status-success*`,
-`--simple-color-status-warning*`, and `--simple-color-status-danger*` tokens.
+for the background and `--simple-color-text-secondary` for the text without a border;
+these tokens contain complete CSS color values, not bare HSL triplets. The other tones
+use the single base `--simple-color-status-info`, `--simple-color-status-success`,
+`--simple-color-status-warning`, and `--simple-color-status-danger` tokens with
+background tints derived automatically via `color-mix` without borders.
 A Space may override the `--simple-*` tokens in its own CSS after the imports,
 including `--simple-font-family-sans` for the font stack. These tokens are shared
 with other UI that uses the platform theme; they are not component-local

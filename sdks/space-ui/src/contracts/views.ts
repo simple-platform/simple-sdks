@@ -68,7 +68,6 @@ export type RecordTileVisualV1
     | {
       fallbackIconId: RecordViewIconIdV1
       fieldName: string
-      iconsByValue: Record<string, RecordViewIconIdV1>
       kind: 'enum-icon'
     }
 
@@ -437,26 +436,19 @@ export function validateRecordTileLayoutV1(value: unknown): RecordTileLayoutV1 {
       if (!isNonEmptyString(value.visual.fieldName)) {
         throw new RecordViewContractError('Tile enum-icon visual requires fieldName.')
       }
-      if (!isPlainObject(value.visual.iconsByValue)) {
-        throw new RecordViewContractError('Tile enum-icon visual requires iconsByValue map.')
-      }
-      const iconValues = Object.keys(value.visual.iconsByValue)
-      if (iconValues.length > 100 || iconValues.some(key => !isNonEmptyString(key) || key.length > 200))
-        throw new RecordViewContractError('Tile enum-icon map must contain at most 100 unpadded, non-empty values of at most 200 characters.')
       if (!isNonEmptyString(value.visual.fallbackIconId)) {
         throw new RecordViewContractError('Tile enum-icon visual requires fallbackIconId.')
       }
-      if (value.visual.fieldName.length > 200)
+      if (value.visual.fieldName.length > 200) {
         throw new RecordViewContractError('Tile enum-icon fieldName must be at most 200 characters.')
-      for (const iconId of [value.visual.fallbackIconId, ...Object.values(value.visual.iconsByValue)]) {
-        if (!isSafeTileIconId(iconId))
-          throw new RecordViewContractError(`Tile icon is not in the platform icon catalogue: ${String(iconId)}.`)
       }
-      assertOnlyKeys(value.visual, ['fallbackIconId', 'fieldName', 'iconsByValue', 'kind'], 'Tile enum icon visual')
+      if (!isSafeTileIconId(value.visual.fallbackIconId)) {
+        throw new RecordViewContractError(`Tile icon is not in the platform icon catalogue: ${String(value.visual.fallbackIconId)}.`)
+      }
+      assertOnlyKeys(value.visual, ['fallbackIconId', 'fieldName', 'kind'], 'Tile enum icon visual')
       visual = {
         fallbackIconId: value.visual.fallbackIconId as RecordViewIconIdV1,
         fieldName: value.visual.fieldName,
-        iconsByValue: Object.fromEntries(Object.entries(value.visual.iconsByValue).map(([key, iconId]) => [key, iconId as RecordViewIconIdV1])),
         kind: 'enum-icon',
       }
     }
