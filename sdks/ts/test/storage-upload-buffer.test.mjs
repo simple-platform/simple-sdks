@@ -43,17 +43,17 @@ function install(refusal) {
 
       for (const field of ['app_id', 'table_name', 'field_name']) {
         if (typeof params.target?.[field] !== 'string' || params.target[field].trim() === '')
-          return { ok: false, error: { message: `Target ${field} is required and cannot be empty` } }
+          return { error: { message: `Target ${field} is required and cannot be empty` }, ok: false }
       }
 
-      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(params.source.bytes))
-        return { ok: false, error: { message: 'Invalid base64 bytes' } }
+      if (!/^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i.test(params.source.bytes))
+        return { error: { message: 'Invalid base64 bytes' }, ok: false }
 
       if (Buffer.from(params.source.bytes, 'base64').length === 0)
-        return { ok: false, error: { message: 'Decoded bytes are empty' } }
+        return { error: { message: 'Decoded bytes are empty' }, ok: false }
 
       if (refusal && calls.length === 1)
-        return { ok: false, error: { message: refusal } }
+        return { error: { message: refusal }, ok: false }
 
       return { data: documentHandle, ok: true }
     },
