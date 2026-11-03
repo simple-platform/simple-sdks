@@ -253,3 +253,46 @@ test('a view from another realm encodes only its own bytes', async () => {
   assert.equal(ArrayBuffer.isView(bytes), true)
   assert.equal(await encoded(bytes), 'Qg==')
 })
+
+class MisreportedLength extends Uint8Array {
+  get length() { return 2 }
+}
+
+test('a Uint8Array subclass cannot override the length used for upload', async () => {
+  assert.equal(await encoded(new MisreportedLength([102])), 'Zg==')
+})
+
+test('an empty Uint8Array subclass is refused whatever length it reports', async () => {
+  const calls = install()
+
+  await assert.rejects(
+    storage.uploadBuffer(new MisreportedLength(0), 'statement.pdf', 'application/pdf', target, context),
+    { message: 'An upload needs at least one byte, and this buffer is empty.' },
+  )
+  assert.equal(calls.length, 0)
+})
+
+test('a subclass from another realm cannot override the bytes it reports', async () => {
+  const bytes = runInNewContext(`
+    class Misreported extends Uint8Array {
+      get buffer() { return new Uint8Array([90, 90, 90]).buffer }
+      get byteOffset() { return 0 }
+      get byteLength() { return 3 }
+      get length() { return 3 }
+    }
+    new Misreported(new Uint8Array([65, 66, 67]).buffer, 1, 1)
+  `)
+
+  assert.equal(bytes instanceof Uint8Array, false)
+  assert.equal(await encoded(bytes), 'Qg==')
+})
+
+test('a view of wider elements encodes its own bytes', async () => {
+  const bytes = new Uint16Array(Uint8Array.of(65, 66, 67, 68).buffer, 2, 1)
+
+  assert.equal(await encoded(bytes), 'Q0Q=')
+})
+
+test('a DataView encodes its own bytes', async () => {
+  assert.equal(await encoded(new DataView(Uint8Array.of(65, 66, 67).buffer, 1, 1)), 'Qg==')
+})
