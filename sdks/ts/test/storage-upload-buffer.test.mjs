@@ -33,23 +33,24 @@ for (const missing of ['atob', 'btoa', 'Buffer', 'URL'])
 const storage = await import(`data:text/javascript;base64,${source}`)
 
 // A host that keeps what it is asked and answers as the platform does. The
-// parameters are recorded as JSON, the way the runtime sends them.
+// parameters are recorded and checked as JSON, the way the runtime sends them.
 function install(refusal) {
   const calls = []
 
   globalThis.__host = {
     call(name, params) {
-      calls.push({ name, params: JSON.parse(JSON.stringify(params)) })
+      const sent = JSON.parse(JSON.stringify(params))
+      calls.push({ name, params: sent })
 
       for (const field of ['app_id', 'table_name', 'field_name']) {
-        if (typeof params.target?.[field] !== 'string' || params.target[field].trim() === '')
+        if (typeof sent.target?.[field] !== 'string' || sent.target[field].trim() === '')
           return { error: { message: `Target ${field} is required and cannot be empty` }, ok: false }
       }
 
-      if (!/^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i.test(params.source.bytes))
+      if (!/^(?:[A-Z0-9+/]{4})*(?:[A-Z0-9+/]{2}==|[A-Z0-9+/]{3}=)?$/i.test(sent.source.bytes))
         return { error: { message: 'Invalid base64 bytes' }, ok: false }
 
-      if (Buffer.from(params.source.bytes, 'base64').length === 0)
+      if (Buffer.from(sent.source.bytes, 'base64').length === 0)
         return { error: { message: 'Decoded bytes are empty' }, ok: false }
 
       if (refusal && calls.length === 1)
@@ -132,6 +133,17 @@ test('an empty target is refused before calling the host', async () => {
     { message: 'Target app_id is required and cannot be empty' },
   )
   assert.equal(calls.length, 0)
+})
+
+test('the host judges the target it is sent, not the object before it was sent', async () => {
+  const calls = install()
+  const serializesEmpty = { ...target, toJSON: () => ({}) }
+
+  await assert.rejects(
+    storage.uploadBuffer(new Uint8Array([1]), 'statement.pdf', 'application/pdf', serializesEmpty, context),
+    { message: 'Target app_id is required and cannot be empty' },
+  )
+  assert.deepEqual(calls.map(call => call.params.target), [{}])
 })
 
 test('a nonempty upload propagates a host refusal without retrying', async () => {
