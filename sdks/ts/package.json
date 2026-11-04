@@ -82,7 +82,7 @@
     "esbuild": "0.27.4"
   },
   "devDependencies": {
-    "@types/node": "25.5.0",
+    "@types/node": "25.9.9",
     "typescript": "5.9.3"
   }
 }
