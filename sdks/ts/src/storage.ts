@@ -1,12 +1,16 @@
 import type { Context, DocumentHandle, ExternalFileSource, StorageTarget } from './types'
 
 import { execute as hostExecute, executeBytes as hostExecuteBytes } from './host'
+import { encodeBase64 } from './internal/base64'
 
 /** The host action that answers a stored file's size. */
 const STAT = 'action:storage/stat'
 
 /** The host action that answers one range of a stored file as its bytes. */
 const READ = 'action:storage/read'
+
+/** Where every typed array's built-in getters live. */
+const TYPED_ARRAY = Object.getPrototypeOf(Uint8Array.prototype) as object
 
 /**
  * The longest range the host answers one read with.
@@ -64,10 +68,13 @@ export async function uploadBuffer(
   if (!target.field_name || target.field_name.trim() === '')
     throw new Error('Target field_name is required and cannot be empty')
 
-  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer
+  const bytes = ownBytes(buffer)
+
+  if (bytes.length === 0)
+    throw new Error('An upload needs at least one byte, and this buffer is empty.')
 
   // Base64-encode at the JSON boundary (JSON.stringify cannot carry raw binary)
-  const base64 = btoa(String.fromCharCode(...bytes))
+  const base64 = encodeBase64(bytes)
 
   const source: ExternalFileSource = { bytes: base64, filename, mime_type: mimeType }
 
@@ -315,6 +322,34 @@ async function readExactly(handle: DocumentHandle, offset: number, length: numbe
     throw new Error(`The file answered ${part.length} bytes for the ${length} at offset ${offset}, so it is not the size it was when the read began. Read it again.`)
 
   return part
+}
+
+/**
+ * The bytes an upload sends: a plain view over exactly the caller's own bytes.
+ *
+ * A view's buffer, offset and length come from the built-in getters, which
+ * read the view itself and answer for a view from any realm, so a subclass that
+ * overrides `buffer`, `byteOffset`, `byteLength` or `length` cannot change what
+ * is sent. An `ArrayBuffer` from any realm is wrapped by its own length.
+ */
+function ownBytes(buffer: ArrayBuffer | Uint8Array): Uint8Array {
+  if (!ArrayBuffer.isView(buffer))
+    return new Uint8Array(buffer)
+
+  // The name getter answers undefined for a view that is not a typed array,
+  // which is a DataView. A JavaScript caller can pass one.
+  const prototype = builtIn(TYPED_ARRAY, Symbol.toStringTag, buffer) === undefined ? DataView.prototype : TYPED_ARRAY
+
+  return new Uint8Array(
+    builtIn(prototype, 'buffer', buffer) as ArrayBuffer,
+    builtIn(prototype, 'byteOffset', buffer) as number,
+    builtIn(prototype, 'byteLength', buffer) as number,
+  )
+}
+
+/** What the built-in getter `name` on `prototype` answers for `value`. */
+function builtIn(prototype: object, name: PropertyKey, value: object): unknown {
+  return (Object.getOwnPropertyDescriptor(prototype, name)?.get as (this: object) => unknown).call(value)
 }
 
 /** The error for a call the host refused in its envelope, naming the call. */
