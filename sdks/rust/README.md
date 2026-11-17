@@ -51,7 +51,6 @@ what the action is, what it accepts, and what it does:
 ```rust
 use simpleplatform_sdk::prelude::*;
 
-/// The lead to close, and the one it is a duplicate of.
 #[derive(Deserialize, Schema)]
 struct Input {
     /// The lead to close, by identifier.
@@ -115,6 +114,7 @@ const CLOSE_LEAD: &str = r#"
 /// @shortdesc Close a duplicate lead, pointing it at the surviving record.
 /// @usewhen A lead is a duplicate of one already in the system.
 /// @usewhen Two leads share a contact and one should be retired.
+/// @Payload Input
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     if request.data.lead_id == request.data.duplicate_of {
         return Err(Error::invalid("A lead cannot be a duplicate of itself.")
@@ -210,6 +210,12 @@ What an action is, and what its input looks like, is written where the code is �
 in the doc comments and on the members themselves. There is nothing to keep in
 step by hand.
 
+The build reads the input schema from the struct named `Payload`, or from the
+one a `@Payload <Name>` line names, as `@Payload Input` does in the examples
+below. The action's description is the doc comment on that struct when it has
+one, and the handler's otherwise — which is why these examples write the
+description on the handler and leave `Input` without one.
+
 #### The four tags
 
 Four tags describe the action, written with `///` in the doc comment above the
@@ -225,6 +231,7 @@ handler — the same comment that carries its description:
 /// @shortdesc Close a duplicate lead, pointing it at the surviving record.
 /// @usewhen A lead is a duplicate of one already in the system.
 /// @usewhen Two leads share a contact and one should be retired.
+/// @Payload Input
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     // ...
 }
@@ -258,6 +265,7 @@ only when the action is read-only:
 /// @shortdesc Look up a lead's open activity.
 /// @usewhen A caller wants a lead's current open activity.
 /// @parallelsafe
+/// @Payload Input
 fn handler(request: Request<Input>) -> Result<Output, Error> {
     // reads only — no writes, no outbound calls
 }
