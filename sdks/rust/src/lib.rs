@@ -148,13 +148,14 @@
 //! - [`Schema`] — the constraints on a member, checked as you write them.
 //! - [`testing`] — a host on your own machine, with no wasm anywhere.
 //!
-//! Five modules reach the platform, and each answers with the type the call site
+//! Six modules reach the platform, and each answers with the type the call site
 //! asked for:
 //!
 //! - [`graphql`] — reading and writing tenant data.
 //! - [`http`] — calling a service outside the platform.
 //! - [`ai`] — extracting, summarising, transcribing, and the face collection.
 //! - [`settings`] — the settings an application was configured with.
+//! - [`coordination`] — locks that keep two runs from doing the same work at once.
 //! - [`storage`] — putting a file into the platform's store, and the
 //!   [`DocumentHandle`] that comes back.
 //!
@@ -200,6 +201,7 @@ mod abi;
 
 pub mod ai;
 pub mod codes;
+pub mod coordination;
 mod envelope;
 mod error;
 pub mod graphql;
