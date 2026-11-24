@@ -1029,6 +1029,41 @@ console.log(config.api_key) // "sk_live_..."
 console.log(config.max_retries) // 3
 ```
 
+### Coordination Module
+
+Use a lock when two action runs must not do the same check-then-write at once.
+The key belongs to this app in this tenant only.
+
+```typescript
+import * as coordination from '@simpleplatform/sdk/coordination'
+
+if (await coordination.lock('daily-report', { waitMs: 5_000 }, request.context)) {
+  try {
+    const current = await readReport()
+    await writeReport(current)
+  }
+  finally {
+    await coordination.unlock('daily-report', request.context)
+  }
+}
+```
+
+The wait is required and may be zero for one try. `waitMs` must be a whole
+number of milliseconds. The wait may not exceed the action's own time limit. A
+lock answers within its wait plus at most one attempt (up to 8 seconds) when the
+platform is slow. A run may hold one lock at a time: locking the same key again
+answers true, while another key is refused until the first is let go. Every lock is let go when the run ends. If a run is
+stopped at its time limit, it keeps its key for twice the action's time limit
+plus 5 seconds, because work it started may still finish. Locks are for
+actions, not record behaviors.
+While a run holds a lock, it cannot start another action; unlock first. An
+action started by another action cannot take a lock.
+
+A write the platform gave up waiting for because its own call timed out may
+still land shortly after the lock is let go. Only a check inside the database
+would close that gap. During a coordination outage, a lock may stay taken until
+it expires, twice the action's time limit plus 5 seconds.
+
 ### Tasks Module
 
 Create a task from a server action. It is assigned to the user the action runs
