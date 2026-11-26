@@ -61,13 +61,13 @@ for (const [name, invoke] of Object.entries(operations)) {
     const calls = install({ data: name === 'summarize' ? 'a summary' : { pages: [] }, metadata: {} })
     const options = name === 'transcribePages'
       ? { regenerate: true, timeout: 90000 }
-      : { reasoning: false, reasoningBudget: 2048, regenerate: true, temperature: 0.25, timeout: 90000 }
+      : { reasoning: false, regenerate: true, timeout: 90000 }
     await invoke(options)
     await invoke({ ...options, transcription: 'precise' })
 
     const expected = name === 'transcribePages'
       ? { reasoning: true }
-      : { reasoning: false, reasoningBudget: 2048, temperature: 0.25 }
+      : { reasoning: false }
     assert.deepEqual(calls[0].params.options, expected)
     assert.deepEqual(calls[1].params, {
       ...calls[0].params,

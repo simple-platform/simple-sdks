@@ -32,7 +32,7 @@ All SDKs provide a **unified API surface** with consistent patterns across langu
 
 The Simple Platform SDKs provide first-class support for:
 
-- **🤖 AI Operations**: Extract structured data, summarize content, and transcribe audio/video with advanced language models
+- **🤖 AI Operations**: Extract structured data, summarize content, and transcribe scanned PDF pages with advanced language models
 - **📊 GraphQL Integration**: Query and mutate data with a type-safe GraphQL client
 - **🌐 HTTP Utilities**: Make external API calls with a clean, promise-based interface
 - **🔐 Security Policies**: Author declarative, role-based access control with a fluent API
