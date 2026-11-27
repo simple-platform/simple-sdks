@@ -161,13 +161,6 @@ export interface AICommonOptions {
   reasoning?: boolean
 
   /**
-   * The maximum number of tokens to spend on the reasoning process.
-   * If omitted, the platform chooses a sensible default.
-   * Ignored if `reasoning` is false.
-   */
-  reasoningBudget?: number
-
-  /**
    * If true, forces the AI to re-process the input, ignoring
    * any previously cached results in the AI Memcache. Defaults to false.
    */
@@ -178,12 +171,6 @@ export interface AICommonOptions {
    * high-level instructions for the entire task.
    */
   systemPrompt?: string
-
-  /**
-   * (Optional) Controls the creativity of the model. A value from 0.0 (most
-   * deterministic) to 1.0 (most creative). Defaults to the model's standard.
-   */
-  temperature?: number
 
   /**
    * (Optional) The maximum time in milliseconds to wait for the AI operation.
@@ -217,7 +204,7 @@ export interface AIExtractOptions extends AICommonOptions {
 export interface AISummarizeOptions extends AICommonOptions { }
 
 /**
- * Configuration options for audio/video transcription.
+ * Configuration options for the withdrawn `transcribe`.
  * Extends common options but excludes `prompt` as it's generated internally.
  */
 export interface AITranscribeOptions extends Omit<AICommonOptions, 'prompt'> {
@@ -478,10 +465,8 @@ async function _executeAIOperation(
     model,
     prompt,
     reasoning = true,
-    reasoningBudget,
     regenerate = false,
     systemPrompt,
-    temperature,
     timeout,
     transcription,
   } = options as Partial<AIExtractOptions>
@@ -495,8 +480,6 @@ async function _executeAIOperation(
   // 1. Construct the universal options payload for caching and execution.
   const universalOptions = {
     ...(transcription !== undefined && { transcription }),
-    ...(temperature !== undefined && { temperature }),
-    ...(reasoningBudget !== undefined && { reasoningBudget }),
     ...({ reasoning }),
   }
 
@@ -641,38 +624,12 @@ export async function summarize(
 }
 
 /**
- * Transcribes audio or video from a document handle using the Simple AI engine.
+ * Withdrawn: audio and video files are not transcribed. To read the pages of
+ * a PDF from their images, use `transcribePages`.
  *
- * This function internally uses the `extract` operation with a dynamically generated
- * schema based on the requested options. It supports participant identification,
- * timestamps, and summarization.
+ * Kept so that existing callers still build.
  *
- * @param input The audio or video file as a DocumentHandle.
- * @param options The configuration for the transcription operation.
- * @param context The execution context provided by the host.
- * @returns A promise that resolves to an `AIExecutionResult` with structured transcription data.
- * @throws Will throw an error if the operation fails or inputs are invalid.
- *
- * @example
- * // Basic transcript
- * const result = await transcribe(audioHandle, { includeTranscript: true }, context)
- * // Returns: { language: "en", transcript: "..." }
- *
- * @example
- * // Transcript with participant identification
- * const result = await transcribe(audioHandle, {
- *   includeTranscript: true,
- *   participants: ['Customer', 'Support Agent']
- * }, context)
- * // Returns: { language: "en", transcript: "Customer: Hello...\nSupport Agent: Hi...", participants: [...] }
- *
- * @example
- * // Summary with auto-detected participants
- * const result = await transcribe(videoHandle, {
- *   summarize: true,
- *   participants: true
- * }, context)
- * // Returns: { language: "en", summary: "...", participants: ["Participant 1", "Participant 2"] }
+ * @deprecated Use `transcribePages` for the pages of a PDF.
  */
 export async function transcribe(
   input: DocumentHandle,

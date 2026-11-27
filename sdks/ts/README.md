@@ -10,6 +10,13 @@ Install the SDK using [pnpm](https://pnpm.io):
 pnpm add @simpleplatform/sdk
 ```
 
+## Upgrading from 4.0 to 4.1
+
+Version 4.1 removes the `temperature` and `reasoningBudget` options from
+`extract`, `summarize` and `transcribe`, because they never had an effect on
+the result. Where your code sets or reads either one, remove it; results stay
+the same.
+
 ## Upgrading from 2.x to 3
 
 Version 3 is the first release that carries the Space calls added after 2.5.0.
@@ -79,7 +86,7 @@ simple.Handle(async (request) => {
 The TypeScript SDK is organized into focused modules for different capabilities:
 
 | **Core** | `@simpleplatform/sdk` | Request handling and action execution |
-| **AI** | `@simpleplatform/sdk/ai` | AI operations (extract, summarize, transcribe) |
+| **AI** | `@simpleplatform/sdk/ai` | AI operations (extract, summarize, transcribePages) |
 | **GraphQL** | `@simpleplatform/sdk/graphql` | Database queries and mutations |
 | **HTTP** | `@simpleplatform/sdk/http` | External HTTP requests |
 | **Security** | `@simpleplatform/sdk/security` | Security policy authoring |
@@ -750,7 +757,7 @@ an editor with TSDoc support recognizes it instead of flagging it as unknown.
 
 The AI module provides powerful capabilities for working with unstructured data.
 
-The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribePages` selects the reader for scanned pages; omission or `'standard'` preserves the default behavior.
+The `transcription` option on `extract`, `summarize`, and `transcribePages` selects the reader for scanned pages; omission or `'standard'` preserves the default behavior.
 `'precise'` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
 
 ```typescript
@@ -802,29 +809,6 @@ const result = await summarize(
 )
 
 console.log(result.data) // "This document outlines..."
-```
-
-#### Transcribe Audio/Video
-
-Transcribe audio or video files with optional participant identification:
-
-```typescript
-import { transcribe } from '@simpleplatform/sdk/ai'
-
-const result = await transcribe(
-  audioFile,
-  {
-    includeTimestamps: true,
-    includeTranscript: true,
-    participants: ['Customer', 'Support Agent'],
-    summarize: true
-  },
-  request.context
-)
-
-console.log(result.data.transcript) // "[00:15] Customer: I need help with..."
-console.log(result.data.summary) // "Customer called regarding..."
-console.log(result.data.participants) // ["Customer", "Support Agent"]
 ```
 
 #### Transcribe PDF Pages
