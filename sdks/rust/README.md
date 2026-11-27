@@ -73,19 +73,18 @@ struct Found {
 
 #[derive(Deserialize)]
 struct Closed {
-    result: Affected,
+    result: ClosedLead,
 }
 
 #[derive(Deserialize)]
-struct Affected {
-    affected_rows: i64,
+struct ClosedLead {
+    id: String,
 }
 
 #[derive(Serialize)]
 struct Output {
     closed: String,
     merged_into: String,
-    rows_changed: i64,
 }
 
 const IDLE_LEAD: &str = r#"
@@ -98,10 +97,10 @@ const IDLE_LEAD: &str = r#"
 const CLOSE_LEAD: &str = r#"
   mutation CloseLead($id: ID!, $merged: ID!) {
     result: update_crm__lead(
-      where: {id: {_eq: $id}}
+      id: $id
       _set: {status: "closed", merged_into: $merged}
     ) {
-      affected_rows
+      id
     }
   }"#;
 
@@ -137,8 +136,7 @@ fn handler(request: Request<Input>) -> Result<Output, Error> {
     )?;
 
     Ok(Output {
-        rows_changed: closed.result.affected_rows,
-        closed: request.data.lead_id,
+        closed: closed.result.id,
         merged_into: request.data.duplicate_of,
     })
 }
