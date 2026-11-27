@@ -173,7 +173,7 @@ The Rust SDK is organised into focused modules for different capabilities:
 | ------------ | ----------------------------- | ------------------------------------------------------ |
 | **Core**     | `simpleplatform_sdk::prelude` | Request handling and action execution                  |
 | **Schema**   | `simple::Schema`              | Member constraints, checked as you write them          |
-| **AI**       | `simple::ai`                  | AI operations (extract, summarize, transcribe)         |
+| **AI**       | `simple::ai`                  | AI operations (extract, summarize, transcribe_pages)   |
 | **GraphQL**  | `simple::graphql`             | Database queries and mutations                         |
 | **HTTP**     | `simple::http`                | External HTTP requests                                 |
 | **Settings** | `simple::settings`            | Application settings retrieval                         |
@@ -351,7 +351,7 @@ holds it, with the accepted grammar in the message.
 The AI module works on unstructured data: a document handle, a piece of text, or
 an object you already hold.
 
-The `transcription` option on `extract`, `summarize`, `transcribe`, and `transcribe_pages` selects the reader for scanned pages; omission or `Transcription::Standard` preserves the default behavior.
+The `transcription` option on `extract`, `summarize`, and `transcribe_pages` selects the reader for scanned pages; omission or `Transcription::Standard` preserves the default behavior.
 `Transcription::Precise` costs more and is for pages where exact characters matter (codes, part numbers); text pages are unaffected.
 
 ```rust
@@ -413,31 +413,6 @@ let written = simple::ai::summarize(
 )?;
 
 written.data; // "A refund was agreed."
-```
-
-#### Transcribe Audio/Video
-
-The prompt and the schema are written for you from what you ask for, which is
-why the answer is a `Transcript` rather than a type you have to name:
-
-```rust
-let heard = simple::ai::transcribe(
-    json!({ "file_hash": "c07b…", "mime_type": "audio/mpeg" }),
-    TranscribeOptions {
-        include_transcript: true,
-        include_timestamps: true,
-        summarize: true,
-        participants: simple::ai::Participants::Named(vec![
-            "Customer".to_string(),
-            "Agent".to_string(),
-        ]),
-    },
-    Options::default(),
-)?;
-
-heard.data.language; // "en"
-heard.data.transcript; // Some("[00:15] Customer: My order is late…")
-heard.data.summary; // Some("The customer was refunded.")
 ```
 
 #### Transcribe PDF Pages

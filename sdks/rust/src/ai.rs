@@ -1,11 +1,11 @@
 //! Asking the AI engine for an answer.
 //!
-//! Four operations read something and answer with it — [`extract`] pulls
+//! Three operations read something and answer with it — [`extract`] pulls
 //! structured data out against a schema you give, [`summarize`] writes prose,
-//! [`transcribe`] turns audio or video into words, and [`transcribe_pages`]
-//! reads the pages of a PDF that have no text of their own from their images.
-//! Three more hold the tenant's face collection: [`enroll_face`],
-//! [`search_face`] and [`delete_face`].
+//! and [`transcribe_pages`] reads the pages of a PDF that have no text of
+//! their own from their images. Three more hold the tenant's face collection:
+//! [`enroll_face`], [`search_face`] and [`delete_face`]. [`transcribe`] is
+//! withdrawn.
 //!
 //! ```
 //! # use simpleplatform_sdk::prelude::*;
@@ -62,15 +62,15 @@
 //! };
 //! ```
 //!
-//! Nobody passes six `None`s, and a member added to [`Options`] later does not
+//! Nobody passes four `None`s, and a member added to [`Options`] later does not
 //! disturb a call that was written with `..Default::default()`.
 //!
 //! **The answer type is yours.** [`extract`] is generic over what it decodes
 //! into, exactly as [`crate::graphql::query`] is, so an extraction lands in your
 //! own struct rather than in a `Value` you then have to pick apart. Where the
 //! answer's shape is settled it is named for you instead: [`summarize`] answers
-//! with prose, and [`transcribe`] answers with a [`Transcript`], because this
-//! module wrote the schema that produced it.
+//! with prose, and [`transcribe_pages`] with a [`PageTranscription`] for each
+//! page.
 //!
 //! **Every answer carries what it cost.** An operation answers with an
 //! [`Execution`] — the data and the [`Metadata`] beside it — so token counts are
@@ -315,17 +315,9 @@ pub struct Options {
     /// task. Unset sends none.
     pub system_prompt: Option<String>,
 
-    /// How far the model may range, from `0.0` for the most settled answer to
-    /// `1.0` for the most inventive. Unset leaves the model's own default.
-    pub temperature: Option<f64>,
-
     /// Whether the model works the answer out step by step, and reports how.
     /// On unless you turn it off.
     pub reasoning: bool,
-
-    /// The most tokens the reasoning may spend. Unset leaves the platform's
-    /// default, and it is read only while `reasoning` is on.
-    pub reasoning_budget: Option<u32>,
 
     /// Whether to do the work again rather than answer from a cached result for
     /// the same input, prompt, schema, model and options.
@@ -342,9 +334,7 @@ impl Default for Options {
             transcription: None,
             model: None,
             system_prompt: None,
-            temperature: None,
             reasoning: true,
-            reasoning_budget: None,
             regenerate: false,
             timeout: None,
         }
@@ -729,40 +719,10 @@ pub fn summarize(input: Value, prompt: &str, options: Options) -> Result<Executi
     run("summarize", input, Some(prompt), None, &options)
 }
 
-/// Turn audio or video into words.
+/// Withdrawn: audio and video files are not transcribed. To read the pages of
+/// a PDF from their images, use [`transcribe_pages`].
 ///
-/// `document` is the handle of an uploaded audio or video file. The prompt and
-/// the schema are written here, from what `wanted` asks for, which is why the
-/// answer is a [`Transcript`] rather than a type you have to name.
-///
-/// ```
-/// # use simpleplatform_sdk::prelude::*;
-/// # use simpleplatform_sdk::ai::{Options, Participants, TranscribeOptions};
-/// # use simpleplatform_sdk::testing;
-/// # let _session = testing::install(|_name, _params| {
-/// #     Ok(json!({
-/// #         "data": {
-/// #             "language": "en",
-/// #             "transcript": "Customer: My order is late.\nAgent: I have refunded it.",
-/// #             "participants": ["Customer", "Agent"]
-/// #         },
-/// #         "metadata": { "input_tokens": 4_200, "output_tokens": 96 }
-/// #     }))
-/// # });
-/// let heard = simple::ai::transcribe(
-///     json!({ "file_hash": "c07b…", "mime_type": "audio/mpeg" }),
-///     TranscribeOptions {
-///         include_transcript: true,
-///         participants: Participants::Named(vec!["Customer".into(), "Agent".into()]),
-///         ..Default::default()
-///     },
-///     Options::default(),
-/// )?;
-///
-/// assert_eq!(heard.data.language, "en");
-/// assert_eq!(heard.data.participants, ["Customer", "Agent"]);
-/// # Ok::<(), Error>(())
-/// ```
+/// Kept so that existing callers still build.
 pub fn transcribe(
     document: Value,
     wanted: TranscribeOptions,
@@ -1100,22 +1060,14 @@ fn payload(
     schema: Option<Value>,
     options: &Options,
 ) -> Value {
-    // The engine reads `reasoning` and `reasoning_budget` from here, and the
-    // whole map is part of the key a cached result is found under.
+    // The engine reads `reasoning` from here, and the whole map is part of the
+    // key a cached result is found under.
     let mut universal = Map::new();
 
     universal.insert("reasoning".to_string(), Value::Bool(options.reasoning));
 
     if let Some(transcription) = options.transcription {
         universal.insert("transcription".to_string(), json!(transcription));
-    }
-
-    if let Some(budget) = options.reasoning_budget {
-        universal.insert("reasoning_budget".to_string(), Value::from(budget));
-    }
-
-    if let Some(temperature) = options.temperature.filter(|value| value.is_finite()) {
-        universal.insert("temperature".to_string(), Value::from(temperature));
     }
 
     let mut payload = Map::new();
@@ -1651,8 +1603,6 @@ mod tests {
                 let options = Options {
                     transcription,
                     reasoning: false,
-                    reasoning_budget: Some(2048),
-                    temperature: Some(0.25),
                     regenerate: true,
                     timeout: Some(Duration::from_secs(90)),
                     ..Default::default()
@@ -1699,7 +1649,7 @@ mod tests {
             let expected = if operation == "transcribe_pages" {
                 json!({ "reasoning": true })
             } else {
-                json!({ "reasoning": false, "reasoning_budget": 2048, "temperature": 0.25 })
+                json!({ "reasoning": false })
             };
             assert_eq!(calls[0].params["options"], expected);
             let mut precise = calls[0].params.clone();
@@ -1861,9 +1811,7 @@ mod tests {
                 model: Some(Model::Xl),
                 transcription: None,
                 system_prompt: Some("You are an auditor.".to_string()),
-                temperature: Some(0.25),
                 reasoning: false,
-                reasoning_budget: Some(2_048),
                 regenerate: true,
                 timeout: Some(Duration::from_secs(90)),
             },
@@ -1876,10 +1824,7 @@ mod tests {
         assert_eq!(sent["systemPrompt"], json!("You are an auditor."));
         assert_eq!(sent["regenerate"], json!(true));
         assert_eq!(sent["timeout"], json!(90_000));
-        assert_eq!(
-            sent["options"],
-            json!({ "reasoning": false, "reasoning_budget": 2_048, "temperature": 0.25 })
-        );
+        assert_eq!(sent["options"], json!({ "reasoning": false }));
     }
 
     #[test]
