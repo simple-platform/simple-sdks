@@ -43,12 +43,13 @@ struct Found {
 
 #[derive(Deserialize)]
 struct Closed {
-    result: Affected,
+    result: ClosedLead,
 }
 
 #[derive(Deserialize)]
-struct Affected {
-    affected_rows: i64,
+struct ClosedLead {
+    id: String,
+    status: String,
 }
 
 // The output type needs `Serialize`, and that is all the SDK asks of it.
@@ -58,7 +59,7 @@ struct Affected {
 struct Output {
     closed: String,
     merged_into: String,
-    rows_changed: i64,
+    status: String,
 }
 
 const FIND_LEADS: &str = r#"
@@ -70,13 +71,17 @@ const FIND_LEADS: &str = r#"
       }
     }"#;
 
+// An update names its record by `id` and returns that record's fields.
+// `@expect(affected_rows: 1)` refuses the write when no lead has that id;
+// without it the result is `null`.
 const CLOSE_LEAD: &str = r#"
     mutation CloseLead($id: ID!, $merged: ID!) {
       result: update_crm__lead(
-        where: {id: {_eq: $id}}
+        id: $id
         _set: {status: "closed", merged_into: $merged}
-      ) {
-        affected_rows
+      ) @expect(affected_rows: 1) {
+        id
+        status
       }
     }"#;
 
@@ -150,9 +155,9 @@ fn handler(request: Request<Input>) -> Result<Output, Error> {
         simple::graphql::mutate(CLOSE_LEAD, json!({ "id": duplicate, "merged": survivor }))?;
 
     Ok(Output {
-        closed: duplicate.to_string(),
+        closed: closed.result.id,
         merged_into: survivor.to_string(),
-        rows_changed: closed.result.affected_rows,
+        status: closed.result.status,
     })
 }
 
@@ -182,7 +187,7 @@ mod tests {
     fn it_closes_the_duplicate_and_reports_what_changed() {
         let session = testing::install(|_name, params| {
             if params["query"].as_str().unwrap().contains("mutation") {
-                Ok(json!({ "result": { "affected_rows": 1 } }))
+                Ok(json!({ "result": { "id": "LEAD1", "status": "closed" } }))
             } else {
                 Ok(two_leads())
             }
@@ -191,7 +196,7 @@ mod tests {
         let output = handler(input("LEAD1", "LEAD2")).unwrap();
 
         assert_eq!(output.closed, "LEAD1");
-        assert_eq!(output.rows_changed, 1);
+        assert_eq!(output.status, "closed");
         assert_eq!(session.calls().len(), 2);
     }
 
