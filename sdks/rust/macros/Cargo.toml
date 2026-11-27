@@ -58,4 +58,4 @@ syn = "3.0"
 # wording and its exact span, which is what `tests/ui/refuses` does. It is a
 # development dependency of this crate alone and reaches nothing that ships.
 [dev-dependencies]
-trybuild = "1.0"
+trybuild = "=1.0.120"
