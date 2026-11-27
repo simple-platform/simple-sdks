@@ -79,12 +79,14 @@ struct Closed {
 #[derive(Deserialize)]
 struct ClosedLead {
     id: String,
+    status: String,
 }
 
 #[derive(Serialize)]
 struct Output {
     closed: String,
     merged_into: String,
+    status: String,
 }
 
 const IDLE_LEAD: &str = r#"
@@ -99,8 +101,9 @@ const CLOSE_LEAD: &str = r#"
     result: update_crm__lead(
       id: $id
       _set: {status: "closed", merged_into: $merged}
-    ) {
+    ) @expect(affected_rows: 1) {
       id
+      status
     }
   }"#;
 
@@ -138,11 +141,16 @@ fn handler(request: Request<Input>) -> Result<Output, Error> {
     Ok(Output {
         closed: closed.result.id,
         merged_into: request.data.duplicate_of,
+        status: closed.result.status,
     })
 }
 
 fn main() { simple::run(handler) }
 ```
+
+An update names its record by `id` and returns that record's fields.
+`@expect(affected_rows: 1)` refuses the write when no lead has that id; without
+it the result is `null`.
 
 No lifetimes, no `async`, no `unsafe`, no envelope, no context threading, one
 import line.
